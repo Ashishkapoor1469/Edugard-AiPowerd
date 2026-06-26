@@ -1,10 +1,61 @@
+# Build results
+bin/
+obj/
 
-node_modules
-dist
-dist-ssr
-*.local
+# Visual Studio files
+.vs/
+.vscode/
 
-.vscode/*
-!.vscode/extensions.json
+# User-specific files
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
 
+# Rider
+.idea/
+
+# Logs
+*.log
+
+# ASP.NET Core settings
+appsettings.Development.json
+
+# Secrets
+secrets.json
+*.pfx
+*.key
+
+# Environment variables
 .env
+.env.*
+
+# NuGet packages
+*.nupkg
+packages/
+
+# Test results
+TestResults/
+*.trx
+
+# Coverage reports
+coverage/
+*.coverage
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+
+# Publish output
+publish/
+
+
+README_CSHARP.md
+
+# ASP.NET Core configuration secrets
+appsettings.json
+appsettings.Development.json

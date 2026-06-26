@@ -1,0 +1,161 @@
+using System;
+using System.Net.Http;
+using System.Net.Http.Headers;
+using System.Text;
+using System.Text.Json;
+using System.Threading;
+using System.Threading.Channels;
+using System.Threading.Tasks;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+
+namespace EduGuard.Services
+{
+    public class EmailJob
+    {
+        public string Email { get; set; } = string.Empty;
+        public string Token { get; set; } = string.Empty;
+        public int Retries { get; set; } = 0;
+    }
+
+    public class EmailQueueService : BackgroundService
+    {
+        private readonly Channel<EmailJob> _queue;
+        private readonly HttpClient _httpClient;
+        private readonly ILogger<EmailQueueService> _logger;
+        private readonly string _resendApiKey;
+        private readonly bool _hasKey;
+        private const int MaxRetries = 3;
+        private const int DelayBetweenEmailsMs = 500;
+
+        public EmailQueueService(IConfiguration configuration, ILogger<EmailQueueService> logger)
+        {
+            _logger = logger;
+            _queue = Channel.CreateUnbounded<EmailJob>();
+            _httpClient = new HttpClient();
+            
+            _resendApiKey = configuration.GetValue<string>("RESEND_API_KEY") ?? string.Empty;
+            _hasKey = !string.IsNullOrEmpty(_resendApiKey) && _resendApiKey != "your_resend_api_key";
+
+            if (!_hasKey)
+            {
+                _logger.LogWarning("[WARNING] RESEND_API_KEY is not defined. Falling back to console-logged verification emails.");
+            }
+        }
+
+        public void QueueEmail(string email, string token)
+        {
+            if (string.IsNullOrEmpty(email) || string.IsNullOrEmpty(token)) return;
+
+            var job = new EmailJob { Email = email, Token = token };
+            _queue.Writer.TryWrite(job);
+            _logger.LogInformation($"[EMAIL QUEUE] Job added to queue for: {email}");
+        }
+
+        protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+        {
+            _logger.LogInformation("[EMAIL QUEUE] Background worker started.");
+
+            while (await _queue.Reader.WaitToReadAsync(stoppingToken))
+            {
+                while (_queue.Reader.TryRead(out var job))
+                {
+                    _logger.LogInformation($"[EMAIL QUEUE] Processing verification email for: {job.Email} (Attempt {job.Retries + 1})");
+
+                    try
+                    {
+                        await SendEmailInternalAsync(job.Email, job.Token);
+                        _logger.LogInformation($"[EMAIL QUEUE] Successfully processed email for: {job.Email}");
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, $"[EMAIL QUEUE] Error sending email to {job.Email}.");
+
+                        if (job.Retries < MaxRetries - 1)
+                        {
+                            job.Retries++;
+                            // Re-queue
+                            _queue.Writer.TryWrite(job);
+                            _logger.LogInformation($"[EMAIL QUEUE] Re-queued job for: {job.Email} (Retries left: {MaxRetries - job.Retries})");
+                        }
+                        else
+                        {
+                            _logger.LogError($"[EMAIL QUEUE] Critical: Email to {job.Email} failed after {MaxRetries} attempts. Job discarded.");
+                        }
+                    }
+
+                    // Delay between emails
+                    await Task.Delay(DelayBetweenEmailsMs, stoppingToken);
+                }
+            }
+
+            _logger.LogInformation("[EMAIL QUEUE] Background worker stopped.");
+        }
+
+        private async Task SendEmailInternalAsync(string email, string token)
+        {
+            var verificationLink = $"http://localhost:5173/verify?token={token}&email={Uri.EscapeDataString(email)}";
+
+            if (_hasKey)
+            {
+                var requestMessage = new HttpRequestMessage(HttpMethod.Post, "https://api.resend.com/emails");
+                requestMessage.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _resendApiKey);
+
+                var payload = new
+                {
+                    from = "EduGuard <onboarding@resend.dev>",
+                    to = email,
+                    subject = "Verify your EduGuard Account",
+                    html = $@"
+                        <div style=""font-family: Arial, sans-serif; padding: 20px; max-width: 600px; border: 1px solid #f0f0f0; border-radius: 8px;"">
+                            <h2 style=""color: #4f46e5; margin-bottom: 20px;"">Welcome to EduGuard</h2>
+                            <p>Your college mentor has added you to the EduGuard Student Risk & Performance Management Portal.</p>
+                            <p>Please click the button below to verify your email, set a secure password, and activate your account:</p>
+                            <div style=""margin: 30px 0; text-align: center;"">
+                                <a href=""{verificationLink}"" style=""background-color: #4f46e5; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;"">
+                                    Verify & Activate Account
+                                </a>
+                            </div>
+                            <p style=""color: #64748b; font-size: 12px; margin-top: 30px;"">
+                                If the button doesn't work, copy and paste the link below into your browser: <br/>
+                                <a href=""{verificationLink}"">{verificationLink}</a>
+                            </p>
+                        </div>"
+                };
+
+                requestMessage.Content = new StringContent(
+                    JsonSerializer.Serialize(payload),
+                    Encoding.UTF8,
+                    "application/json"
+                );
+
+                var response = await _httpClient.SendAsync(requestMessage);
+                if (!response.IsSuccessStatusCode)
+                {
+                    var responseBody = await response.Content.ReadAsStringAsync();
+                    throw new HttpRequestException($"Resend API returned non-success code: {response.StatusCode}. Details: {responseBody}");
+                }
+                _logger.LogInformation($"[EMAIL SENT] Verification email successfully sent to {email} via Resend.");
+            }
+            else
+            {
+                LogMockEmail(email, verificationLink);
+            }
+        }
+
+        private void LogMockEmail(string email, string link)
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine("\n==================================================");
+            sb.AppendLine($"[MOCK EMAIL SERVICE] To: {email}");
+            sb.AppendLine("Subject: Verify your EduGuard Account");
+            sb.AppendLine("--------------------------------------------------");
+            sb.AppendLine("Please click the link below to verify your account:");
+            sb.AppendLine(link);
+            sb.AppendLine("==================================================\n");
+            
+            Console.WriteLine(sb.ToString());
+        }
+    }
+}
