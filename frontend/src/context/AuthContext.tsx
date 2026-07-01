@@ -24,6 +24,7 @@ interface AuthContextType {
     password: string;
     role?: string;
     assignedClasses?: string[];
+    department?: string;
   }) => Promise<void>;
   logout: () => void;
 }

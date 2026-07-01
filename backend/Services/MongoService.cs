@@ -45,14 +45,21 @@ namespace EduGuard.Services
         public IMongoCollection<Student> Students => _database.GetCollection<Student>("students");
         public IMongoCollection<Message> Messages => _database.GetCollection<Message>("messages");
         public IMongoCollection<Notification> Notifications => _database.GetCollection<Notification>("notifications");
+        public IMongoCollection<College> Colleges => _database.GetCollection<College>("colleges");
+        public IMongoCollection<Degree> Degrees => _database.GetCollection<Degree>("degrees");
+        public IMongoCollection<Announcement> Announcements => _database.GetCollection<Announcement>("announcements");
+        public IMongoCollection<Event> Events => _database.GetCollection<Event>("events");
+        public IMongoCollection<Assignment> Assignments => _database.GetCollection<Assignment>("assignments");
+        public IMongoCollection<Submission> Submissions => _database.GetCollection<Submission>("submissions");
+        public IMongoCollection<Admin> Admins => _database.GetCollection<Admin>("admins");
 
         private void CreateIndexesSafe()
         {
             try
             {
-                // Student rollNo unique index
-                var studentRollNoKey = Builders<Student>.IndexKeys.Ascending(s => s.RollNo);
-                var studentRollNoOptions = new CreateIndexOptions { Unique = true };
+                // Student rollNo unique index per college
+                var studentRollNoKey = Builders<Student>.IndexKeys.Ascending(s => s.CollegeId).Ascending(s => s.RollNo);
+                var studentRollNoOptions = new CreateIndexOptions { Unique = true, Sparse = true };
                 Students.Indexes.CreateOne(new CreateIndexModel<Student>(studentRollNoKey, studentRollNoOptions));
 
                 // Student email index
@@ -63,6 +70,11 @@ namespace EduGuard.Services
                 var mentorEmailKey = Builders<Mentor>.IndexKeys.Ascending(m => m.Email);
                 var mentorEmailOptions = new CreateIndexOptions { Unique = true };
                 Mentors.Indexes.CreateOne(new CreateIndexModel<Mentor>(mentorEmailKey, mentorEmailOptions));
+
+                // Admin email unique index
+                var adminEmailKey = Builders<Admin>.IndexKeys.Ascending(a => a.Email);
+                var adminEmailOptions = new CreateIndexOptions { Unique = true };
+                Admins.Indexes.CreateOne(new CreateIndexModel<Admin>(adminEmailKey, adminEmailOptions));
 
                 // Message index for querying student chat history
                 var messageKey = Builders<Message>.IndexKeys.Ascending(msg => msg.StudentId).Ascending(msg => msg.MentorId);

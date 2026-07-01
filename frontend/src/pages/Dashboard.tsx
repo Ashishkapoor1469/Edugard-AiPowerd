@@ -2,7 +2,6 @@ import React, { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import axios from "axios";
 import { useDropzone } from "react-dropzone";
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
 import toast from "react-hot-toast";
 
 interface Student {
@@ -15,53 +14,88 @@ interface Student {
   riskScore: number;
   riskLevel: "low" | "medium" | "high" | "critical";
   behavior: string | null;
-  updatedAt: string;
+  verificationStatus?: string;
+  email?: string;
+}
+
+interface Assignment {
+  _id?: string;
+  title: string;
+  description: string;
+  class: string;
+  deadline: string;
+  instructions: string;
+}
+
+interface Submission {
+  _id: string;
+  assignmentId: string;
+  studentId: string;
+  submittedPdfUrl: string;
+  grade: string;
+  feedback: string;
+  submittedAt: string;
 }
 
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
-  // Search parameters from URL (sync with Navbar)
+  // Active workspace tab
+  const [activeTab, setActiveTab] = useState<"stream" | "enrollments" | "assignments" | "study-planner">("stream");
+
+  // Route Filters (from Navbar)
   const courseFilter = searchParams.get("course") || "";
   const classFilter = searchParams.get("class") || "";
   const searchFilter = searchParams.get("search") || "";
 
-  // Component-level States
+  // Component States
   const [students, setStudents] = useState<Student[]>([]);
+  const [pendingStudents, setPendingStudents] = useState<Student[]>([]);
   const [stats, setStats] = useState<any>(null);
-  const [loadingStats, setLoadingStats] = useState(true);
-  const [loadingStudents, setLoadingStudents] = useState(true);
-
-  // Table filters & sorting
+  const [loading, setLoading] = useState(true);
+  
+  // Table Filters
   const [riskFilter, setRiskFilter] = useState("");
-  const [sortBy, setSortBy] = useState("riskScore");
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
 
-  // Upload state
-  const [uploading, setUploading] = useState(false);
-  const [uploadResult, setUploadResult] = useState<any>(null);
+  // Upload State
+  const [, setUploading] = useState(false);
 
-  // Fetch Dashboard aggregate stats
+  // Assignments States
+  const [assignments, setAssignments] = useState<Assignment[]>([]);
+  const [newAsgnTitle, setNewAsgnTitle] = useState("");
+  const [newAsgnDesc, setNewAsgnDesc] = useState("");
+  const [newAsgnClass, setNewAsgnClass] = useState("BCA-A");
+  const [newAsgnDeadline, setNewAsgnDeadline] = useState("");
+  const [newAsgnInstructions, setNewAsgnInstructions] = useState("");
+  
+  const [submissions, setSubmissions] = useState<Submission[]>([]);
+  const [selectedAsgnId, setSelectedAsgnId] = useState("");
+  const [gradeScore, setGradeScore] = useState("");
+  const [gradeFeedback, setGradeFeedback] = useState("");
+  const [gradingSubId, setGradingSubId] = useState("");
+
+  // AI Study Planner States
+  const [plannerStudentId, setPlannerStudentId] = useState("");
+  const [plannerWeakSubjects, setPlannerWeakSubjects] = useState("");
+  const [plannerSpeed, setPlannerSpeed] = useState("Normal");
+  const [plannerExams, setPlannerExams] = useState("");
+  const [generatedPlan, setGeneratedPlan] = useState("");
+  const [generatingPlan, setGeneratingPlan] = useState(false);
+
   const fetchDashboardStats = async () => {
-    setLoadingStats(true);
     try {
       const res = await axios.get("/api/students/stats");
-      if (res.data.success) {
-        setStats(res.data.data);
-      }
+      if (res.data.success) setStats(res.data.data);
     } catch (err) {
       console.error(err);
-      toast.error("Failed to load dashboard metrics");
-    } finally {
-      setLoadingStats(false);
     }
   };
 
-  // Fetch student table records
   const fetchStudents = async () => {
-    setLoadingStudents(true);
+    setLoading(true);
     try {
       const params: any = {
         page,
@@ -70,9 +104,8 @@ const Dashboard: React.FC = () => {
         class: classFilter,
         search: searchFilter,
       };
-      if (riskFilter) {
-        params.riskLevel = riskFilter;
-      }
+      if (riskFilter) params.riskLevel = riskFilter;
+
       const res = await axios.get("/api/students", { params });
       if (res.data.success) {
         setStudents(res.data.data);
@@ -80,448 +113,617 @@ const Dashboard: React.FC = () => {
       }
     } catch (err) {
       console.error(err);
-      toast.error("Failed to load student table");
+      toast.error("Failed to fetch students list");
     } finally {
-      setLoadingStudents(false);
+      setLoading(false);
+    }
+  };
+
+  const fetchPendingStudents = async () => {
+    try {
+      // Fetch students pending mentor verification
+      const res = await axios.get("/api/students", {
+        params: { limit: 50 },
+      });
+      if (res.data.success) {
+        setPendingStudents(
+          res.data.data.filter((s: Student) => s.verificationStatus === "pending_mentor_approval")
+        );
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const fetchAssignments = async () => {
+    try {
+      const res = await axios.get("/api/students/assignments", {
+        params: { courseId: "", class: classFilter || "BCA-A" },
+      });
+      if (res.data.success) setAssignments(res.data.data);
+    } catch (err) {
+      console.error(err);
     }
   };
 
   useEffect(() => {
     fetchDashboardStats();
-  }, [courseFilter, classFilter]); // refetch stats when navbar course/class filters change
+  }, [courseFilter, classFilter]);
 
   useEffect(() => {
     fetchStudents();
-  }, [courseFilter, classFilter, searchFilter, riskFilter, page, sortBy]);
+    fetchPendingStudents();
+    fetchAssignments();
+  }, [courseFilter, classFilter, searchFilter, riskFilter, page, activeTab]);
 
-  // Handle Drag & Drop Excel upload
+  // Actions
+  const handleApproveStudent = async (id: string, approve: boolean) => {
+    try {
+      const res = await axios.post(`/api/students/${id}/verify`, { approve });
+      if (res.data.success) {
+        toast.success(approve ? "Student enrollment approved!" : "Enrollment rejected.");
+        fetchPendingStudents();
+      }
+    } catch (err) {
+      toast.error("Action failed");
+    }
+  };
+
+  // Dropzone Excel upload
   const onDrop = async (acceptedFiles: File[]) => {
     if (acceptedFiles.length === 0) return;
     const file = acceptedFiles[0];
-
     const formData = new FormData();
     formData.append("file", file);
 
     setUploading(true);
-    setUploadResult(null);
-    const toastId = toast.loading("Processing student roster...");
+    toast.loading("Parsing Excel student roster...", { id: "excel-upload" });
 
     try {
       const res = await axios.post("/api/students/upload", formData, {
         headers: { "Content-Type": "multipart/form-data" },
       });
       if (res.data.success) {
-        toast.success("Roster updated successfully!", { id: toastId });
-        setUploadResult(res.data.data);
-        fetchDashboardStats();
+        toast.success("Excel student roster successfully parsed & merged!", { id: "excel-upload" });
         fetchStudents();
       }
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || "Excel upload failed", { id: toastId });
+    } catch (err) {
+      toast.error("Roster Excel parsing failed. Validate column headers.", { id: "excel-upload" });
     } finally {
       setUploading(false);
     }
   };
 
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+  const { getRootProps, getInputProps } = useDropzone({
     onDrop,
-    accept: {
-      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [".xlsx"],
-      "application/vnd.ms-excel": [".xls"],
-    },
+    accept: { "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [".xlsx"] },
     multiple: false,
   });
 
-  // Recharts Pie Chart configuration
-  const chartData = stats
-    ? [
-        { name: "Low Risk", value: stats.riskDistribution.low, color: "#10B981" },
-        { name: "Medium Risk", value: stats.riskDistribution.medium, color: "#F59E0B" },
-        { name: "High Risk", value: stats.riskDistribution.high, color: "#F97316" },
-        { name: "Critical", value: stats.riskDistribution.critical, color: "#EF4444" },
-      ]
-    : [];
+  // Assignments Actions
+  const handleCreateAssignment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const res = await axios.post("/api/students/assignments", {
+        title: newAsgnTitle,
+        description: newAsgnDesc,
+        class: newAsgnClass,
+        deadline: newAsgnDeadline,
+        instructions: newAsgnInstructions,
+        mentorId: stats?.mentorId || "dev-mentor",
+      });
+      if (res.data.success) {
+        toast.success("Assignment created!");
+        setNewAsgnTitle("");
+        setNewAsgnDesc("");
+        setNewAsgnInstructions("");
+        fetchAssignments();
+      }
+    } catch (err) {
+      toast.error("Failed to create assignment");
+    }
+  };
+
+  const fetchSubmissions = async (asgnId: string) => {
+    setSelectedAsgnId(asgnId);
+    try {
+      const res = await axios.get(`/api/students/assignments/${asgnId}/submissions`);
+      if (res.data.success) setSubmissions(res.data.data);
+    } catch (err) {
+      toast.error("Failed to retrieve submissions");
+    }
+  };
+
+  const handleGradeSubmission = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const res = await axios.post(`/api/students/submissions/${gradingSubId}/grade`, {
+        grade: gradeScore,
+        feedback: gradeFeedback,
+      });
+      if (res.data.success) {
+        toast.success("Submission graded!");
+        setGradingSubId("");
+        setGradeScore("");
+        setGradeFeedback("");
+        fetchSubmissions(selectedAsgnId);
+      }
+    } catch (err) {
+      toast.error("Grading failed");
+    }
+  };
+
+  // AI Study Planner Actions
+  const handleGenerateStudyPlan = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!plannerStudentId) {
+      toast.error("Please select a student");
+      return;
+    }
+
+    setGeneratingPlan(true);
+    try {
+      const res = await axios.post(`/api/students/study-planner/${plannerStudentId}`, {
+        weakSubjects: plannerWeakSubjects,
+        learningSpeed: plannerSpeed,
+        upcomingExams: plannerExams,
+      });
+      if (res.data.success) {
+        setGeneratedPlan(res.data.plan);
+        toast.success("AI Personalized Study Plan generated!");
+      }
+    } catch (err) {
+      toast.error("Failed to generate planner");
+    } finally {
+      setGeneratingPlan(false);
+    }
+  };
+
+  const handleSendPlannerToStudent = async () => {
+    // Mentors can edit generated plan before saving
+    try {
+      await axios.patch(`/api/students/${plannerStudentId}`, {
+        aiImprovementPlan: generatedPlan,
+      });
+      toast.success("Study plan successfully sent to the student profile!");
+      setGeneratedPlan("");
+      setPlannerStudentId("");
+    } catch (err) {
+      toast.error("Failed to save plan");
+    }
+  };
 
   return (
-    <div className="flex-1 overflow-y-auto bg-bg-base p-6">
-      {/* Page Title */}
-      <div className="mb-6 flex items-center justify-between">
+    <div className="flex-1 overflow-y-auto bg-[#f8f9fa] p-4 md:p-6 font-sans">
+      {/* Mentor Stream Header */}
+      <div className="mb-6 rounded-2xl bg-white border border-[#dadce0] p-6 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-text-primary">Dashboard</h1>
-          <p className="text-xs text-secondary font-medium">Real-time college academic risk oversight</p>
+          <h1 className="text-2xl font-semibold tracking-tight text-[#202124]">Instructor Dashboard</h1>
+          <p className="text-xs text-[#5f6368] mt-1 font-medium">Class: {classFilter || "BCA-A"} · Active capacity limit: 50 students</p>
+        </div>
+
+        {/* Excel Import Card */}
+        <div {...getRootProps()} className="border border-dashed border-[#dadce0] rounded-xl px-4 py-3 bg-slate-50/50 hover:bg-slate-50 cursor-pointer transition-colors text-center max-w-xs w-full">
+          <input {...getInputProps()} />
+          <span className="text-xs font-semibold text-[#1a73e8]">Upload Student Excel Roster</span>
+          <p className="text-[10px] text-[#5f6368] mt-0.5">Drag and drop .xlsx file to import / merge grades</p>
         </div>
       </div>
 
-      {/* Row 1: Metrics stats */}
-      <div className="mb-6 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
-        {/* Total Students */}
-        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-xs">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-secondary uppercase">Total Students</span>
-            <span className="rounded-lg bg-indigo-50 p-2 text-primary">
-              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-              </svg>
-            </span>
-          </div>
-          {loadingStats ? (
-            <div className="mt-2 h-8 w-24 animate-pulse rounded-md bg-slate-100" />
-          ) : (
-            <p className="mt-2 text-3xl font-extrabold text-text-primary">{stats?.totalStudents}</p>
-          )}
-          <span className="mt-1 inline-flex items-center text-[10px] font-bold text-slate-400">Live Sync</span>
-        </div>
-
-        {/* High Risk */}
-        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-xs">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-secondary uppercase">At Risk Students</span>
-            <span className="rounded-lg bg-red-50 p-2 text-critical">
-              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-              </svg>
-            </span>
-          </div>
-          {loadingStats ? (
-            <div className="mt-2 h-8 w-24 animate-pulse rounded-md bg-slate-100" />
-          ) : (
-            <p className="mt-2 text-3xl font-extrabold text-critical">{stats?.atRiskStudents}</p>
-          )}
-          <span className="mt-1 inline-flex items-center text-[10px] font-bold text-critical font-semibold">Action Required</span>
-        </div>
-
-        {/* Avg Attendance */}
-        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-xs">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-secondary uppercase">Avg Attendance</span>
-            <span className="rounded-lg bg-emerald-50 p-2 text-low">
-              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            </span>
-          </div>
-          {loadingStats ? (
-            <div className="mt-2 h-8 w-24 animate-pulse rounded-md bg-slate-100" />
-          ) : (
-            <p className="mt-2 text-3xl font-extrabold text-text-primary">
-              {stats?.avgAttendance !== null ? `${stats?.avgAttendance.toFixed(1)}%` : "N/A"}
-            </p>
-          )}
-          <span className="mt-1 inline-flex items-center text-[10px] font-bold text-slate-400">Steady</span>
-        </div>
-
-        {/* Critical Alerts */}
-        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-xs">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-secondary uppercase">Critical Alerts Today</span>
-            <span className="rounded-lg bg-orange-50 p-2 text-high">
-              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-              </svg>
-            </span>
-          </div>
-          {loadingStats ? (
-            <div className="mt-2 h-8 w-24 animate-pulse rounded-md bg-slate-100" />
-          ) : (
-            <p className="mt-2 text-3xl font-extrabold text-high">{stats?.criticalAlertsCount}</p>
-          )}
-          <span className="mt-1 inline-flex items-center text-[10px] font-bold text-high font-semibold">Urgent Alerts</span>
-        </div>
-      </div>
-
-      {/* Row 2: Charts & Recent Alerts */}
-      <div className="mb-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
-        {/* Risk Distribution Donut Chart */}
-        <div className="rounded-xl border border-slate-200 bg-white p-6 lg:col-span-2 shadow-xs">
-          <h2 className="text-sm font-bold text-text-primary">Risk Distribution</h2>
-          <p className="text-[11px] font-medium text-secondary">Real-time academic vulnerability assessment</p>
-          <div className="flex h-56 flex-col items-center justify-center sm:flex-row mt-4">
-            {loadingStats ? (
-              <div className="h-32 w-32 animate-spin rounded-full border-4 border-slate-100 border-t-primary" />
-            ) : chartData.length > 0 && stats?.totalStudents > 0 ? (
-              <>
-                <div className="relative h-44 w-44">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={chartData}
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={55}
-                        outerRadius={75}
-                        paddingAngle={3}
-                        dataKey="value"
-                      >
-                        {chartData.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={entry.color} />
-                        ))}
-                      </Pie>
-                      <Tooltip />
-                    </PieChart>
-                  </ResponsiveContainer>
-                  {/* Center Text */}
-                  <div className="absolute inset-0 flex flex-col items-center justify-center">
-                    <span className="text-2xl font-black text-text-primary">{stats?.totalStudents}</span>
-                    <span className="text-[10px] font-bold text-slate-400 uppercase">Total</span>
-                  </div>
-                </div>
-
-                {/* Legend list */}
-                <div className="mt-4 flex flex-col gap-2 sm:ml-8 sm:mt-0">
-                  {chartData.map((item) => (
-                    <div key={item.name} className="flex items-center gap-2">
-                      <span className="h-3 w-3 rounded-full" style={{ backgroundColor: item.color }} />
-                      <div className="text-xs">
-                        <span className="font-bold text-text-primary">{item.name}</span>
-                        <span className="ml-2 font-semibold text-secondary">
-                          {item.value} ({((item.value / stats.totalStudents) * 100).toFixed(0)}%)
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </>
-            ) : (
-              <p className="text-xs text-slate-400">No student distribution data available.</p>
-            )}
-          </div>
-        </div>
-
-        {/* Recent Alerts List */}
-        <div className="flex flex-col rounded-xl border border-slate-200 bg-white p-6 shadow-xs">
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-sm font-bold text-text-primary">Recent Alerts</h2>
-            <button onClick={() => navigate("/notifications")} className="text-xs font-semibold text-primary hover:underline">
-              View All
-            </button>
-          </div>
-          <div className="flex flex-1 flex-col gap-3 overflow-y-auto max-h-56">
-            {loadingStats ? (
-              <div className="flex flex-col gap-3">
-                {[1, 2, 3].map((n) => (
-                  <div key={n} className="h-14 w-full animate-pulse rounded-lg bg-slate-100" />
-                ))}
-              </div>
-            ) : stats?.recentNotifications.length === 0 ? (
-              <div className="my-auto text-center text-xs text-slate-400">No recent alerts triggered</div>
-            ) : (
-              stats?.recentNotifications.map((n: any) => (
-                <div
-                  key={n._id}
-                  onClick={() => navigate(`/students/${n.studentId._id || n.studentId}`)}
-                  className="flex cursor-pointer items-start gap-2 border-l-4 border-l-primary bg-slate-50 p-2.5 rounded-r-lg hover:bg-indigo-50/20"
-                  style={{ borderLeftColor: n.priority === "urgent" ? "#EF4444" : n.priority === "high" ? "#F97316" : "#F59E0B" }}
-                >
-                  <div className="flex flex-col min-w-0">
-                    <div className="flex justify-between items-center w-full">
-                      <span className="text-xs font-bold text-text-primary truncate">{n.studentId?.name || "Student"}</span>
-                      <span className="text-[9px] text-slate-400 shrink-0 ml-2">
-                        {new Date(n.createdAt).toLocaleDateString([], { month: "short", day: "numeric" })}
-                      </span>
-                    </div>
-                    <span className="text-[10px] text-secondary truncate mt-0.5">{n.message}</span>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Row 3: Bulk Upload Section */}
-      <div className="mb-6 rounded-xl border border-slate-200 bg-white p-6 shadow-xs">
-        <h2 className="mb-3 text-sm font-bold text-text-primary">Batch Student Upload</h2>
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
-          {/* Dropzone */}
-          <div
-            {...getRootProps()}
-            className={`md:col-span-2 flex flex-col items-center justify-center rounded-xl border-2 border-dashed p-6 cursor-pointer transition-all ${
-              isDragActive ? "border-primary bg-indigo-50/10" : "border-slate-300 hover:border-primary bg-slate-50"
+      {/* Tabs Menu */}
+      <div className="mb-6 border-b border-[#dadce0] flex gap-2 overflow-x-auto pb-px">
+        {[
+          { id: "stream", label: "Students Stream" },
+          { id: "enrollments", label: `Enrollments (${pendingStudents.length})` },
+          { id: "assignments", label: "Assignments manager" },
+          { id: "study-planner", label: "AI Study Planner" },
+        ].map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id as any)}
+            className={`px-4 py-2 text-sm font-semibold border-b-2 rounded-t-lg transition-all ${
+              activeTab === tab.id
+                ? "border-[#1a73e8] text-[#1a73e8] bg-blue-50/30"
+                : "border-transparent text-[#5f6368] hover:text-[#202124] hover:border-[#dadce0]"
             }`}
           >
-            <input {...getInputProps()} />
-            <svg className="h-10 w-10 text-primary animate-bounce" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-            </svg>
-            <p className="mt-2 text-xs font-semibold text-text-primary">
-              Drag & drop files here or <span className="text-primary hover:underline">browse</span>
-            </p>
-            <span className="mt-1 text-[10px] text-slate-400">Maximum file size: 25MB (.xlsx, .xls only)</span>
-          </div>
+            {tab.label}
+          </button>
+        ))}
+      </div>
 
-          {/* Upload Status Card */}
-          <div className="rounded-xl border border-indigo-100 bg-indigo-50/10 p-4">
-            <h3 className="text-xs font-bold text-text-primary uppercase tracking-wide">Last Import Summary</h3>
-            {uploading ? (
-              <div className="flex flex-col items-center justify-center h-28">
-                <svg className="h-8 w-8 animate-spin text-primary" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                </svg>
-                <p className="mt-2 text-[10px] font-semibold text-secondary">Uploading and parsing spreadsheet...</p>
+      {/* Tab Panels */}
+      <div className="grid grid-cols-1 gap-6">
+        {/* 1. STUDENTS STREAM */}
+        {activeTab === "stream" && (
+          <div className="rounded-2xl border border-[#dadce0] bg-white p-6 shadow-sm">
+            <div className="mb-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+              <h2 className="text-lg font-semibold text-[#202124]">Enrolled Roster</h2>
+              
+              {/* Risk Level Filter dropdown */}
+              <div className="flex gap-2">
+                {["", "low", "medium", "high", "critical"].map((risk) => (
+                  <button
+                    key={risk}
+                    onClick={() => setRiskFilter(risk)}
+                    className={`px-3 py-1.5 rounded-lg border text-xs font-semibold capitalize transition-all ${
+                      riskFilter === risk
+                        ? "bg-[#1a73e8] border-[#1a73e8] text-white"
+                        : "border-[#dadce0] bg-white text-[#5f6368] hover:bg-slate-50"
+                    }`}
+                  >
+                    {risk || "All Risk Levels"}
+                  </button>
+                ))}
               </div>
-            ) : uploadResult ? (
-              <div className="mt-3 flex flex-col gap-2">
-                <div className="flex items-center justify-between text-xs font-medium">
-                  <span className="text-secondary">New Students Created:</span>
-                  <span className="rounded-md bg-emerald-100 px-2 py-0.5 font-bold text-emerald-800">{uploadResult.created}</span>
-                </div>
-                <div className="flex items-center justify-between text-xs font-medium">
-                  <span className="text-secondary">Records Updated:</span>
-                  <span className="rounded-md bg-indigo-100 px-2 py-0.5 font-bold text-primary">{uploadResult.updated}</span>
-                </div>
-                <div className="flex items-center justify-between text-xs font-medium">
-                  <span className="text-secondary">Skipped/Errors:</span>
-                  <span className={`rounded-md px-2 py-0.5 font-bold ${uploadResult.skipped > 0 ? "bg-red-100 text-red-800" : "bg-slate-100 text-slate-800"}`}>{uploadResult.skipped}</span>
-                </div>
-              </div>
+            </div>
+
+            {loading ? (
+              <p className="text-sm text-center py-10">Loading class data...</p>
+            ) : students.length === 0 ? (
+              <p className="text-sm text-center py-10 text-[#5f6368] italic">No matching student records found.</p>
             ) : (
-              <div className="flex items-center justify-center h-28 text-center text-xs text-slate-400">
-                Upload your first Excel file to populate database.
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse text-sm">
+                  <thead>
+                    <tr className="border-b border-[#dadce0] text-[#5f6368] font-medium">
+                      <th className="py-3 px-4">Roll No</th>
+                      <th className="py-3 px-4">Name</th>
+                      <th className="py-3 px-4">Class</th>
+                      <th className="py-3 px-4">Attendance</th>
+                      <th className="py-3 px-4">Risk Status</th>
+                      <th className="py-3 px-4 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {students.map((s) => (
+                      <tr key={s._id} className="border-b border-slate-50 hover:bg-slate-50/50">
+                        <td className="py-3 px-4 font-mono font-semibold">#{s.rollNo}</td>
+                        <td className="py-3 px-4 font-semibold text-[#202124]">{s.name}</td>
+                        <td className="py-3 px-4 text-[#5f6368]">{s.class}</td>
+                        <td className="py-3 px-4 text-[#5f6368]">{s.attendance != null ? `${s.attendance}%` : "N/A"}</td>
+                        <td className="py-3 px-4">
+                          <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold uppercase ${
+                            s.riskLevel === "low" ? "bg-green-50 text-green-700" :
+                            s.riskLevel === "medium" ? "bg-amber-50 text-amber-700" :
+                            s.riskLevel === "high" ? "bg-orange-50 text-orange-700" : "bg-red-50 text-red-700"
+                          }`}>
+                            {s.riskLevel}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-right">
+                          <button
+                            onClick={() => navigate(`/students/${s._id}`)}
+                            className="text-[#1a73e8] hover:underline font-semibold text-xs"
+                          >
+                            Manage Profile
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* Pagination Controls */}
+            <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-4 text-xs font-semibold text-[#5f6368]">
+              <span>Page {page} of {totalPages}</span>
+              <div className="flex gap-2">
+                <button
+                  disabled={page <= 1}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  className="rounded-lg border px-3 py-1.5 hover:bg-slate-50 disabled:opacity-50"
+                >
+                  Previous
+                </button>
+                <button
+                  disabled={page >= totalPages}
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  className="rounded-lg border px-3 py-1.5 hover:bg-slate-50 disabled:opacity-50"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 2. ENROLLMENT APPROVALS */}
+        {activeTab === "enrollments" && (
+          <div className="rounded-2xl border border-[#dadce0] bg-white p-6 shadow-sm">
+            <h2 className="text-lg font-semibold text-[#202124] mb-4">Pending Student Registrations</h2>
+            {pendingStudents.length === 0 ? (
+              <p className="text-sm text-[#5f6368] py-8 text-center italic">No pending enrollment requests.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse text-sm">
+                  <thead>
+                    <tr className="border-b border-[#dadce0] text-[#5f6368] font-medium">
+                      <th className="py-3 px-4">Roll No</th>
+                      <th className="py-3 px-4">Name</th>
+                      <th className="py-3 px-4">Email</th>
+                      <th className="py-3 px-4 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pendingStudents.map((s) => (
+                      <tr key={s._id} className="border-b border-slate-50 hover:bg-slate-50/50">
+                        <td className="py-3.5 px-4 font-mono font-semibold">#{s.rollNo}</td>
+                        <td className="py-3.5 px-4 font-semibold text-[#202124]">{s.name}</td>
+                        <td className="py-3.5 px-4 text-[#5f6368]">{s.email}</td>
+                        <td className="py-3.5 px-4 text-right flex justify-end gap-2">
+                          <button
+                            onClick={() => handleApproveStudent(s._id, true)}
+                            className="bg-[#1a73e8] text-white px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-[#1557b0] transition-colors"
+                          >
+                            Approve
+                          </button>
+                          <button
+                            onClick={() => handleApproveStudent(s._id, false)}
+                            className="bg-white border border-[#dadce0] text-[#d93025] px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-red-50 transition-colors"
+                          >
+                            Reject
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
           </div>
-        </div>
-      </div>
+        )}
 
-      {/* Row 4: Student Performance Overview Table */}
-      <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-xs">
-        <div className="mb-4 flex flex-col justify-between sm:flex-row sm:items-center">
-          <h2 className="text-sm font-bold text-text-primary">Student Performance Overview</h2>
-          <div className="mt-2 flex items-center gap-2 sm:mt-0">
-            {/* Risk filter chips */}
-            {["", "low", "medium", "high", "critical"].map((level) => (
-              <button
-                key={level}
-                onClick={() => {
-                  setRiskFilter(level);
-                  setPage(1);
-                }}
-                className={`rounded-lg px-3 py-1 text-xs font-semibold uppercase tracking-wider transition-all border ${
-                  riskFilter === level
-                    ? "bg-primary border-primary text-white shadow-xs"
-                    : "bg-white border-slate-200 text-secondary hover:bg-slate-50"
-                }`}
-              >
-                {level === "" ? "All" : level}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Student Table */}
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="border-b border-slate-200 text-xs font-bold text-secondary uppercase tracking-wider bg-slate-50/50">
-                <th className="py-3 px-4">Roll No</th>
-                <th className="py-3 px-4">Name</th>
-                <th className="py-3 px-4">Class</th>
-                <th className="py-3 px-4">Attendance</th>
-                <th className="py-3 px-4">Risk Level</th>
-                <th className="py-3 px-4 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loadingStudents ? (
-                Array.from({ length: 5 }).map((_, idx) => (
-                  <tr key={idx} className="border-b border-slate-100">
-                    <td colSpan={6} className="py-4 px-4">
-                      <div className="h-5 w-full animate-pulse rounded-md bg-slate-50" />
-                    </td>
-                  </tr>
-                ))
-              ) : students.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="py-8 text-center text-xs text-slate-400">
-                    No student records found. Add students by uploading an Excel sheet.
-                  </td>
-                </tr>
-              ) : (
-                students.map((student) => (
-                  <tr
-                    key={student._id}
-                    onClick={() => navigate(`/students/${student._id}`)}
-                    className="border-b border-slate-100 hover:bg-indigo-50/10 cursor-pointer transition-colors"
+        {/* 3. ASSIGNMENTS MANAGER */}
+        {activeTab === "assignments" && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Create Assignment Form */}
+            <div className="rounded-2xl border border-[#dadce0] bg-white p-6 shadow-sm">
+              <h2 className="text-lg font-semibold text-[#202124] mb-4">Post Assignment Task</h2>
+              <form onSubmit={handleCreateAssignment} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-medium text-[#5f6368] mb-1">Target Class</label>
+                  <select
+                    value={newAsgnClass}
+                    onChange={(e) => setNewAsgnClass(e.target.value)}
+                    className="w-full rounded-lg border border-[#dadce0] px-3.5 py-2 text-sm focus:border-primary focus:outline-none bg-white font-medium"
                   >
-                    <td className="py-3 px-4 text-xs font-bold text-text-primary">#{student.rollNo}</td>
-                    <td className="py-3 px-4 text-xs font-semibold text-text-primary">{student.name}</td>
-                    <td className="py-3 px-4 text-xs font-medium text-secondary">
-                      {student.course} · {student.class}
-                    </td>
-                    <td className="py-3 px-4 text-xs">
-                      {student.attendance !== null ? (
-                        <div className="flex items-center gap-2">
-                          <div className="w-24 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                            <div
-                              className={`h-full rounded-full ${
-                                student.attendance < 50 ? "bg-critical" : student.attendance < 75 ? "bg-high" : "bg-low"
-                              }`}
-                              style={{ width: `${student.attendance}%` }}
-                            />
-                          </div>
-                          <span className="font-bold text-text-primary">{student.attendance}%</span>
-                        </div>
-                      ) : (
-                        <span className="text-slate-400">N/A</span>
-                      )}
-                    </td>
-                    <td className="py-3 px-4">
-                      <span
-                        className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${
-                          student.riskLevel === "low"
-                            ? "bg-emerald-50 text-low"
-                            : student.riskLevel === "medium"
-                            ? "bg-amber-50 text-medium"
-                            : student.riskLevel === "high"
-                            ? "bg-orange-50 text-high"
-                            : "bg-red-50 text-critical animate-pulse"
+                    <option value="BCA-A">BCA-A</option>
+                    <option value="BCA-B">BCA-B</option>
+                    <option value="BBA-A">BBA-A</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-[#5f6368] mb-1">Assignment Title</label>
+                  <input
+                    type="text"
+                    required
+                    value={newAsgnTitle}
+                    onChange={(e) => setNewAsgnTitle(e.target.value)}
+                    placeholder="e.g. Stack Operations Implementation in C"
+                    className="w-full rounded-lg border border-[#dadce0] px-3.5 py-2 text-sm focus:border-primary focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-[#5f6368] mb-1">Detailed Description</label>
+                  <textarea
+                    required
+                    rows={3}
+                    value={newAsgnDesc}
+                    onChange={(e) => setNewAsgnDesc(e.target.value)}
+                    placeholder="Provide description of programming tasks or assignment requirements..."
+                    className="w-full rounded-lg border border-[#dadce0] px-3.5 py-2 text-sm focus:border-primary focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-[#5f6368] mb-1">Instructions / Guidelines</label>
+                  <input
+                    type="text"
+                    value={newAsgnInstructions}
+                    onChange={(e) => setNewAsgnInstructions(e.target.value)}
+                    placeholder="e.g. Upload PDF. Late submissions carry 10% penalty."
+                    className="w-full rounded-lg border border-[#dadce0] px-3.5 py-2 text-sm focus:border-primary focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-[#5f6368] mb-1">Submission Deadline</label>
+                  <input
+                    type="date"
+                    required
+                    value={newAsgnDeadline}
+                    onChange={(e) => setNewAsgnDeadline(e.target.value)}
+                    className="w-full rounded-lg border border-[#dadce0] px-3.5 py-2 text-sm focus:border-primary focus:outline-none"
+                  />
+                </div>
+                <button type="submit" className="w-full bg-[#1a73e8] text-white py-2.5 rounded-lg text-sm font-semibold hover:bg-[#1557b0] transition-colors">
+                  Publish Assignment Link
+                </button>
+              </form>
+            </div>
+
+            {/* List & Grade Submissions */}
+            <div className="rounded-2xl border border-[#dadce0] bg-white p-6 shadow-sm flex flex-col gap-6">
+              <div>
+                <h2 className="text-lg font-semibold text-[#202124] mb-3">Evaluate Submissions</h2>
+                {assignments.length === 0 ? (
+                  <p className="text-xs text-[#5f6368] italic">No assignments active.</p>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {assignments.map((a) => (
+                      <button
+                        key={a._id}
+                        onClick={() => fetchSubmissions(a._id!)}
+                        className={`px-3 py-1.5 border rounded-lg text-xs font-semibold transition-all ${
+                          selectedAsgnId === a._id
+                            ? "bg-indigo-50 border-[#1a73e8] text-[#1a73e8]"
+                            : "bg-white border-[#dadce0] text-[#5f6368]"
                         }`}
                       >
-                        {student.riskLevel}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4 text-right">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          navigate(`/students/${student._id}`);
-                        }}
-                        className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-primary transition-all"
-                      >
-                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                        </svg>
+                        {a.title}
                       </button>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+                    ))}
+                  </div>
+                )}
+              </div>
 
-        {/* Pagination */}
-        {totalPages > 1 && (
-          <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-4 text-xs font-semibold text-secondary">
-            <span>Showing page {page} of {totalPages}</span>
-            <div className="flex gap-2">
-              <button
-                disabled={page === 1}
-                onClick={() => setPage(page - 1)}
-                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 hover:bg-slate-50 disabled:opacity-50"
-              >
-                Previous
-              </button>
-              <button
-                disabled={page === totalPages}
-                onClick={() => setPage(page + 1)}
-                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 hover:bg-slate-50 disabled:opacity-50"
-              >
-                Next
-              </button>
+              {selectedAsgnId && (
+                <div className="flex-1">
+                  <h3 className="text-sm font-bold text-[#202124] mb-2">Student Submissions</h3>
+                  {submissions.length === 0 ? (
+                    <p className="text-xs text-[#5f6368] py-4 italic">No uploads received yet.</p>
+                  ) : (
+                    <div className="space-y-4">
+                      {submissions.map((sub) => (
+                        <div key={sub._id} className="p-3 border border-slate-100 rounded-xl bg-slate-50/50 flex flex-col gap-2">
+                          <div className="flex justify-between items-center text-xs">
+                            <span className="font-semibold text-primary">Student Submission Record</span>
+                            <a
+                              href={sub.submittedPdfUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-blue-600 hover:underline font-bold"
+                            >
+                              Download PDF File
+                            </a>
+                          </div>
+
+                          {sub.grade ? (
+                            <div className="text-xs text-[#5f6368]">
+                              <span className="font-bold text-green-700 bg-green-50 px-2 py-0.5 rounded-full">Grade: {sub.grade}</span>
+                              <p className="mt-1">Feedback: {sub.feedback}</p>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => setGradingSubId(sub._id)}
+                              className="text-xs font-bold text-primary self-start hover:underline"
+                            >
+                              Grade Task
+                            </button>
+                          )}
+
+                          {gradingSubId === sub._id && (
+                            <form onSubmit={handleGradeSubmission} className="space-y-2 mt-2 border-t pt-2">
+                              <div className="grid grid-cols-3 gap-2">
+                                <input
+                                  type="text"
+                                  placeholder="Grade (A, B+)"
+                                  required
+                                  value={gradeScore}
+                                  onChange={(e) => setGradeScore(e.target.value)}
+                                  className="col-span-1 border rounded-lg px-2.5 py-1 text-xs focus:outline-none"
+                                />
+                                <input
+                                  type="text"
+                                  placeholder="Feedback comments"
+                                  required
+                                  value={gradeFeedback}
+                                  onChange={(e) => setGradeFeedback(e.target.value)}
+                                  className="col-span-2 border rounded-lg px-2.5 py-1 text-xs focus:outline-none"
+                                />
+                              </div>
+                              <button type="submit" className="bg-[#1a73e8] text-white px-3 py-1 rounded-lg text-[10px] font-bold hover:bg-[#1557b0]">
+                                Submit Score
+                              </button>
+                            </form>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
+          </div>
+        )}
+
+        {/* 4. AI STUDY PLANNER */}
+        {activeTab === "study-planner" && (
+          <div className="rounded-2xl border border-[#dadce0] bg-white p-6 shadow-sm">
+            <h2 className="text-lg font-semibold text-[#202124] mb-2">AI Personalized Study Planner</h2>
+            <p className="text-xs text-[#5f6368] mb-6">Build week-by-week study guidelines, targets, and practice tasks dynamically customized for lagging students.</p>
+
+            <form onSubmit={handleGenerateStudyPlan} className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+              <div>
+                <label className="block text-xs font-medium text-[#5f6368] mb-1">Select Student</label>
+                <select
+                  required
+                  value={plannerStudentId}
+                  onChange={(e) => setPlannerStudentId(e.target.value)}
+                  className="w-full rounded-lg border border-[#dadce0] px-3.5 py-2 text-sm focus:border-primary focus:outline-none bg-white font-medium"
+                >
+                  <option value="">Choose Enrolled Student...</option>
+                  {students.map((s) => (
+                    <option key={s._id} value={s._id}>#{s.rollNo} {s.name} ({s.riskLevel} risk)</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-[#5f6368] mb-1">Weak Subjects</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Mathematics-I, C Programming"
+                  value={plannerWeakSubjects}
+                  onChange={(e) => setPlannerWeakSubjects(e.target.value)}
+                  className="w-full rounded-lg border border-[#dadce0] px-3.5 py-2 text-sm focus:border-primary focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-[#5f6368] mb-1">Learning Speed</label>
+                <select
+                  value={plannerSpeed}
+                  onChange={(e) => setPlannerSpeed(e.target.value)}
+                  className="w-full rounded-lg border border-[#dadce0] px-3.5 py-2 text-sm focus:border-primary focus:outline-none bg-white font-medium"
+                >
+                  <option value="Slow">Slow & Detailed</option>
+                  <option value="Normal">Normal pace</option>
+                  <option value="Fast">Fast & Intensive</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-[#5f6368] mb-1">Upcoming Exams</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. House Exams in 2 weeks"
+                  value={plannerExams}
+                  onChange={(e) => setPlannerExams(e.target.value)}
+                  className="w-full rounded-lg border border-[#dadce0] px-3.5 py-2 text-sm focus:border-primary focus:outline-none"
+                />
+              </div>
+              <div className="flex items-end">
+                <button
+                  type="submit"
+                  disabled={generatingPlan}
+                  className="w-full bg-[#1a73e8] text-white py-2.5 rounded-lg text-sm font-semibold hover:bg-[#1557b0] disabled:bg-slate-300 transition-colors"
+                >
+                  {generatingPlan ? "Constructing Plan..." : "Generate AI Planner"}
+                </button>
+              </div>
+            </form>
+
+            {generatedPlan && (
+              <div className="space-y-4">
+                <div className="border border-[#dadce0] rounded-2xl overflow-hidden shadow-xs bg-slate-50/20">
+                  <div className="px-4 py-2 border-b border-[#dadce0] bg-slate-50 flex justify-between items-center">
+                    <span className="text-xs font-bold text-[#202124]">Review and Edit Study Plan (Markdown Box)</span>
+                    <button
+                      onClick={handleSendPlannerToStudent}
+                      className="bg-green-700 text-white px-3.5 py-1.5 rounded-lg text-xs font-semibold hover:bg-green-800 transition-colors"
+                    >
+                      Deliver Plan to Student Profile
+                    </button>
+                  </div>
+                  <textarea
+                    rows={12}
+                    value={generatedPlan}
+                    onChange={(e) => setGeneratedPlan(e.target.value)}
+                    className="w-full p-4 font-mono text-xs text-slate-800 border-none focus:outline-none focus:ring-0 bg-transparent resize-y"
+                  />
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>

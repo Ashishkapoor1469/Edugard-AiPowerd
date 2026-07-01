@@ -5,6 +5,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
 using Microsoft.IdentityModel.Tokens;
@@ -20,21 +21,27 @@ namespace EduGuard.Controllers
     public class AuthController : ControllerBase
     {
         private readonly MongoService _mongoService;
+        private readonly EmailQueueService _emailQueueService;
         private readonly string _jwtSecret;
 
-        public AuthController(MongoService mongoService, IConfiguration configuration)
+        public AuthController(MongoService mongoService, IConfiguration configuration, EmailQueueService emailQueueService)
         {
             _mongoService = mongoService;
+            _emailQueueService = emailQueueService;
             _jwtSecret = configuration.GetValue<string>("JWT_SECRET") ?? "eduguard_jwt_secret_dev_2026";
         }
 
-        private string GenerateJwtToken(string userId)
+        private string GenerateJwtToken(string userId, string role = "mentor")
         {
             var tokenHandler = new JwtSecurityTokenHandler();
             var key = SHA256.HashData(Encoding.UTF8.GetBytes(_jwtSecret));
             var tokenDescriptor = new SecurityTokenDescriptor
             {
-                Subject = new ClaimsIdentity(new[] { new Claim("id", userId) }),
+                Subject = new ClaimsIdentity(new[] 
+                { 
+                    new Claim("id", userId),
+                    new Claim(ClaimTypes.Role, role)
+                }),
                 Expires = DateTime.UtcNow.AddDays(30),
                 SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(key), SecurityAlgorithms.HmacSha256Signature)
             };
@@ -42,12 +49,34 @@ namespace EduGuard.Controllers
             return tokenHandler.WriteToken(token);
         }
 
+        private void SetTokenCookies(string accessToken, string refreshToken)
+        {
+            var cookieOptions = new CookieOptions
+            {
+                HttpOnly = true,
+                Secure = true, // Force secure in modern environments
+                SameSite = SameSiteMode.None, // Allow cross-origin dev testing
+                Expires = DateTime.UtcNow.AddDays(30)
+            };
+            Response.Cookies.Append("access_token", accessToken, cookieOptions);
+            Response.Cookies.Append("refresh_token", refreshToken, cookieOptions);
+        }
+
+        private string GenerateRefreshToken()
+        {
+            var randomNumber = new byte[32];
+            using var rng = RandomNumberGenerator.Create();
+            rng.GetBytes(randomNumber);
+            return Convert.ToBase64String(randomNumber);
+        }
+
+        // --- MENTOR REGISTER (Pending Verification) ---
         [HttpPost("register")]
         public async Task<IActionResult> Register([FromBody] Mentor model)
         {
             if (model == null || string.IsNullOrEmpty(model.Name) || string.IsNullOrEmpty(model.Email) || string.IsNullOrEmpty(model.Password))
             {
-                return BadRequest(new { success = false, message = "Please provide name, email and password" });
+                return BadRequest(new { success = false, message = "Please provide name, email, and password" });
             }
 
             model.Email = model.Email.Trim().ToLower();
@@ -59,9 +88,10 @@ namespace EduGuard.Controllers
                 return BadRequest(new { success = false, message = "Email is already registered" });
             }
 
-            // Hash password
+            // Hash password and set initial pending status
             model.Password = BCrypt.Net.BCrypt.HashPassword(model.Password);
-            model.Role = string.IsNullOrEmpty(model.Role) ? "mentor" : model.Role;
+            model.Role = "mentor";
+            model.Status = "pending_verification"; // Mandatory verification required
             model.AssignedClasses ??= new();
             model.IsOnline = false;
             model.CreatedAt = DateTime.UtcNow;
@@ -69,23 +99,114 @@ namespace EduGuard.Controllers
 
             await _mongoService.Mentors.InsertOneAsync(model);
 
-            var token = GenerateJwtToken(model.Id!);
+            return StatusCode(201, new
+            {
+                success = true,
+                message = "Registration successful. Your account is pending administrator approval."
+            });
+        }
+
+        // --- STUDENT SIGNUP & VERIFICATION ---
+        [HttpPost("student/signup")]
+        public async Task<IActionResult> StudentSignup([FromBody] StudentSignupRequest model)
+        {
+            if (model == null || string.IsNullOrEmpty(model.Name) || string.IsNullOrEmpty(model.Email) || 
+                string.IsNullOrEmpty(model.Password) || string.IsNullOrEmpty(model.RollNo) || 
+                string.IsNullOrEmpty(model.CollegeId) || string.IsNullOrEmpty(model.CourseId) || 
+                string.IsNullOrEmpty(model.MentorId))
+            {
+                return BadRequest(new { success = false, message = "All fields are required" });
+            }
+
+            model.Email = model.Email.Trim().ToLower();
+
+            // Verify student doesn't exist already
+            var existing = await _mongoService.Students.Find(s => s.Email == model.Email || (s.CollegeId == model.CollegeId && s.RollNo == model.RollNo)).FirstOrDefaultAsync();
+            if (existing != null)
+            {
+                return BadRequest(new { success = false, message = "Email or Roll Number already registered in this college" });
+            }
+
+            // Check Mentor Capacity
+            var mentor = await _mongoService.Mentors.Find(m => m.Id == model.MentorId).FirstOrDefaultAsync();
+            if (mentor == null)
+            {
+                return NotFound(new { success = false, message = "Selected mentor not found" });
+            }
+
+            var currentStudentsCount = await _mongoService.Students.CountDocumentsAsync(s => s.MentorId == model.MentorId);
+            if (currentStudentsCount >= mentor.MaxStudents)
+            {
+                return BadRequest(new { success = false, message = "The selected mentor has reached maximum student capacity. Please choose another mentor." });
+            }
+
+            // Generate 6-digit verification code OTP
+            var otp = new Random().Next(100000, 999999).ToString();
+            var student = new Student
+            {
+                Name = model.Name,
+                Email = model.Email,
+                RollNo = model.RollNo,
+                Password = BCrypt.Net.BCrypt.HashPassword(model.Password),
+                CollegeId = model.CollegeId,
+                CourseId = model.CourseId,
+                Class = model.Class ?? "BCA-A",
+                MentorId = model.MentorId,
+                IsVerified = false,
+                VerificationStatus = "pending_mentor_approval",
+                Otp = otp,
+                OtpExpiry = DateTime.UtcNow.AddMinutes(15)
+            };
+
+            await _mongoService.Students.InsertOneAsync(student);
+
+            // Queue verification OTP email
+            _emailQueueService.QueueEmail(student.Email, $"Your verification code is: {otp}");
 
             return StatusCode(201, new
             {
                 success = true,
-                token,
-                data = new
-                {
-                    id = model.Id,
-                    name = model.Name,
-                    email = model.Email,
-                    role = model.Role,
-                    assignedClasses = model.AssignedClasses
-                }
+                message = "Verification code sent to your email. Please verify to continue."
             });
         }
 
+        [HttpPost("student/verify-otp")]
+        public async Task<IActionResult> VerifyOtp([FromBody] VerifyOtpRequest model)
+        {
+            if (model == null || string.IsNullOrEmpty(model.Email) || string.IsNullOrEmpty(model.Otp))
+            {
+                return BadRequest(new { success = false, message = "Email and OTP are required" });
+            }
+
+            model.Email = model.Email.Trim().ToLower();
+
+            var student = await _mongoService.Students.Find(s => s.Email == model.Email).FirstOrDefaultAsync();
+            if (student == null)
+            {
+                return NotFound(new { success = false, message = "Student not found" });
+            }
+
+            if (student.Otp != model.Otp || student.OtpExpiry < DateTime.UtcNow)
+            {
+                return BadRequest(new { success = false, message = "Invalid or expired OTP code" });
+            }
+
+            // Clear OTP and set Verified to true
+            student.IsVerified = true;
+            student.Otp = null;
+            student.OtpExpiry = null;
+            student.UpdatedAt = DateTime.UtcNow;
+
+            await _mongoService.Students.ReplaceOneAsync(s => s.Id == student.Id, student);
+
+            return Ok(new
+            {
+                success = true,
+                message = "Email verified successfully! Your account is now pending assigned mentor verification."
+            });
+        }
+
+        // --- LOGIN (SUPPORTING SECURE COOKIES) ---
         [HttpPost("login")]
         public async Task<IActionResult> Login([FromBody] LoginRequest model)
         {
@@ -96,11 +217,50 @@ namespace EduGuard.Controllers
 
             model.Email = model.Email.Trim().ToLower();
 
-            // 1. Try to login as Mentor
+            // 1. Try resolving as Admin
+            var admin = await _mongoService.Admins.Find(a => a.Email == model.Email).FirstOrDefaultAsync();
+            if (admin != null && BCrypt.Net.BCrypt.Verify(model.Password, admin.Password))
+            {
+                var token = GenerateJwtToken(admin.Id!, "admin");
+                var rToken = GenerateRefreshToken();
+                SetTokenCookies(token, rToken);
+
+                return Ok(new
+                {
+                    success = true,
+                    token,
+                    data = new
+                    {
+                        id = admin.Id,
+                        name = admin.Name,
+                        email = admin.Email,
+                        role = "admin",
+                        collegeId = admin.CollegeId
+                    }
+                });
+            }
+
+            // 2. Try resolving as Mentor
             var mentor = await _mongoService.Mentors.Find(m => m.Email == model.Email).FirstOrDefaultAsync();
             if (mentor != null && BCrypt.Net.BCrypt.Verify(model.Password, mentor.Password))
             {
-                var token = GenerateJwtToken(mentor.Id!);
+                if (mentor.Status == "pending_verification")
+                {
+                    return Unauthorized(new { success = false, message = "Your mentor account is pending administrator verification. Access denied." });
+                }
+                if (mentor.Status == "rejected" || mentor.Status == "disabled")
+                {
+                    return Unauthorized(new { success = false, message = "Your account is inactive. Please consult your administrator." });
+                }
+
+                var token = GenerateJwtToken(mentor.Id!, "mentor");
+                var rToken = GenerateRefreshToken();
+                SetTokenCookies(token, rToken);
+
+                mentor.RefreshToken = rToken;
+                mentor.RefreshTokenExpiry = DateTime.UtcNow.AddDays(30);
+                await _mongoService.Mentors.ReplaceOneAsync(m => m.Id == mentor.Id, mentor);
+
                 return Ok(new
                 {
                     success = true,
@@ -110,80 +270,111 @@ namespace EduGuard.Controllers
                         id = mentor.Id,
                         name = mentor.Name,
                         email = mentor.Email,
-                        role = mentor.Role,
+                        role = "mentor",
+                        collegeId = mentor.CollegeId,
                         assignedClasses = mentor.AssignedClasses
                     }
                 });
             }
 
-            // 2. Try to login as Student (strictly by email)
+            // 3. Try resolving as Student
             var student = await _mongoService.Students.Find(s => s.Email == model.Email).FirstOrDefaultAsync();
-            if (student != null)
+            if (student != null && !string.IsNullOrEmpty(student.Password) && BCrypt.Net.BCrypt.Verify(model.Password, student.Password))
             {
                 if (!student.IsVerified)
                 {
-                    return Unauthorized(new { success = false, message = "Account is not verified. Please check your email to activate." });
+                    return Unauthorized(new { success = false, message = "Email verification code is pending. Please verify your email." });
+                }
+                if (student.VerificationStatus == "pending_mentor_approval")
+                {
+                    return Unauthorized(new { success = false, message = "Your enrollment is pending verification from your assigned mentor." });
+                }
+                if (student.VerificationStatus == "rejected")
+                {
+                    return Unauthorized(new { success = false, message = "Your enrollment was rejected by your assigned mentor." });
                 }
 
-                if (!string.IsNullOrEmpty(student.Password) && BCrypt.Net.BCrypt.Verify(model.Password, student.Password))
+                var token = GenerateJwtToken(student.Id!, "student");
+                var rToken = GenerateRefreshToken();
+                SetTokenCookies(token, rToken);
+
+                student.RefreshToken = rToken;
+                student.RefreshTokenExpiry = DateTime.UtcNow.AddDays(30);
+                await _mongoService.Students.ReplaceOneAsync(s => s.Id == student.Id, student);
+
+                return Ok(new
                 {
-                    var token = GenerateJwtToken(student.Id!);
-                    return Ok(new
+                    success = true,
+                    token,
+                    data = new
                     {
-                        success = true,
-                        token,
-                        data = new
-                        {
-                            id = student.Id,
-                            name = student.Name,
-                            email = student.Email,
-                            role = "student",
-                            rollNo = student.RollNo,
-                            course = student.Course,
-                            @class = student.Class,
-                            mentorId = student.MentorId
-                        }
-                    });
-                }
+                        id = student.Id,
+                        name = student.Name,
+                        email = student.Email,
+                        role = "student",
+                        rollNo = student.RollNo,
+                        course = student.Course,
+                        collegeId = student.CollegeId,
+                        mentorId = student.MentorId
+                    }
+                });
             }
 
             return Unauthorized(new { success = false, message = "Invalid email or password" });
         }
 
-        [HttpPost("verify-set-password")]
-        public async Task<IActionResult> VerifySetPassword([FromBody] VerifyPasswordRequest model)
+        // --- SESSION REFRESH TOKEN ---
+        [HttpPost("refresh-token")]
+        public async Task<IActionResult> RefreshToken()
         {
-            if (model == null || string.IsNullOrEmpty(model.Email) || string.IsNullOrEmpty(model.Token) || string.IsNullOrEmpty(model.Password))
+            if (!Request.Cookies.TryGetValue("refresh_token", out var rToken) || string.IsNullOrEmpty(rToken))
             {
-                return BadRequest(new { success = false, message = "Please provide email, token, and password" });
+                return BadRequest(new { success = false, message = "Missing refresh token cookie" });
             }
 
-            model.Email = model.Email.Trim().ToLower();
-
-            var student = await _mongoService.Students
-                .Find(s => s.Email == model.Email && s.VerificationToken == model.Token)
-                .FirstOrDefaultAsync();
-
-            if (student == null)
+            // 1. Resolve Mentor
+            var mentor = await _mongoService.Mentors.Find(m => m.RefreshToken == rToken && m.RefreshTokenExpiry > DateTime.UtcNow).FirstOrDefaultAsync();
+            if (mentor != null)
             {
-                return BadRequest(new { success = false, message = "Invalid email or verification token" });
+                var newToken = GenerateJwtToken(mentor.Id!, "mentor");
+                var newRToken = GenerateRefreshToken();
+                SetTokenCookies(newToken, newRToken);
+
+                mentor.RefreshToken = newRToken;
+                mentor.RefreshTokenExpiry = DateTime.UtcNow.AddDays(30);
+                await _mongoService.Mentors.ReplaceOneAsync(m => m.Id == mentor.Id, mentor);
+
+                return Ok(new { success = true, token = newToken });
             }
 
-            // Set password, verify, and clear token
-            student.Password = BCrypt.Net.BCrypt.HashPassword(model.Password);
-            student.IsVerified = true;
-            student.VerificationToken = null;
-            student.UpdatedAt = DateTime.UtcNow;
-
-            await _mongoService.Students.ReplaceOneAsync(s => s.Id == student.Id, student);
-
-            return Ok(new
+            // 2. Resolve Student
+            var student = await _mongoService.Students.Find(s => s.RefreshToken == rToken && s.RefreshTokenExpiry > DateTime.UtcNow).FirstOrDefaultAsync();
+            if (student != null)
             {
-                success = true,
-                message = "Account verified and password set successfully. You can now log in."
-            });
+                var newToken = GenerateJwtToken(student.Id!, "student");
+                var newRToken = GenerateRefreshToken();
+                SetTokenCookies(newToken, newRToken);
+
+                student.RefreshToken = newRToken;
+                student.RefreshTokenExpiry = DateTime.UtcNow.AddDays(30);
+                await _mongoService.Students.ReplaceOneAsync(s => s.Id == student.Id, student);
+
+                return Ok(new { success = true, token = newToken });
+            }
+
+            return Unauthorized(new { success = false, message = "Session expired. Please log in again." });
         }
 
+        // --- LOGOUT (CLEAR COOKIES) ---
+        [HttpPost("logout")]
+        public async Task<IActionResult> Logout()
+        {
+            Response.Cookies.Delete("access_token");
+            Response.Cookies.Delete("refresh_token");
+            return Ok(new { success = true, message = "Signed out successfully" });
+        }
+
+        // --- ME ENDPOINT (REVIEWS SECURE COOKIE PRECEDENCE) ---
         [Authorize]
         [HttpGet("me")]
         public async Task<IActionResult> GetMe()
@@ -191,10 +382,28 @@ namespace EduGuard.Controllers
             var userId = User.FindFirst("id")?.Value;
             if (string.IsNullOrEmpty(userId))
             {
-                return Unauthorized(new { success = false, message = "You are not logged in" });
+                return Unauthorized(new { success = false, message = "Not authenticated" });
             }
 
-            // 1. Try resolving as Mentor
+            // 1. Resolve Admin
+            var admin = await _mongoService.Admins.Find(a => a.Id == userId).FirstOrDefaultAsync();
+            if (admin != null)
+            {
+                return Ok(new
+                {
+                    success = true,
+                    data = new
+                    {
+                        id = admin.Id,
+                        name = admin.Name,
+                        email = admin.Email,
+                        role = "admin",
+                        collegeId = admin.CollegeId
+                    }
+                });
+            }
+
+            // 2. Resolve Mentor
             var mentor = await _mongoService.Mentors.Find(m => m.Id == userId).FirstOrDefaultAsync();
             if (mentor != null)
             {
@@ -206,13 +415,14 @@ namespace EduGuard.Controllers
                         id = mentor.Id,
                         name = mentor.Name,
                         email = mentor.Email,
-                        role = mentor.Role,
+                        role = "mentor",
+                        collegeId = mentor.CollegeId,
                         assignedClasses = mentor.AssignedClasses
                     }
                 });
             }
 
-            // 2. Try resolving as Student
+            // 3. Resolve Student
             var student = await _mongoService.Students.Find(s => s.Id == userId).FirstOrDefaultAsync();
             if (student != null)
             {
@@ -227,13 +437,28 @@ namespace EduGuard.Controllers
                         role = "student",
                         rollNo = student.RollNo,
                         course = student.Course,
-                        @class = student.Class,
+                        collegeId = student.CollegeId,
                         mentorId = student.MentorId
                     }
                 });
             }
 
             return Unauthorized(new { success = false, message = "User not found" });
+        }
+
+        // --- TEMP DEVELOPER SEEDING ADAPTERS ---
+        [AllowAnonymous]
+        [HttpPost("seed/admin")]
+        public async Task<IActionResult> SeedAdmin([FromBody] Admin model)
+        {
+            if (model == null || string.IsNullOrEmpty(model.Email) || string.IsNullOrEmpty(model.Password))
+            {
+                return BadRequest("Invalid seed data");
+            }
+            model.Password = BCrypt.Net.BCrypt.HashPassword(model.Password);
+            model.Role = "admin";
+            await _mongoService.Admins.InsertOneAsync(model);
+            return Ok("Admin user seeded successfully");
         }
     }
 
@@ -243,10 +468,21 @@ namespace EduGuard.Controllers
         public string Password { get; set; } = string.Empty;
     }
 
-    public class VerifyPasswordRequest
+    public class StudentSignupRequest
+    {
+        public string Name { get; set; } = string.Empty;
+        public string Email { get; set; } = string.Empty;
+        public string RollNo { get; set; } = string.Empty;
+        public string Password { get; set; } = string.Empty;
+        public string CollegeId { get; set; } = string.Empty;
+        public string CourseId { get; set; } = string.Empty;
+        public string? Class { get; set; }
+        public string MentorId { get; set; } = string.Empty;
+    }
+
+    public class VerifyOtpRequest
     {
         public string Email { get; set; } = string.Empty;
-        public string Token { get; set; } = string.Empty;
-        public string Password { get; set; } = string.Empty;
+        public string Otp { get; set; } = string.Empty;
     }
 }

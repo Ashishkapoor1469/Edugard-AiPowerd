@@ -14,6 +14,9 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
+using Microsoft.AspNetCore.RateLimiting;
+using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.Http;
 using EduGuard.Hubs;
 using EduGuard.Services;
 
@@ -35,6 +38,21 @@ builder.Services
     .AddDataProtection()
     .PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(builder.Environment.ContentRootPath, "obj", "DataProtectionKeys")))
     .SetApplicationName("EduGuardBackend");
+
+// Configure In-Memory Cache
+builder.Services.AddMemoryCache();
+
+// Configure Rate Limiting
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddFixedWindowLimiter("api-limiter", opt =>
+    {
+        opt.PermitLimit = 100; // Allow 100 requests per window
+        opt.Window = TimeSpan.FromMinutes(1); // 1-minute window
+        opt.QueueLimit = 0;
+    });
+});
 builder.Services.AddSignalR(options =>
 {
     options.EnableDetailedErrors = true;
@@ -97,6 +115,10 @@ builder.Services.AddAuthentication(options =>
             {
                 context.Token = accessToken;
             }
+            else if (context.Request.Cookies.TryGetValue("access_token", out var cookieToken))
+            {
+                context.Token = cookieToken;
+            }
             return Task.CompletedTask;
         }
     };
@@ -111,6 +133,8 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseCors("AllowAll");
+
+app.UseRateLimiter();
 
 app.UseAuthentication();
 app.UseAuthorization();

@@ -53,6 +53,29 @@ namespace EduGuard.Models
         [JsonPropertyName("_id")]
         public string? Id { get; set; }
 
+        [BsonElement("collegeId")]
+        [BsonRepresentation(BsonType.ObjectId)]
+        public string? CollegeId { get; set; }
+
+        [BsonElement("courseId")]
+        [BsonRepresentation(BsonType.ObjectId)]
+        public string? CourseId { get; set; }
+
+        [BsonElement("verificationStatus")]
+        public string VerificationStatus { get; set; } = "approved"; // "pending_mentor_approval", "approved", "rejected"
+
+        [BsonElement("otp")]
+        public string? Otp { get; set; }
+
+        [BsonElement("otpExpiry")]
+        public DateTime? OtpExpiry { get; set; }
+
+        [BsonElement("refreshToken")]
+        public string? RefreshToken { get; set; }
+
+        [BsonElement("refreshTokenExpiry")]
+        public DateTime? RefreshTokenExpiry { get; set; }
+
         [BsonElement("rollNo")]
         public string RollNo { get; set; } = string.Empty;
 

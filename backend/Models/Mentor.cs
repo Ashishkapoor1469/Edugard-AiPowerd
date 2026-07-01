@@ -14,6 +14,34 @@ namespace EduGuard.Models
         [JsonPropertyName("_id")]
         public string? Id { get; set; }
 
+        [BsonElement("collegeId")]
+        [BsonRepresentation(BsonType.ObjectId)]
+        public string? CollegeId { get; set; }
+
+        [BsonElement("assignedCourseId")]
+        [BsonRepresentation(BsonType.ObjectId)]
+        public string? AssignedCourseId { get; set; }
+
+        [BsonElement("batch")]
+        public string Batch { get; set; } = string.Empty;
+
+        [BsonElement("department")]
+        public string Department { get; set; } = string.Empty;
+
+        [BsonElement("semester")]
+        public int Semester { get; set; } = 1;
+
+        [BsonElement("status")]
+        public string Status { get; set; } = "approved"; // "pending_verification", "approved", "rejected", "disabled"
+
+        [BsonElement("maxStudents")]
+        public int MaxStudents { get; set; } = 50;
+
+        [BsonElement("refreshToken")]
+        public string? RefreshToken { get; set; }
+
+        [BsonElement("refreshTokenExpiry")]
+        public DateTime? RefreshTokenExpiry { get; set; }
 
         [BsonElement("name")]
         public string Name { get; set; } = string.Empty;

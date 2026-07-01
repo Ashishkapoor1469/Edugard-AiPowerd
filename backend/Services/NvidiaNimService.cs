@@ -333,5 +333,102 @@ Write a concise paragraph detailing which subjects or student groups need most a
                 return $"Class average marks stand at {classStats.AvgMarks:F1}% with an attendance rate of {classStats.AvgAttendance:F1}%. There are {classStats.AtRiskCount} student(s) at high/critical risk. Specialized attention is advised for failing subjects.";
             }
         }
+
+        public async Task<string> GenerateSyllabusDataAsync(string university, string course)
+        {
+            var systemPrompt = "You are an academic curriculum designer. Provide a structured, clean markdown course syllabus layout matching the requested university and course with subjects, credits, and semester structure. Do not return intro/outro remarks.";
+            var userPrompt = $@"Generate a detailed course structure and subjects list for:
+University: {university}
+Course: {course}
+
+Format as:
+## Semester 1
+- **Subject Name**: Credits (Brief detail)
+Include at least 4 key subjects per semester, structured credits, and relevant syllabus information.";
+
+            if (_isMock)
+            {
+                return $@"# Syllabus for {course} ({university})
+
+## Semester 1
+- **Programming in C**: 4 Credits (Basics of C, loops, functions, arrays)
+- **Computer Fundamentals**: 3 Credits (Introduction to computers, hardware, OS basics)
+- **Mathematical Foundation**: 4 Credits (Discrete math, set theory, matrices)
+- **Communication Skills**: 3 Credits (English grammar, verbal & non-verbal skills)
+
+## Semester 2
+- **Data Structures**: 4 Credits (Stacks, queues, linked lists, trees)
+- **Database Management Systems**: 4 Credits (SQL, schema design, normalization)
+- **Digital Electronics**: 3 Credits (Gates, boolean algebra, circuits)
+- **Environmental Science**: 2 Credits (Ecosystems, pollution, resources)";
+            }
+
+            try
+            {
+                return await CallNvidiaApiAsync(systemPrompt, userPrompt, 0.4, 800);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to call NIM for syllabus generation");
+                throw;
+            }
+        }
+
+        public async Task<string> GeneratePersonalizedStudyPlanAsync(Student student, string weakSubjects, string learningSpeed, string upcomingExams)
+        {
+            var systemPrompt = "You are an expert academic advisor. Output a detailed, actionable weekly personalized study plan in clean Markdown. Structure it clearly. Do not return intro/outro remarks.";
+            
+            var marksStr = string.Join("\n", student.Marks.Select(m => $"- {m.SubjectName}: CT Avg={m.ClassTests.Select(t => t.Marks).DefaultIfEmpty(0).Average():F1}, Mid={m.MidTerm?.Marks}, House={m.HouseExam?.Marks}"));
+            
+            var userPrompt = $@"Create a personalized study plan for student:
+Name: {student.Name}
+Roll No: {student.RollNo}
+Current Attendance: {student.Attendance:F1}%
+Current Subject Performance:
+{marksStr}
+
+Mentor-specified Inputs:
+- Weak Subjects: {weakSubjects}
+- Learning Speed: {learningSpeed}
+- Upcoming Exams: {upcomingExams}
+
+Generate a weekly study schedule, priority tasks, subject allocation guide, and revision techniques customized for this student.";
+
+            if (_isMock)
+            {
+                return $@"# AI Personalized Study Plan for {student.Name}
+
+## Executive Summary
+- **Learning Speed**: {learningSpeed}
+- **Primary Focus**: {weakSubjects}
+- **Upcoming Target**: {upcomingExams}
+- **Current Attendance**: {student.Attendance:F1}%
+
+## Weekly Schedule & Priority
+- **Monday & Wednesday (Critical Review)**: Focus on **{weakSubjects}** for 2 hours. Review fundamentals, tackle 5 practices.
+- **Tuesday & Thursday (Maintenance)**: Focus on other subjects for 1 hour. Solve 3 practices.
+- **Friday (Revision)**: Mock assessments, time-limited tests.
+- **Saturday (Doubt Clearing)**: Consult textbooks, library materials, or email mentor.
+
+## Subject Priority Allocation
+1. **{weakSubjects}** (High Priority - Daily 1.5 hours)
+2. Remaining subjects (Medium Priority - Alternate days 1 hour)
+
+## Recommended Techniques
+- **Pomodoro Method**: 25 min study, 5 min break to maintain focus.
+- **Feynman Technique**: Try explaining core concepts of weak subjects in simple terms to solidifying understanding.
+- **Spaced Repetition**: Review notes 1 day, 3 days, and 7 days after learning.";
+            }
+
+            try
+            {
+                return await CallNvidiaApiAsync(systemPrompt, userPrompt, 0.5, 1000);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to call NIM for study plan generation");
+                throw;
+            }
+        }
     }
 }

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import axios from "axios";
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
+import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
 import toast from "react-hot-toast";
 import { useAuth } from "../context/AuthContext.js";
 
@@ -37,7 +37,7 @@ const ClassOverview: React.FC = () => {
   // Class list options (authorized classes if mentor, or all if admin)
   const classTabs = user?.role === "admin" 
     ? ["BCA-A", "BCA-B", "BBA-A", "BBA-B", "BTECH-A"]
-    : user?.assignedClasses.length ? user.assignedClasses : ["BCA-A"];
+    : user?.assignedClasses?.length ? user.assignedClasses : ["BCA-A"];
 
   const fetchClassDetails = async () => {
     setLoading(true);
@@ -103,7 +103,7 @@ const ClassOverview: React.FC = () => {
       ]
     : [];
 
-  const totalCircumference = 2 * Math.PI * 40;
+
 
   if (loading && !classStats) {
     return (

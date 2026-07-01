@@ -1,16 +1,17 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Inter:wght@300;400;500;600;700;800&display=swap');
 @import "tailwindcss";
 
 @theme {
-  --color-primary: #4f46e5;
-  --color-primary-hover: #4338ca;
-  --color-secondary: #64748b;
-  --color-low: #10b981;
-  --color-medium: #f59e0b;
-  --color-high: #f97316;
-  --color-critical: #ef4444;
-  --color-bg-base: #f8fafc;
-  --color-text-primary: #0f172a;
-  --color-text-secondary: #64748b;
+  --color-primary: #1a73e8;
+  --color-primary-hover: #1557b0;
+  --color-secondary: #5f6368;
+  --color-low: #1e8e3e;
+  --color-medium: #f9ab00;
+  --color-high: #e37400;
+  --color-critical: #d93025;
+  --color-bg-base: #f8f9fa;
+  --color-text-primary: #202124;
+  --color-text-secondary: #5f6368;
 }
 
 @layer base {
@@ -25,7 +26,7 @@
   body {
     background-color: var(--color-bg-base);
     color: var(--color-text-primary);
-    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-family: 'Outfit', 'Inter', system-ui, -apple-system, sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }

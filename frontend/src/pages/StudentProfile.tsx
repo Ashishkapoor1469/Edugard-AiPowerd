@@ -4,6 +4,8 @@ import { useAuth } from "../context/AuthContext.js";
 import axios from "axios";
 import socket from "../utils/socket.js";
 import toast from "react-hot-toast";
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend } from "recharts";
+import ReactMarkdown from "react-markdown";
 
 interface ClassTest {
   testNumber: number;
@@ -24,42 +26,61 @@ interface SubjectMarks {
   houseExam: ExamMarks;
 }
 
+interface MentorInfo {
+  _id: string;
+  name: string;
+  email: string;
+  isOnline?: boolean;
+}
+
 interface Student {
   _id: string;
   rollNo: string;
   name: string;
-  email?: string;
+  email: string;
+  phoneNo: string | null;
   course: string;
   class: string;
   semester: number;
   attendance: number | null;
-  marks: SubjectMarks[];
-  behavior: "excellent" | "good" | "average" | "bad" | null;
-  contribution: string[];
+  behavior: string | null;
   riskScore: number;
   riskLevel: "low" | "medium" | "high" | "critical";
-  riskExplanation: string;
-  aiImprovementPlan: string;
-  mentorId?: {
-    _id: string;
-    name: string;
-    email: string;
-    isOnline: boolean;
-  };
+  riskExplanation?: string;
+  aiImprovementPlan?: string;
+  contribution: string[];
+  marks: SubjectMarks[];
+  mentorId?: MentorInfo | null;
 }
 
 const StudentProfile: React.FC = () => {
   const { id } = useParams<{ id: string }>();
-  const navigate = useNavigate();
   const { user } = useAuth();
-  
-  const studentId = id || user?.id;
+  const navigate = useNavigate();
 
-  // Primary states
+  // If student views their own profile, studentId is user.id
+  const studentId = user?.role === "student" ? user.id : id;
+
+  // Tabs for Student vs Mentor
+  const [activeTab, setActiveTab] = useState<"performance" | "chat" | "notifications" | "settings">("performance");
+
+  // States
   const [student, setStudent] = useState<Student | null>(null);
   const [loading, setLoading] = useState(true);
+  const [selectedMentor, setSelectedMentor] = useState("");
+  const [mentorsList, setMentorsList] = useState<any[]>([]);
+  const [, setLoadingMentors] = useState(false);
 
-  // Form states (Missing Data / overrides form)
+  // Chat State
+  const [messages, setMessages] = useState<any[]>([]);
+  const [chatInput, setChatInput] = useState("");
+  const [aiTyping, setAiTyping] = useState(false);
+  const chatEndRef = useRef<HTMLDivElement>(null);
+
+  // Notifications State
+  const [alerts, setAlerts] = useState<any[]>([]);
+
+  // Overrides modal for Mentors/Admins
   const [showOverrideForm, setShowOverrideForm] = useState(false);
   const [formAttendance, setFormAttendance] = useState("");
   const [formBehavior, setFormBehavior] = useState("");
@@ -72,121 +93,106 @@ const StudentProfile: React.FC = () => {
     houseExam: string; houseExamMax: string;
   }>>({});
 
-  // AI states
   const [generatingExplanation, setGeneratingExplanation] = useState(false);
   const [generatingPlan, setGeneratingPlan] = useState(false);
 
-  // Mentor Selection states (for student role)
-  const [mentorsList, setMentorsList] = useState<any[]>([]);
-  const [selectedMentor, setSelectedMentor] = useState("");
-  const [loadingMentors, setLoadingMentors] = useState(false);
+  const fetchStudent = async (resetOverrideInputs = false) => {
+    if (!studentId) return;
+    try {
+      const res = await axios.get(`/api/students/${studentId}`);
+      if (res.data.success) {
+        const data: Student = res.data.data;
+        setStudent(data);
 
-  // Chat states
-  const [messages, setMessages] = useState<any[]>([]);
-  const [chatInput, setChatInput] = useState("");
-  const [aiTyping, setAiTyping] = useState(false);
-  const chatEndRef = useRef<HTMLDivElement>(null);
+        if (resetOverrideInputs) {
+          setFormAttendance(data.attendance !== null ? String(data.attendance) : "");
+          setFormBehavior(data.behavior || "");
+          setFormContributions(data.contribution.join(", "));
 
-  // Fetch mentors list
-  const fetchMentorsList = async () => {
+          const marksInit: typeof formMarks = {};
+          for (const sub of data.marks) {
+            const t1 = sub.classTests.find((t: any) => t.testNumber === 1);
+            const t2 = sub.classTests.find((t: any) => t.testNumber === 2);
+            const t3 = sub.classTests.find((t: any) => t.testNumber === 3);
+
+            marksInit[sub.subjectName] = {
+              test1: t1 ? String(t1.marks) : "",
+              test1Max: t1 ? String(t1.maxMarks) : "25",
+              test2: t2 ? String(t2.marks) : "",
+              test2Max: t2 ? String(t2.maxMarks) : "25",
+              test3: t3 ? String(t3.marks) : "",
+              test3Max: t3 ? String(t3.maxMarks) : "25",
+              midTerm: sub.midTerm.marks !== null ? String(sub.midTerm.marks) : "",
+              midTermMax: String(sub.midTerm.maxMarks || 100),
+              houseExam: sub.houseExam.marks !== null ? String(sub.houseExam.marks) : "",
+              houseExamMax: String(sub.houseExam.maxMarks || 100),
+            };
+          }
+          setFormMarks(marksInit);
+        }
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to load student profile");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchMentors = async () => {
     setLoadingMentors(true);
     try {
       const res = await axios.get("/api/mentors/list");
-      if (res.data.success) {
-        setMentorsList(res.data.data);
-      }
+      if (res.data.success) setMentorsList(res.data.data);
     } catch (err) {
-      console.error("Failed to load mentors list:", err);
+      console.error(err);
     } finally {
       setLoadingMentors(false);
     }
   };
 
-  // Fetch student profile details
-  const fetchStudent = async (showLoader = true) => {
-    if (showLoader) setLoading(true);
+  const fetchNotifications = async () => {
     try {
-      const res = await axios.get(`/api/students/${studentId}`);
-      if (res.data.success) {
-        const data = res.data.data;
-        setStudent(data);
-        // Pre-fill form fields
-        setFormAttendance(data.attendance !== null ? String(data.attendance) : "");
-        setFormBehavior(data.behavior || "");
-        setFormContributions(data.contribution.join(", "));
-
-        // Pre-fill marks inputs
-        const marksInit: typeof formMarks = {};
-        for (const sub of data.marks) {
-          const t1 = sub.classTests.find((t) => t.testNumber === 1);
-          const t2 = sub.classTests.find((t) => t.testNumber === 2);
-          const t3 = sub.classTests.find((t) => t.testNumber === 3);
-
-          marksInit[sub.subjectName] = {
-            test1: t1 ? String(t1.marks) : "",
-            test1Max: t1 ? String(t1.maxMarks) : "25",
-            test2: t2 ? String(t2.marks) : "",
-            test2Max: t2 ? String(t2.maxMarks) : "25",
-            test3: t3 ? String(t3.marks) : "",
-            test3Max: t3 ? String(t3.maxMarks) : "25",
-            midTerm: sub.midTerm.marks !== null ? String(sub.midTerm.marks) : "",
-            midTermMax: String(sub.midTerm.maxMarks || 100),
-            houseExam: sub.houseExam.marks !== null ? String(sub.houseExam.marks) : "",
-            houseExamMax: String(sub.houseExam.maxMarks || 100),
-          };
-        }
-        setFormMarks(marksInit);
-
-        // Fetch mentors list if student has no mentor and role is student
-        if (!data.mentorId && user?.role === "student") {
-          fetchMentorsList();
-        }
-      }
+      const res = await axios.get("/api/notifications");
+      if (res.data.success) setAlerts(res.data.data);
     } catch (err) {
       console.error(err);
-      toast.error("Failed to load student details");
-    } finally {
-      if (showLoader) setLoading(false);
-    }
-  };
-
-  // Fetch chat history
-  const fetchChatHistory = async () => {
-    try {
-      const res = await axios.get(`/api/chat/${studentId}`);
-      if (res.data.success) {
-        setMessages(res.data.data);
-      }
-    } catch (err) {
-      console.error("Failed to load message history:", err);
     }
   };
 
   useEffect(() => {
-    if (studentId) {
-      fetchStudent();
-      fetchChatHistory();
+    setLoading(true);
+    fetchStudent(true);
+    if (user?.role === "student") {
+      fetchMentors();
+      fetchNotifications();
     }
   }, [studentId]);
 
-  // Connect to socket and join room for this student
+  // Socket communication
   useEffect(() => {
-    if (student) {
-      socket.connect();
-      socket.emit("joinRoom", student._id);
+    if (!student) return;
 
-      socket.on("newMessage", (msg: any) => {
-        if (msg.studentId === student._id) {
-          setMessages((prev) => [...prev, msg]);
-        }
-      });
+    // Join room
+    socket.connect();
+    socket.emit("joinRoom", student._id);
 
-      socket.on("typing", (data: { sender: string; isTyping: boolean }) => {
-        if (data.sender === "ai") {
-          setAiTyping(data.isTyping);
-        }
-      });
-    }
+    // Load history
+    axios.get(`/api/chat/${student._id}`).then((res) => {
+      if (res.data.success) setMessages(res.data.data);
+    });
+
+    socket.on("newMessage", (msg: any) => {
+      if (msg.studentId === student._id) {
+        setMessages((prev) => [...prev, msg]);
+      }
+    });
+
+    socket.on("typing", (data: { sender: string; isTyping: boolean }) => {
+      if (data.sender === "ai") {
+        setAiTyping(data.isTyping);
+      }
+    });
 
     return () => {
       socket.off("newMessage");
@@ -194,90 +200,78 @@ const StudentProfile: React.FC = () => {
     };
   }, [student]);
 
-  // Scroll chat window to bottom
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, aiTyping]);
 
-  // Generate Lazy AI Explanation
-  const handleGenerateExplanation = async () => {
+  // Actions
+  const handleJoinGroup = async () => {
+    if (!selectedMentor) return;
+    try {
+      const res = await axios.patch("/api/students/select-mentor", { mentorId: selectedMentor });
+      if (res.data.success) {
+        toast.success("Joined mentor group!");
+        fetchStudent(true);
+      }
+    } catch (err) {
+      toast.error("Failed to join mentor group");
+    }
+  };
+
+  const handleGenerateRiskAnalysis = async () => {
     setGeneratingExplanation(true);
     try {
       const res = await axios.get(`/api/students/${studentId}/explanation`);
-      if (res.data.success && student) {
-        setStudent({ ...student, riskExplanation: res.data.data });
-        toast.success("AI risk analysis completed!");
+      if (res.data.success) {
+        toast.success("AI Risk analysis completed!");
+        fetchStudent(false);
       }
     } catch (err) {
-      console.error(err);
-      toast.error("AI risk generation failed");
+      toast.error("AI Generation failed");
     } finally {
       setGeneratingExplanation(false);
     }
   };
 
-  // Generate Lazy AI Improvement Plan
-  const handleGeneratePlan = async () => {
+  const handleGenerateRecoveryPlan = async () => {
     setGeneratingPlan(true);
     try {
       const res = await axios.get(`/api/students/${studentId}/improvement`);
-      if (res.data.success && student) {
-        setStudent({ ...student, aiImprovementPlan: res.data.data });
-        toast.success("AI academic recovery plan ready!");
+      if (res.data.success) {
+        toast.success("AI Recovery Plan ready!");
+        fetchStudent(false);
       }
     } catch (err) {
-      console.error(err);
-      toast.error("AI plan generation failed");
+      toast.error("AI Plan generation failed");
     } finally {
       setGeneratingPlan(false);
     }
   };
 
-  // Select Mentor (Join Group)
-  const handleJoinGroup = async () => {
-    if (!selectedMentor) {
-      toast.error("Please select a mentor");
-      return;
-    }
-    const toastId = toast.loading("Joining mentor group...");
-    try {
-      const res = await axios.patch("/api/students/select-mentor", { mentorId: selectedMentor });
-      if (res.data.success) {
-        toast.success("Successfully joined mentor group!", { id: toastId });
-        fetchStudent(true);
-      }
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || "Failed to join mentor group", { id: toastId });
-    }
-  };
-
-  // Handle Chat message submit
-  const handleSendChat = (e: React.FormEvent) => {
+  const handleSendChat = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!chatInput.trim() || !student || !user) return;
+    if (!chatInput.trim() || !student || !user || !student.mentorId?._id) return;
 
-    const sender = user.role === "student" ? "student" : "mentor";
-
-    const payload = {
-      roomId: student._id,
-      studentId: student._id,
-      mentorId: student.mentorId?._id || user.id,
-      sender,
-      text: chatInput.trim(),
-    };
-
-    socket.emit("sendMessage", payload);
+    const text = chatInput.trim();
     setChatInput("");
+
+    try {
+      await axios.post("/api/chat/send", {
+        studentId: student._id,
+        mentorId: student.mentorId._id,
+        sender: user.role === "student" ? "student" : "mentor",
+        text,
+      });
+    } catch (err) {
+      console.error("Failed to send message:", err);
+      setChatInput(text); // restore input on failure
+    }
   };
 
-  // Handle Form changes and submit
   const handleSaveOverride = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!student) return;
 
-    const toastId = toast.loading("Updating records and recalculating risk...");
-
-    // Format Marks for backend
     const updatedMarks: SubjectMarks[] = student.marks.map((sub) => {
       const inputs = formMarks[sub.subjectName] || {
         test1: "", test1Max: "25",
@@ -296,742 +290,541 @@ const StudentProfile: React.FC = () => {
         subjectName: sub.subjectName,
         isPractical: sub.isPractical,
         classTests,
-        midTerm: {
-          marks: inputs.midTerm ? Number(inputs.midTerm) : null,
-          maxMarks: Number(inputs.midTermMax),
-        },
-        houseExam: {
-          marks: inputs.houseExam ? Number(inputs.houseExam) : null,
-          maxMarks: Number(inputs.houseExamMax),
-        },
+        midTerm: { marks: inputs.midTerm ? Number(inputs.midTerm) : null, maxMarks: Number(inputs.midTermMax) },
+        houseExam: { marks: inputs.houseExam ? Number(inputs.houseExam) : null, maxMarks: Number(inputs.houseExamMax) },
       };
     });
 
     const payload = {
       attendance: formAttendance !== "" ? Number(formAttendance) : null,
       behavior: formBehavior || null,
-      contribution: formContributions
-        .split(",")
-        .map((c) => c.trim())
-        .filter(Boolean),
+      contribution: formContributions.split(",").map((c) => c.trim()).filter(Boolean),
       marks: updatedMarks,
     };
 
     try {
-      const res = await axios.patch(`/api/students/${id}`, payload);
+      const res = await axios.patch(`/api/students/${studentId}`, payload);
       if (res.data.success) {
-        toast.success("Roster record updated successfully", { id: toastId });
+        toast.success("Roster record updated successfully!");
         setShowOverrideForm(false);
-        fetchStudent(false); // reload data without resetting loading skeletons
+        fetchStudent(false);
       }
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || "Failed to update overrides", { id: toastId });
+    } catch (err) {
+      toast.error("Failed to update records");
     }
   };
 
-  // Helper to calculate subject average
-  const getSubjectAverage = (sub: SubjectMarks) => {
-    const percentages: number[] = [];
-    if (sub.classTests.length > 0) {
-      let sum = 0, max = 0;
-      for (const t of sub.classTests) {
-        sum += t.marks;
-        max += t.maxMarks;
-      }
-      if (max > 0) percentages.push((sum / max) * 100);
-    }
-    if (sub.midTerm.marks !== null && sub.midTerm.maxMarks > 0) {
-      percentages.push((sub.midTerm.marks / sub.midTerm.maxMarks) * 100);
-    }
-    if (sub.houseExam.marks !== null && sub.houseExam.maxMarks > 0) {
-      percentages.push((sub.houseExam.marks / sub.houseExam.maxMarks) * 100);
-    }
-    if (percentages.length === 0) return null;
-    return percentages.reduce((a, b) => a + b, 0) / percentages.length;
+  // Export functions
+  const handleExportMarkdown = () => {
+    if (!student) return;
+    const content = `# Academic Performance Report: ${student.name}
+Roll No: ${student.rollNo}
+Class: ${student.class}
+Risk Level: ${student.riskLevel} (${student.riskScore}/100)
+
+## AI Risk Explanation
+${student.riskExplanation || "No assessment generated."}
+
+## AI Personalized Recovery Plan
+${student.aiImprovementPlan || "No plan generated."}
+`;
+    const blob = new Blob([content], { type: "text/markdown" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `Academic_Report_${student.rollNo}.md`;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
-  // Colors based on risk level
-  const getRiskColors = (level: string) => {
-    switch (level) {
-      case "low": return { text: "text-low", bg: "bg-emerald-50", stroke: "#10B981" };
-      case "medium": return { text: "text-medium", bg: "bg-amber-50", stroke: "#F59E0B" };
-      case "high": return { text: "text-high", bg: "bg-orange-50", stroke: "#F97316" };
-      case "critical": return { text: "text-critical", bg: "bg-red-50", stroke: "#EF4444" };
-      default: return { text: "text-secondary", bg: "bg-slate-50", stroke: "#64748B" };
-    }
+  const handleExportPDF = () => {
+    window.print();
   };
 
-  if (loading) {
+  if (loading || !student) {
     return (
-      <div className="flex-1 space-y-6 bg-bg-base p-6">
-        <div className="h-6 w-32 animate-pulse rounded-md bg-slate-200" />
-        <div className="h-44 w-full animate-pulse rounded-xl bg-slate-200" />
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-          <div className="h-96 animate-pulse rounded-xl bg-slate-200" />
-          <div className="h-96 animate-pulse rounded-xl bg-slate-200" />
-        </div>
+      <div className="flex h-screen items-center justify-center bg-[#f8f9fa] animate-pulse">
+        <svg className="h-10 w-10 animate-spin text-[#1a73e8]" fill="none" viewBox="0 0 24 24">
+          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+        </svg>
       </div>
     );
   }
 
-  if (!student) {
-    return (
-      <div className="flex-1 bg-bg-base p-6 text-center text-secondary">
-        Student profile not found.
-      </div>
-    );
-  }
+  // Map marks data to Recharts format
+  const chartData = student.marks.map((sub) => {
+    const tMax = sub.classTests.reduce((sum, t) => sum + t.maxMarks, 0);
+    const tObt = sub.classTests.reduce((sum, t) => sum + t.marks, 0);
+    const testPct = tMax > 0 ? (tObt / tMax) * 100 : 0;
 
-  const riskColors = getRiskColors(student.riskLevel);
-  const totalCircumference = 2 * Math.PI * 40; // R=40
-  const riskPercentOffset = totalCircumference - (student.riskScore / 100) * totalCircumference;
+    const midPct = sub.midTerm.marks !== null ? (sub.midTerm.marks / sub.midTerm.maxMarks) * 100 : 0;
+    const housePct = sub.houseExam.marks !== null ? (sub.houseExam.marks / sub.houseExam.maxMarks) * 100 : 0;
+
+    return {
+      name: sub.subjectName,
+      "Class Tests (%)": Math.round(testPct),
+      "Mid Term (%)": Math.round(midPct),
+      "House Exam (%)": Math.round(housePct),
+    };
+  });
 
   return (
-    <div className="flex-1 overflow-y-auto bg-bg-base p-6">
-      {/* Back Button (Mentors/Admins only) */}
+    <div className="flex-1 overflow-y-auto bg-[#f8f9fa] p-4 md:p-6 font-sans">
+      {/* Back to Dashboard (Instructor only) */}
       {user?.role !== "student" && (
         <button
           onClick={() => navigate(-1)}
-          className="mb-4 flex items-center gap-1.5 text-xs font-bold text-secondary hover:text-primary transition-colors"
+          className="mb-4 flex items-center gap-1 text-xs font-semibold text-[#5f6368] hover:text-primary transition-colors"
         >
-          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-          </svg>
-          Back to Dashboard
+          &larr; Back to Dashboard
         </button>
       )}
 
-      {/* Header Card */}
-      <div className="mb-6 flex flex-col gap-6 rounded-xl border border-slate-200 bg-white p-6 md:flex-row md:items-center md:justify-between shadow-xs">
-        {/* Left side details */}
+      {/* Profile Header */}
+      <div className="mb-6 rounded-2xl bg-white border border-[#dadce0] p-6 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div className="flex items-center gap-4">
-          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-indigo-50 text-xl font-extrabold text-primary shadow-xs">
+          <div className="h-16 w-16 rounded-full bg-blue-50 text-[#1a73e8] font-bold text-xl flex items-center justify-center border border-blue-100">
             {student.name.substring(0, 2).toUpperCase()}
           </div>
           <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-xl font-black text-text-primary">{student.name}</h1>
-              {student.riskLevel === "critical" && (
-                <span className="flex h-2.5 w-2.5 rounded-full bg-critical animate-pulse" />
-              )}
-            </div>
-            <p className="text-xs font-bold text-secondary mt-1">
-              Roll No: #{student.rollNo} · {student.course} · {student.class} · Semester {student.semester}
-            </p>
-            <span className="inline-flex items-center rounded-md bg-indigo-50/50 px-2 py-0.5 text-[9px] font-bold text-primary mt-2">
-              Assigned Mentor: {student.mentorId?.name || "Unassigned"}
+            <h1 className="text-xl font-semibold text-[#202124]">{student.name}</h1>
+            <p className="text-xs text-[#5f6368] mt-1 font-medium">Roll No: #{student.rollNo} · {student.course} · {student.class}</p>
+            <span className="inline-flex px-2 py-0.5 rounded-md bg-blue-50 text-[#1a73e8] text-[10px] font-semibold mt-2 border border-blue-100/50">
+              Mentor: {student.mentorId?.name || "Unassigned"}
             </span>
           </div>
         </div>
 
-        {/* Right side Speedometer circle dial gauge */}
-        <div className="flex items-center gap-4 border-t border-slate-100 pt-4 md:border-t-0 md:pt-0">
-          <div className="relative h-24 w-24">
-            <svg className="h-full w-full -rotate-95" viewBox="0 0 100 100">
-              <circle cx="50" cy="50" r="40" stroke="#f1f5f9" strokeWidth="8" fill="transparent" />
-              <circle
-                cx="50"
-                cy="50"
-                r="40"
-                stroke={riskColors.stroke}
-                strokeWidth="8"
-                fill="transparent"
-                strokeDasharray={totalCircumference}
-                strokeDashoffset={riskPercentOffset}
-                strokeLinecap="round"
-                className="transition-all duration-1000 ease-out"
-              />
-            </svg>
-            <div className="absolute inset-0 flex flex-col items-center justify-center">
-              <span className="text-xl font-black text-text-primary leading-4">{student.riskScore}</span>
-              <span className="text-[8px] font-bold text-slate-400">/ 100</span>
-            </div>
-          </div>
-          <div className="flex flex-col text-left">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Risk Probability Index</span>
-            <span className={`text-base font-extrabold capitalize ${riskColors.text}`}>{student.riskLevel} Risk</span>
+        <div className="flex items-center gap-3">
+          <div className="text-right">
+            <span className="text-[10px] text-[#5f6368] font-bold uppercase tracking-wider block">Risk Score</span>
+            <span className={`text-xl font-bold uppercase ${
+              student.riskLevel === "low" ? "text-green-700" :
+              student.riskLevel === "medium" ? "text-amber-700" : "text-red-700"
+            }`}>{student.riskScore}/100 ({student.riskLevel})</span>
           </div>
         </div>
       </div>
 
-      {/* Mentor Selection Card for Students without Mentor */}
-      {!student.mentorId && user?.role === "student" && (
-        <div className="mb-6 rounded-xl border border-indigo-100 bg-indigo-50/30 p-6 shadow-xs border-l-4 border-l-primary">
-          <h2 className="text-sm font-bold text-text-primary mb-2">Select Your Mentor</h2>
-          <p className="text-xs text-secondary mb-4">
-            You do not have a mentor assigned yet. Please select an available mentor from the list below to join their group. Mentor groups are capped at 30 students.
-          </p>
-          <div className="flex flex-col sm:flex-row gap-3 max-w-md">
-            <select
-              value={selectedMentor}
-              onChange={(e) => setSelectedMentor(e.target.value)}
-              className="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs focus:border-primary focus:outline-hidden"
-              disabled={loadingMentors}
-            >
-              <option value="">-- Choose a Mentor --</option>
-              {mentorsList.map((m) => {
-                const isFull = m.studentCount >= 30;
-                return (
-                  <option key={m._id} value={m._id} disabled={isFull}>
-                    {m.name} ({m.studentCount || 0}/30 students) {isFull ? "[FULL]" : ""}
-                  </option>
-                );
-              })}
-            </select>
+      {/* Tabs Menu (Only if student views their own portal) */}
+      {user?.role === "student" && (
+        <div className="mb-6 border-b border-[#dadce0] flex gap-2 overflow-x-auto pb-px">
+          {[
+            { id: "performance", label: "Academic Performance" },
+            { id: "chat", label: `Chat with Mentor ${student.mentorId?.isOnline ? "●" : ""}` },
+            { id: "notifications", label: `Alerts (${alerts.length})` },
+          ].map((tab) => (
             <button
-              onClick={handleJoinGroup}
-              disabled={!selectedMentor || loadingMentors}
-              className="rounded-lg bg-primary px-4 py-2 text-xs font-bold text-white hover:bg-primary-hover shadow-xs focus:outline-hidden disabled:opacity-50"
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id as any)}
+              className={`px-4 py-2 text-sm font-semibold border-b-2 rounded-t-lg transition-all ${
+                activeTab === tab.id
+                  ? "border-[#1a73e8] text-[#1a73e8] bg-blue-50/30"
+                  : "border-transparent text-[#5f6368] hover:text-[#202124] hover:border-[#dadce0]"
+              }`}
             >
-              {loadingMentors ? "Loading..." : "Join Group"}
+              {tab.label}
             </button>
-          </div>
+          ))}
         </div>
       )}
 
-      {/* Row 1: Key Metrics */}
-      <div className="mb-6 grid grid-cols-1 gap-5 sm:grid-cols-3">
-        {/* Attendance progress ring card */}
-        <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white p-5 shadow-xs">
-          <div className="flex flex-col">
-            <span className="text-[10px] font-bold text-secondary uppercase tracking-wider">Attendance Status</span>
-            <p className="mt-1 text-2xl font-black text-text-primary">
-              {student.attendance !== null ? `${student.attendance}%` : "N/A"}
-            </p>
-            <span className={`text-[10px] font-bold mt-1 ${student.attendance && student.attendance < 75 ? "text-critical" : "text-low"}`}>
-              {student.attendance && student.attendance < 75 ? "Below Threshold" : "Satisfactory"}
-            </span>
-          </div>
-          {student.attendance !== null && (
-            <div className="relative h-16 w-16">
-              <svg className="h-full w-full -rotate-90" viewBox="0 0 36 36">
-                <circle cx="18" cy="18" r="15" fill="none" stroke="#f1f5f9" strokeWidth="3" />
-                <circle
-                  cx="18"
-                  cy="18"
-                  r="15"
-                  fill="none"
-                  stroke={student.attendance < 75 ? "#EF4444" : "#10B981"}
-                  strokeWidth="3"
-                  strokeDasharray="94.2"
-                  strokeDashoffset={94.2 - (student.attendance / 100) * 94.2}
-                  strokeLinecap="round"
-                  className="transition-all duration-1000 ease-out"
-                />
-              </svg>
+      {/* 1. PERFORMANCE TAB */}
+      {(user?.role !== "student" || activeTab === "performance") && (
+        <div className="space-y-6">
+          {/* Join Group Alert */}
+          {!student.mentorId && user?.role === "student" && (
+            <div className="p-5 bg-blue-50 border border-blue-100 rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+              <div>
+                <h3 className="text-sm font-semibold text-[#1a73e8]">Select Academic Mentor</h3>
+                <p className="text-xs text-[#5f6368] mt-1 font-medium">Join an instructor group to start early academic tracking assessments.</p>
+              </div>
+              <div className="flex gap-2 w-full sm:w-auto">
+                <select
+                  value={selectedMentor}
+                  onChange={(e) => setSelectedMentor(e.target.value)}
+                  className="rounded-lg border border-[#dadce0] px-3 py-1.5 text-xs bg-white focus:outline-none"
+                >
+                  <option value="">Choose Instructor...</option>
+                  {mentorsList.map((m) => (
+                    <option key={m._id} value={m._id}>{m.name}</option>
+                  ))}
+                </select>
+                <button onClick={handleJoinGroup} className="bg-[#1a73e8] text-white px-4 py-1.5 rounded-lg text-xs font-semibold hover:bg-[#1557b0]">
+                  Join
+                </button>
+              </div>
             </div>
           )}
-        </div>
 
-        {/* Behavior */}
-        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-xs">
-          <span className="text-[10px] font-bold text-secondary uppercase tracking-wider">Behavioral Score</span>
-          <div className="mt-2 flex items-center gap-2">
-            <span className="text-xl font-bold">
-              {student.behavior === "excellent" || student.behavior === "good" ? "😊" : student.behavior === "average" ? "😐" : "😡"}
-            </span>
-            <span className={`rounded-md px-2.5 py-0.5 text-xs font-bold capitalize ${
-              student.behavior === "excellent" || student.behavior === "good"
-                ? "bg-emerald-50 text-low"
-                : student.behavior === "average"
-                ? "bg-amber-50 text-medium"
-                : "bg-red-50 text-critical"
-            }`}>
-              {student.behavior || "Not assessed"}
-            </span>
+          {/* Cards metrics Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="bg-white border border-[#dadce0] rounded-2xl p-5 shadow-sm">
+              <span className="text-[10px] text-[#5f6368] font-bold uppercase tracking-wider block">Attendance</span>
+              <span className="text-2xl font-bold text-[#202124] mt-2 block">{student.attendance != null ? `${student.attendance}%` : "N/A"}</span>
+              <span className="text-[10px] text-[#5f6368] mt-1 block">Threshold: 75% standard</span>
+            </div>
+            <div className="bg-white border border-[#dadce0] rounded-2xl p-5 shadow-sm">
+              <span className="text-[10px] text-[#5f6368] font-bold uppercase tracking-wider block">Behavior assessment</span>
+              <span className="text-2xl font-bold text-[#202124] mt-2 block capitalize">{student.behavior || "Excellent"}</span>
+              <span className="text-[10px] text-[#5f6368] mt-1 block">Classroom participation level</span>
+            </div>
+            <div className="bg-white border border-[#dadce0] rounded-2xl p-5 shadow-sm">
+              <span className="text-[10px] text-[#5f6368] font-bold uppercase tracking-wider block">Co-Curriculars</span>
+              <span className="text-2xl font-bold text-[#202124] mt-2 block">{student.contribution.length} Active</span>
+              <div className="mt-1 flex flex-wrap gap-1">
+                {student.contribution.map((c, i) => (
+                  <span key={i} className="text-[9px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-md font-semibold">{c}</span>
+                ))}
+              </div>
+            </div>
           </div>
-          <span className="mt-2 block text-[9px] font-bold text-slate-400">Classroom participation assessment</span>
-        </div>
 
-        {/* Contributions */}
-        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-xs">
-          <span className="text-[10px] font-bold text-secondary uppercase tracking-wider">Co-Curriculars</span>
-          <p className="mt-1 text-2xl font-black text-text-primary">{student.contribution.length}</p>
-          <div className="mt-1 flex flex-wrap gap-1">
-            {student.contribution.length === 0 ? (
-              <span className="text-[10px] text-slate-400 font-semibold">No active projects/contributions</span>
-            ) : (
-              student.contribution.slice(0, 3).map((item, idx) => (
-                <span key={idx} className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[9px] font-bold text-secondary">{item}</span>
-              ))
-            )}
+          {/* Performance chart */}
+          <div className="bg-white border border-[#dadce0] rounded-2xl p-6 shadow-sm">
+            <h3 className="text-sm font-semibold text-[#202124] mb-4">Subject Performance Analysis</h3>
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={chartData}>
+                  <XAxis dataKey="name" stroke="#5f6368" fontSize={10} tickLine={false} />
+                  <YAxis stroke="#5f6368" fontSize={10} tickLine={false} />
+                  <Tooltip />
+                  <Legend />
+                  <Bar dataKey="Class Tests (%)" fill="#1a73e8" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="Mid Term (%)" fill="#f9ab00" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="House Exam (%)" fill="#e37400" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
           </div>
-        </div>
-      </div>
 
-      {/* Row 2: Academics & AI Panels */}
-      <div className="mb-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
-        {/* Left Column (60%): Marks Table */}
-        <div className="rounded-xl border border-slate-200 bg-white p-6 lg:col-span-2 shadow-xs">
-          <h2 className="text-sm font-bold text-text-primary mb-3">Academic Performance</h2>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="border-b border-slate-200 text-[10px] font-bold text-secondary uppercase tracking-wider bg-slate-50/50">
-                  <th className="py-2.5 px-3">Subject</th>
-                  <th className="py-2.5 px-3">Tests</th>
-                  <th className="py-2.5 px-3">Mid Term</th>
-                  <th className="py-2.5 px-3">House Exam</th>
-                  <th className="py-2.5 px-3 text-right">Subject Average</th>
-                </tr>
-              </thead>
-              <tbody>
-                {student.marks.length === 0 ? (
-                  <tr>
-                    <td colSpan={5} className="py-6 text-center text-xs text-slate-400">No marks record found</td>
-                  </tr>
+          {/* AI Advisor Panel */}
+          <div className="bg-white border border-[#dadce0] rounded-2xl p-6 shadow-sm">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-sm font-semibold text-[#202124]">EduGuard AI Advisor</h3>
+              <div className="flex gap-2">
+                <button
+                  onClick={handleExportMarkdown}
+                  className="bg-white border border-[#dadce0] text-slate-700 px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-slate-50 transition-colors"
+                >
+                  Export Markdown
+                </button>
+                <button
+                  onClick={handleExportPDF}
+                  className="bg-[#1a73e8] text-white px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-[#1557b0] transition-colors"
+                >
+                  Export Report PDF
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Risk explanation */}
+              <div className="p-4 rounded-xl border border-[#dadce0] bg-slate-50/50">
+                <div className="flex justify-between items-center mb-3">
+                  <span className="text-xs font-bold text-[#202124]">Performance Risk Factors</span>
+                  {user?.role !== "student" && (
+                    <button
+                      onClick={handleGenerateRiskAnalysis}
+                      disabled={generatingExplanation}
+                      className="text-xs text-[#1a73e8] font-bold hover:underline"
+                    >
+                      {generatingExplanation ? "Analyzing..." : "Re-evaluate"}
+                    </button>
+                  )}
+                </div>
+                {student.riskExplanation ? (
+                  <div className="text-xs text-[#202124] leading-relaxed prose prose-sm max-w-none">
+                    <ReactMarkdown>{student.riskExplanation}</ReactMarkdown>
+                  </div>
                 ) : (
-                  student.marks.map((sub, idx) => {
-                    const avg = getSubjectAverage(sub);
-                    const failing = avg !== null && avg < 35;
-                    const borderline = avg !== null && avg >= 35 && avg < 50;
+                  <p className="text-xs text-[#5f6368] italic py-6 text-center">No AI explanation cached. Click Re-evaluate to generate.</p>
+                )}
+              </div>
+
+              {/* Recovery Plan */}
+              <div className="p-4 rounded-xl border border-[#dadce0] bg-slate-50/50">
+                <div className="flex justify-between items-center mb-3">
+                  <span className="text-xs font-bold text-[#202124]">Weekly Learning Study Plan</span>
+                  {user?.role !== "student" && (
+                    <button
+                      onClick={handleGenerateRecoveryPlan}
+                      disabled={generatingPlan}
+                      className="text-xs text-[#1a73e8] font-bold hover:underline"
+                    >
+                      {generatingPlan ? "Constructing..." : "Re-generate Plan"}
+                    </button>
+                  )}
+                </div>
+                {student.aiImprovementPlan ? (
+                  <div className="text-xs text-[#202124] leading-relaxed prose prose-sm max-w-none">
+                    <ReactMarkdown>{student.aiImprovementPlan}</ReactMarkdown>
+                  </div>
+                ) : (
+                  <p className="text-xs text-[#5f6368] italic py-6 text-center">No active study planner generated by instructor.</p>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Overrides button for mentors/admins */}
+          {user?.role !== "student" && (
+            <div className="flex justify-end">
+              <button
+                onClick={() => setShowOverrideForm(!showOverrideForm)}
+                className="bg-[#1a73e8] text-white px-5 py-2.5 rounded-xl text-sm font-semibold hover:bg-[#1557b0] transition-all shadow-sm"
+              >
+                Modify Records & Overrides
+              </button>
+            </div>
+          )}
+
+          {/* Override Form Panel */}
+          {showOverrideForm && (
+            <div className="bg-white border border-[#dadce0] rounded-2xl p-6 shadow-sm">
+              <h3 className="text-sm font-semibold text-[#202124] mb-4">Edit Roster Parameters</h3>
+              <form onSubmit={handleSaveOverride} className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium text-[#5f6368] mb-1">Attendance (%)</label>
+                    <input
+                      type="number"
+                      value={formAttendance}
+                      onChange={(e) => setFormAttendance(e.target.value)}
+                      className="w-full rounded-lg border border-[#dadce0] px-3.5 py-2 text-sm focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-[#5f6368] mb-1">Behavior assessment</label>
+                    <select
+                      value={formBehavior}
+                      onChange={(e) => setFormBehavior(e.target.value)}
+                      className="w-full rounded-lg border border-[#dadce0] px-3.5 py-2 text-sm focus:outline-none bg-white"
+                    >
+                      <option value="excellent">Excellent</option>
+                      <option value="good">Good</option>
+                      <option value="average">Average</option>
+                      <option value="bad">Bad</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-[#5f6368] mb-1">Co-Curriculars (comma-separated)</label>
+                    <input
+                      type="text"
+                      value={formContributions}
+                      onChange={(e) => setFormContributions(e.target.value)}
+                      className="w-full rounded-lg border border-[#dadce0] px-3.5 py-2 text-sm focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-4 mt-6">
+                  <h4 className="text-xs font-bold text-[#202124] border-b pb-2 uppercase tracking-wide">Academics obtained / max marks</h4>
+                  {student.marks.map((sub) => {
+                    const marksVal = formMarks[sub.subjectName] || {
+                      test1: "", test1Max: "25",
+                      test2: "", test2Max: "25",
+                      test3: "", test3Max: "25",
+                      midTerm: "", midTermMax: "100",
+                      houseExam: "", houseExamMax: "100",
+                    };
+
+                    const updateSubField = (field: keyof typeof marksVal, value: string) => {
+                      setFormMarks((prev) => ({
+                        ...prev,
+                        [sub.subjectName]: {
+                          ...prev[sub.subjectName],
+                          [field]: value,
+                        },
+                      }));
+                    };
 
                     return (
-                      <tr key={idx} className="border-b border-slate-100 text-xs">
-                        <td className="py-3 px-3 font-semibold text-text-primary flex items-center gap-1.5">
-                          {sub.subjectName}
-                          {sub.isPractical && (
-                            <span className="rounded-md bg-indigo-50 px-1.5 py-0.5 text-[8px] font-bold text-primary">LAB</span>
-                          )}
-                        </td>
-                        <td className="py-3 px-3 text-secondary font-medium">
-                          {sub.classTests.length > 0 
-                            ? sub.classTests.map(t => `${t.marks}/${t.maxMarks}`).join(", ") 
-                            : "N/A"}
-                        </td>
-                        <td className="py-3 px-3 text-secondary font-medium">
-                          {sub.midTerm.marks !== null ? `${sub.midTerm.marks}/${sub.midTerm.maxMarks}` : "N/A"}
-                        </td>
-                        <td className="py-3 px-3 text-secondary font-medium">
-                          {sub.houseExam.marks !== null ? `${sub.houseExam.marks}/${sub.houseExam.maxMarks}` : "N/A"}
-                        </td>
-                        <td className={`py-3 px-3 text-right font-bold ${
-                          failing ? "text-critical" : borderline ? "text-medium" : "text-low"
-                        }`}>
-                          {avg !== null ? `${avg.toFixed(1)}%` : "N/A"}
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        {/* Right Column (40%): AI Panel */}
-        <div className="flex flex-col gap-5">
-          {/* AI Explanation Card */}
-          <div className="rounded-xl border border-indigo-100 bg-white p-5 shadow-xs border-l-4 border-l-primary relative overflow-hidden">
-            <div className="mb-2 flex items-center justify-between">
-              <span className="text-[10px] font-bold text-primary uppercase tracking-wider flex items-center gap-1">
-                <svg className="h-4.5 w-4.5 text-primary" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M12 2a10 10 0 1010 10A10 10 0 0012 2zm1 14.5h-2v-2h2v2zm0-3.5h-2V7h2v4z" />
-                </svg>
-                AI Risk Analysis
-              </span>
-              <span className="rounded-md bg-indigo-50 px-1.5 py-0.5 text-[8px] font-bold text-primary uppercase tracking-wide">NVIDIA NIM</span>
-            </div>
-            
-            {generatingExplanation ? (
-              <div className="space-y-2 mt-3 animate-pulse">
-                <div className="h-3 w-full rounded bg-slate-100" />
-                <div className="h-3 w-5/6 rounded bg-slate-100" />
-                <div className="h-3 w-4/5 rounded bg-slate-100" />
-              </div>
-            ) : student.riskExplanation ? (
-              <p className="text-xs text-text-primary leading-relaxed mt-2 italic">
-                &ldquo;{student.riskExplanation}&rdquo;
-              </p>
-            ) : (
-              <div className="mt-4 flex flex-col items-center">
-                <p className="text-center text-xs text-slate-400">
-                  {user?.role === "student"
-                    ? "AI assessment has not been generated by your mentor yet."
-                    : "Generate a 2-3 sentence AI assessment explaining why this student is at this risk level."}
-                </p>
-                {user?.role !== "student" && (
-                  <button
-                    onClick={handleGenerateExplanation}
-                    className="mt-3 rounded-lg bg-primary px-3 py-1.5 text-xs font-bold text-white hover:bg-primary-hover shadow-xs focus:outline-hidden"
-                  >
-                    Generate Explanation
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* AI Improvement Plan */}
-          <div className="rounded-xl border border-purple-100 bg-white p-5 shadow-xs border-l-4 border-l-purple-500 relative">
-            <span className="text-[10px] font-bold text-purple-600 uppercase tracking-wider block mb-2">Improvement Plan</span>
-            
-            {generatingPlan ? (
-              <div className="space-y-3 mt-3 animate-pulse">
-                {[1, 2, 3, 4].map(n => (
-                  <div key={n} className="flex gap-2">
-                    <div className="h-3.5 w-3.5 shrink-0 rounded-full bg-slate-100" />
-                    <div className="h-3 w-full rounded bg-slate-100" />
-                  </div>
-                ))}
-              </div>
-            ) : student.aiImprovementPlan ? (
-              <div className="mt-2 flex flex-col gap-2.5 overflow-y-auto max-h-56">
-                {student.aiImprovementPlan.split("\n").filter(Boolean).map((line, idx) => (
-                  <div key={idx} className="flex gap-2">
-                    <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-purple-50 text-[10px] font-bold text-purple-600">✓</span>
-                    <span className="text-xs text-text-primary leading-tight">{line.replace(/^-\s*/, "")}</span>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="mt-4 flex flex-col items-center">
-                <p className="text-center text-xs text-slate-400">
-                  {user?.role === "student"
-                    ? "Academic recovery plan has not been generated by your mentor yet."
-                    : "Generate a customized 5-7 step action recovery plan based on failing subjects and attendance."}
-                </p>
-                {user?.role !== "student" && (
-                  <button
-                    onClick={handleGeneratePlan}
-                    className="mt-3 rounded-lg bg-purple-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-purple-700 shadow-xs focus:outline-hidden"
-                  >
-                    Generate Plan
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Row 3: Manual overrides / Missing data form (Only for Mentors/Admins) */}
-      {user?.role !== "student" && (
-        <div className="mb-6 rounded-xl border border-slate-200 bg-white shadow-xs">
-          <button
-            onClick={() => setShowOverrideForm(!showOverrideForm)}
-            className="flex w-full items-center justify-between px-6 py-4 focus:outline-hidden"
-          >
-            <span className="text-sm font-bold text-text-primary flex items-center gap-2">
-              <svg className="h-4.5 w-4.5 text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-              </svg>
-              Update Student Data (Manual Override)
-            </span>
-            <svg className={`h-5 w-5 text-slate-400 transition-all ${showOverrideForm ? "rotate-180" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
-            </svg>
-          </button>
-
-          {showOverrideForm && (
-            <form onSubmit={handleSaveOverride} className="border-t border-slate-100 p-6 flex flex-col gap-6">
-              <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">
-                {/* Attendance input */}
-                <div className="flex flex-col gap-1">
-                  <label className="text-xs font-bold text-secondary uppercase">Attendance (%)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    max="100"
-                    value={formAttendance}
-                    onChange={(e) => setFormAttendance(e.target.value)}
-                    className="rounded-lg border border-slate-200 px-3 py-2 text-xs focus:border-primary focus:outline-hidden"
-                    placeholder="e.g. 78"
-                  />
-                </div>
-
-                {/* Behavior dropdown */}
-                <div className="flex flex-col gap-1">
-                  <label className="text-xs font-bold text-secondary uppercase">Behavior</label>
-                  <select
-                    value={formBehavior}
-                    onChange={(e) => setFormBehavior(e.target.value)}
-                    className="rounded-lg border border-slate-200 px-3 py-2 text-xs focus:border-primary focus:outline-hidden bg-white"
-                  >
-                    <option value="">Select Behavior</option>
-                    <option value="excellent">Excellent</option>
-                    <option value="good">Good</option>
-                    <option value="average">Average</option>
-                    <option value="bad">Bad</option>
-                  </select>
-                </div>
-
-                {/* Contributions */}
-                <div className="flex flex-col gap-1">
-                  <label className="text-xs font-bold text-secondary uppercase">Contributions (comma-separated)</label>
-                  <input
-                    type="text"
-                    value={formContributions}
-                    onChange={(e) => setFormContributions(e.target.value)}
-                    className="rounded-lg border border-slate-200 px-3 py-2 text-xs focus:border-primary focus:outline-hidden"
-                    placeholder="e.g. Hackathon, CodingClub"
-                  />
-                </div>
-              </div>
-
-              {/* Subject Marks inputs */}
-              <div className="flex flex-col gap-4">
-                <h3 className="text-xs font-bold text-text-primary uppercase tracking-wider border-b border-slate-100 pb-1.5">Subject Marks overrides</h3>
-                {student.marks.map((sub) => {
-                  const marksVal = formMarks[sub.subjectName] || {
-                    test1: "", test1Max: "25",
-                    test2: "", test2Max: "25",
-                    test3: "", test3Max: "25",
-                    midTerm: "", midTermMax: "100",
-                    houseExam: "", houseExamMax: "100",
-                  };
-
-                  const updateSubField = (field: keyof typeof marksVal, value: string) => {
-                    setFormMarks((prev) => ({
-                      ...prev,
-                      [sub.subjectName]: {
-                        ...prev[sub.subjectName],
-                        [field]: value,
-                      },
-                    }));
-                  };
-
-                  return (
-                    <div key={sub.subjectName} className="rounded-lg border border-slate-100 bg-slate-50/50 p-4">
-                      <h4 className="text-xs font-bold text-text-primary mb-3 flex items-center gap-1.5">
-                        {sub.subjectName}
-                        {sub.isPractical && <span className="rounded-md bg-indigo-50 px-1 py-0.5 text-[8px] font-bold text-primary">LAB</span>}
-                      </h4>
-                      <div className="grid grid-cols-2 gap-4 sm:grid-cols-5">
-                        {/* Test 1 */}
-                        <div className="flex flex-col gap-1">
-                          <label className="text-[10px] font-bold text-secondary uppercase">Test 1 (obtained/max)</label>
-                          <div className="flex items-center gap-1">
+                      <div key={sub.subjectName} className="p-4 border rounded-xl bg-slate-50/50">
+                        <span className="text-xs font-semibold text-[#202124] block mb-3">{sub.subjectName}</span>
+                        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                          <div>
+                            <label className="block text-[10px] text-[#5f6368] font-semibold mb-1">Test 1</label>
                             <input
                               type="number"
+                              placeholder="obt"
                               value={marksVal.test1}
                               onChange={(e) => updateSubField("test1", e.target.value)}
-                              className="w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-xs"
-                              placeholder="obt"
-                            />
-                            <span className="text-slate-400">/</span>
-                            <input
-                              type="number"
-                              value={marksVal.test1Max}
-                              onChange={(e) => updateSubField("test1Max", e.target.value)}
-                              className="w-12 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs"
-                              placeholder="max"
+                              className="w-full rounded-lg border px-2 py-1 text-xs bg-white focus:outline-none"
                             />
                           </div>
-                        </div>
-
-                        {/* Test 2 */}
-                        <div className="flex flex-col gap-1">
-                          <label className="text-[10px] font-bold text-secondary uppercase">Test 2</label>
-                          <div className="flex items-center gap-1">
+                          <div>
+                            <label className="block text-[10px] text-[#5f6368] font-semibold mb-1">Test 2</label>
                             <input
                               type="number"
+                              placeholder="obt"
                               value={marksVal.test2}
                               onChange={(e) => updateSubField("test2", e.target.value)}
-                              className="w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-xs"
-                              placeholder="obt"
-                            />
-                            <span className="text-slate-400">/</span>
-                            <input
-                              type="number"
-                              value={marksVal.test2Max}
-                              onChange={(e) => updateSubField("test2Max", e.target.value)}
-                              className="w-12 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs"
-                              placeholder="max"
+                              className="w-full rounded-lg border px-2 py-1 text-xs bg-white focus:outline-none"
                             />
                           </div>
-                        </div>
-
-                        {/* Test 3 */}
-                        <div className="flex flex-col gap-1">
-                          <label className="text-[10px] font-bold text-secondary uppercase">Test 3</label>
-                          <div className="flex items-center gap-1">
+                          <div>
+                            <label className="block text-[10px] text-[#5f6368] font-semibold mb-1">Test 3</label>
                             <input
                               type="number"
+                              placeholder="obt"
                               value={marksVal.test3}
                               onChange={(e) => updateSubField("test3", e.target.value)}
-                              className="w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-xs"
-                              placeholder="obt"
-                            />
-                            <span className="text-slate-400">/</span>
-                            <input
-                              type="number"
-                              value={marksVal.test3Max}
-                              onChange={(e) => updateSubField("test3Max", e.target.value)}
-                              className="w-12 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs"
-                              placeholder="max"
+                              className="w-full rounded-lg border px-2 py-1 text-xs bg-white focus:outline-none"
                             />
                           </div>
-                        </div>
-
-                        {/* Mid Term */}
-                        <div className="flex flex-col gap-1">
-                          <label className="text-[10px] font-bold text-secondary uppercase">Mid Term</label>
-                          <div className="flex items-center gap-1">
-                            <input
-                              type="number"
-                              value={marksVal.midTerm}
-                              onChange={(e) => updateSubField("midTerm", e.target.value)}
-                              className="w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-xs"
-                              placeholder="obt"
-                            />
-                            <span className="text-slate-400">/</span>
-                            <input
-                              type="number"
-                              value={marksVal.midTermMax}
-                              onChange={(e) => updateSubField("midTermMax", e.target.value)}
-                              className="w-16 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs"
-                              placeholder="max"
-                            />
+                          <div>
+                            <label className="block text-[10px] text-[#5f6368] font-semibold mb-1">Mid Term (obt/max)</label>
+                            <div className="flex gap-1">
+                              <input
+                                type="number"
+                                placeholder="obt"
+                                value={marksVal.midTerm}
+                                onChange={(e) => updateSubField("midTerm", e.target.value)}
+                                className="w-full rounded-lg border px-2 py-1 text-xs bg-white focus:outline-none"
+                              />
+                              <input
+                                type="number"
+                                placeholder="max"
+                                value={marksVal.midTermMax}
+                                onChange={(e) => updateSubField("midTermMax", e.target.value)}
+                                className="w-12 rounded-lg border px-2 py-1 text-xs bg-white focus:outline-none"
+                              />
+                            </div>
                           </div>
-                        </div>
-
-                        {/* House Exam */}
-                        <div className="flex flex-col gap-1">
-                          <label className="text-[10px] font-bold text-secondary uppercase">House Exam</label>
-                          <div className="flex items-center gap-1">
-                            <input
-                              type="number"
-                              value={marksVal.houseExam}
-                              onChange={(e) => updateSubField("houseExam", e.target.value)}
-                              className="w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-xs"
-                              placeholder="obt"
-                            />
-                            <span className="text-slate-400">/</span>
-                            <input
-                              type="number"
-                              value={marksVal.houseExamMax}
-                              onChange={(e) => updateSubField("houseExamMax", e.target.value)}
-                              className="w-16 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs"
-                              placeholder="max"
-                            />
+                          <div>
+                            <label className="block text-[10px] text-[#5f6368] font-semibold mb-1">House Exam (obt/max)</label>
+                            <div className="flex gap-1">
+                              <input
+                                type="number"
+                                placeholder="obt"
+                                value={marksVal.houseExam}
+                                onChange={(e) => updateSubField("houseExam", e.target.value)}
+                                className="w-full rounded-lg border px-2 py-1 text-xs bg-white focus:outline-none"
+                              />
+                              <input
+                                type="number"
+                                placeholder="max"
+                                value={marksVal.houseExamMax}
+                                onChange={(e) => updateSubField("houseExamMax", e.target.value)}
+                                className="w-12 rounded-lg border px-2 py-1 text-xs bg-white focus:outline-none"
+                              />
+                            </div>
                           </div>
                         </div>
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
+                    );
+                  })}
+                </div>
 
-              <div className="mt-4 flex gap-3 self-end">
-                <button
-                  type="button"
-                  onClick={() => setShowOverrideForm(false)}
-                  className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-secondary hover:bg-slate-50 focus:outline-hidden"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="rounded-lg bg-primary px-4 py-2 text-xs font-bold text-white hover:bg-primary-hover shadow-xs focus:outline-hidden"
-                >
-                  Save Changes & Recalculate
-                </button>
-              </div>
-            </form>
+                <div className="flex justify-end gap-3 mt-6">
+                  <button
+                    type="button"
+                    onClick={() => setShowOverrideForm(false)}
+                    className="border border-[#dadce0] text-slate-700 px-4 py-2 rounded-lg text-xs font-semibold hover:bg-slate-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="bg-[#1a73e8] text-white px-4 py-2 rounded-lg text-xs font-semibold hover:bg-[#1557b0]"
+                  >
+                    Save Modifications & Recalculate
+                  </button>
+                </div>
+              </form>
+            </div>
           )}
         </div>
       )}
 
-      {/* Row 4: Mentor Chat Window with AI Fallback */}
-      <div className="rounded-xl border border-slate-200 bg-white shadow-xs overflow-hidden flex flex-col h-[500px]">
-        {/* Chat Header */}
-        <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50/50 px-6 py-3.5">
-          <div className="flex items-center gap-2">
-            <span className="relative flex h-3 w-3">
-              <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
-                student.mentorId?.isOnline ? "bg-emerald-400" : "bg-slate-400"
-              }`} />
-              <span className={`relative inline-flex rounded-full h-3 w-3 ${
-                student.mentorId?.isOnline ? "bg-emerald-500" : "bg-slate-500"
-              }`} />
-            </span>
-            <div className="flex flex-col">
-              <span className="text-xs font-bold text-text-primary">
-                {user?.role === "student"
-                  ? `Chat with Mentor (${student.mentorId?.name || "Unassigned"})`
-                  : `Chat with Student (${student.name})`}
-              </span>
-              <span className="text-[9px] text-slate-400 font-semibold mt-0.5">
-                {student.mentorId?.isOnline ? "Mentor is Online" : "Mentor Offline (AI Assistant responding)"}
+      {/* 2. CHAT TAB */}
+      {(user?.role !== "student" || activeTab === "chat") && (
+        <div className="bg-white border border-[#dadce0] rounded-2xl shadow-sm overflow-hidden flex flex-col h-[500px] mt-6">
+          <div className="px-5 py-3.5 bg-slate-50 border-b border-[#dadce0] flex justify-between items-center">
+            <div className="flex items-center gap-2">
+              <span className={`h-2.5 w-2.5 rounded-full ${student.mentorId?.isOnline ? "bg-green-500 animate-pulse" : "bg-slate-400"}`} />
+              <span className="text-xs font-semibold text-[#202124]">
+                {user?.role === "student" ? `Instructor Chat (${student.mentorId?.name || "None"})` : `Student Chat (${student.name})`}
               </span>
             </div>
+            {!student.mentorId?.isOnline && user?.role === "student" && (
+              <span className="text-[10px] bg-purple-50 text-purple-700 font-bold border border-purple-100 px-2 py-0.5 rounded-full">
+                AI Agent Active (Mentor Offline)
+              </span>
+            )}
           </div>
-        </div>
 
-        {/* Chat Messages */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-4">
-          {messages.length === 0 ? (
-            <div className="flex h-full items-center justify-center text-xs text-slate-400">
-              No chat history available. Start the conversation!
-            </div>
-          ) : (
-            messages.map((msg: any, idx: number) => {
+          {/* Chat Messages scroll area */}
+          <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50/20">
+            {messages.map((msg, index) => {
               const isMe = user?.role === "student" ? msg.sender === "student" : msg.sender === "mentor";
               const isAI = msg.sender === "ai";
-
               return (
-                <div key={idx} className={`flex flex-col ${isMe ? "items-end" : "items-start"}`}>
+                <div key={index} className={`flex flex-col ${isMe ? "items-end" : "items-start"}`}>
                   {isAI && (
-                    <span className="text-[8px] font-bold text-purple-600 uppercase tracking-wider mb-1 ml-3.5">AI Assistant</span>
+                    <span className="text-[9px] text-purple-700 font-semibold mb-0.5 ml-1">AI Agent Fallback</span>
                   )}
-                  <div
-                    className={`max-w-md rounded-xl px-4 py-2 text-xs font-medium leading-relaxed shadow-xs ${
-                      isMe
-                        ? "bg-primary text-white"
-                        : isAI
-                        ? "bg-purple-100/50 border border-purple-200 text-purple-900 border-l-4 border-l-purple-500 rounded-tl-none"
-                        : "bg-slate-100 text-text-primary rounded-tl-none"
-                    }`}
-                  >
+                  <div className={`max-w-md px-3.5 py-2 rounded-xl text-xs font-medium ${
+                    isMe ? "bg-primary text-white" : isAI ? "bg-purple-100 border border-purple-200 text-purple-900" : "bg-white border border-[#dadce0] text-[#202124]"
+                  }`}>
                     {msg.text}
                   </div>
-                  <span className="text-[8px] text-slate-400 mt-1 mx-2">
-                    {new Date(msg.createdAt || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                  </span>
                 </div>
               );
-            })
-          )}
-
-          {/* AI Typing Indicator */}
-          {aiTyping && (
-            <div className="flex flex-col items-start">
-              <span className="text-[8px] font-bold text-purple-600 uppercase tracking-wider mb-1 ml-3.5">AI Assistant</span>
-              <div className="flex items-center gap-1 rounded-xl bg-purple-100/50 border border-purple-200 px-4 py-3 text-xs text-purple-900">
-                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-purple-600" />
-                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-purple-600 [animation-delay:0.2s]" />
-                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-purple-600 [animation-delay:0.4s]" />
+            })}
+            {aiTyping && (
+              <div className="flex flex-col items-start">
+                <span className="text-[9px] text-purple-700 font-semibold mb-0.5 ml-1">AI Assistant typing...</span>
+                <div className="px-3.5 py-2 rounded-xl bg-purple-50 border border-purple-200 text-purple-600 text-xs font-bold animate-pulse">
+                  •••
+                </div>
               </div>
+            )}
+            <div ref={chatEndRef} />
+          </div>
+
+          <form onSubmit={handleSendChat} className="border-t border-[#dadce0] p-4 bg-white flex gap-2">
+            <input
+              type="text"
+              required
+              placeholder={student.mentorId ? "Type a message..." : "Join a mentor group to activate chat portal"}
+              disabled={!student.mentorId}
+              value={chatInput}
+              onChange={(e) => setChatInput(e.target.value)}
+              className="flex-1 border rounded-lg px-4 py-2 text-xs focus:outline-none disabled:bg-slate-100"
+            />
+            <button type="submit" disabled={!student.mentorId} className="bg-[#1a73e8] text-white px-5 py-2 rounded-lg text-xs font-semibold hover:bg-[#1557b0] disabled:opacity-50">
+              Send
+            </button>
+          </form>
+        </div>
+      )}
+
+      {/* 3. ALERTS / NOTIFICATIONS TAB */}
+      {user?.role === "student" && activeTab === "notifications" && (
+        <div className="bg-white border border-[#dadce0] rounded-2xl p-6 shadow-sm mt-6">
+          <h3 className="text-sm font-semibold text-[#202124] mb-4">Workspace Announcements & Event Notifications</h3>
+          {alerts.length === 0 ? (
+            <p className="text-xs text-[#5f6368] italic py-8 text-center">No alerts broadcasted yet.</p>
+          ) : (
+            <div className="space-y-4">
+              {alerts.map((n) => (
+                <div key={n._id} className="p-4 border rounded-xl bg-slate-50/50 flex gap-3">
+                  <div className="h-2 w-2 rounded-full bg-blue-500 mt-1.5 shrink-0" />
+                  <div>
+                    <span className="text-xs font-bold text-[#202124] block">{n.message}</span>
+                    <span className="text-[10px] text-[#5f6368] mt-1 block">
+                      {new Date(n.createdAt).toLocaleDateString()} at {new Date(n.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </div>
-
-        {/* Message Input */}
-        <form onSubmit={handleSendChat} className="border-t border-slate-100 p-4 bg-white flex gap-2">
-          <input
-            type="text"
-            placeholder={
-              !student.mentorId
-                ? "You must join a mentor group before you can chat."
-                : user?.role === "student"
-                ? `Type a message to your mentor...`
-                : `Type a message to ${student.name}...`
-            }
-            value={chatInput}
-            onChange={(e) => setChatInput(e.target.value)}
-            disabled={!student.mentorId}
-            className="flex-1 rounded-lg border border-slate-200 px-4 py-2 text-xs focus:border-primary focus:outline-hidden focus:ring-1 focus:ring-indigo-100 disabled:bg-slate-50 disabled:text-slate-400"
-          />
-          <button
-            type="submit"
-            disabled={!student.mentorId || !chatInput.trim()}
-            className="rounded-lg bg-primary px-4 py-2 text-xs font-bold text-white hover:bg-primary-hover shadow-xs focus:outline-hidden disabled:opacity-50"
-          >
-            Send
-          </button>
-        </form>
-      </div>
+      )}
     </div>
   );
 };

@@ -50,6 +50,19 @@ namespace EduGuard.Controllers
             limit = Math.Clamp(limit, 1, 100);
 
             var filters = new List<FilterDefinition<Student>>();
+
+            // Role-based visibility check: Mentors can only see their assigned classes
+            var userRole = User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value;
+            var userId = User.FindFirst("id")?.Value;
+            if (userRole == "mentor" && !string.IsNullOrEmpty(userId))
+            {
+                var mentor = await _mongoService.Mentors.Find(m => m.Id == userId).FirstOrDefaultAsync();
+                if (mentor != null && mentor.AssignedClasses != null && mentor.AssignedClasses.Count > 0)
+                {
+                    filters.Add(Builders<Student>.Filter.In(s => s.Class, mentor.AssignedClasses));
+                }
+            }
+
             if (!string.IsNullOrWhiteSpace(course))
             {
                 filters.Add(Builders<Student>.Filter.Eq(s => s.Course, course));
@@ -179,8 +192,9 @@ namespace EduGuard.Controllers
                         continue;
                     }
 
-                    // Find existing student by RollNo
-                    var student = await _mongoService.Students.Find(s => s.RollNo == row.RollNo).FirstOrDefaultAsync();
+                    // Find existing student by RollNo and CollegeId
+                    var mentorCollegeId = currentMentor?.CollegeId;
+                    var student = await _mongoService.Students.Find(s => s.CollegeId == mentorCollegeId && s.RollNo == row.RollNo).FirstOrDefaultAsync();
                     Student? oldValues = null;
                     bool isNew = student == null;
 
@@ -196,7 +210,9 @@ namespace EduGuard.Controllers
                             PhoneNo = row.PhoneNo,
                             IsVerified = false,
                             VerificationToken = verificationToken,
-                            Course = "BCA", // default course, can be dynamically resolved
+                            CollegeId = currentMentor?.CollegeId,
+                            CourseId = currentMentor?.AssignedCourseId,
+                            Course = currentMentor?.Department ?? "BCA", // resolved from mentor department
                             Class = currentMentor?.AssignedClasses?.FirstOrDefault() ?? "BCA-A",
                             Semester = 1,
                             Marks = new(),
@@ -637,6 +653,121 @@ namespace EduGuard.Controllers
 
             return Ok(new { success = true, data = plan, recoveryPlan = plan });
         }
+
+        [HttpPost("study-planner/{id}")]
+        public async Task<IActionResult> GenerateStudyPlan(string id, [FromBody] StudyPlannerRequest request)
+        {
+            if (request == null) return BadRequest("Request body is required");
+
+            var student = await _mongoService.Students.Find(s => s.Id == id).FirstOrDefaultAsync();
+            if (student == null) return NotFound("Student not found");
+
+            try
+            {
+                var plan = await _nvidiaNimService.GeneratePersonalizedStudyPlanAsync(
+                    student, 
+                    request.WeakSubjects, 
+                    request.LearningSpeed, 
+                    request.UpcomingExams
+                );
+                return Ok(new { success = true, plan });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Failed to generate AI study plan: {ex.Message}");
+            }
+        }
+
+        [HttpPost("assignments")]
+        public async Task<IActionResult> CreateAssignment([FromBody] Assignment model)
+        {
+            if (model == null || string.IsNullOrEmpty(model.Title) || string.IsNullOrEmpty(model.MentorId))
+            {
+                return BadRequest("Title and MentorId are required");
+            }
+            await _mongoService.Assignments.InsertOneAsync(model);
+            return Ok(new { success = true, data = model });
+        }
+
+        [HttpGet("assignments")]
+        public async Task<IActionResult> ListAssignments([FromQuery] string courseId, [FromQuery] string @class)
+        {
+            var filter = Builders<Assignment>.Filter.Eq(a => a.CourseId, courseId) & Builders<Assignment>.Filter.Eq(a => a.Class, @class);
+            var list = await _mongoService.Assignments.Find(filter).ToListAsync();
+            return Ok(new { success = true, data = list });
+        }
+
+        [HttpPost("assignments/{assignmentId}/submit")]
+        public async Task<IActionResult> SubmitAssignment(string assignmentId, [FromBody] Submission model)
+        {
+            if (model == null || string.IsNullOrEmpty(model.StudentId) || string.IsNullOrEmpty(model.SubmittedPdfUrl))
+            {
+                return BadRequest("StudentId and SubmittedPdfUrl are required");
+            }
+            model.AssignmentId = assignmentId;
+            model.SubmittedAt = DateTime.UtcNow;
+            await _mongoService.Submissions.InsertOneAsync(model);
+            return Ok(new { success = true, data = model });
+        }
+
+        [HttpGet("assignments/{assignmentId}/submissions")]
+        public async Task<IActionResult> ListSubmissions(string assignmentId)
+        {
+            var list = await _mongoService.Submissions.Find(s => s.AssignmentId == assignmentId).ToListAsync();
+            return Ok(new { success = true, data = list });
+        }
+
+        [HttpPost("submissions/{submissionId}/grade")]
+        public async Task<IActionResult> GradeSubmission(string submissionId, [FromBody] GradeRequest request)
+        {
+            if (request == null) return BadRequest("Grade and feedback are required");
+            
+            var filter = Builders<Submission>.Filter.Eq(s => s.Id, submissionId);
+            var update = Builders<Submission>.Update
+                .Set(s => s.Grade, request.Grade)
+                .Set(s => s.Feedback, request.Feedback)
+                .Set(s => s.UpdatedAt, DateTime.UtcNow);
+
+            var result = await _mongoService.Submissions.UpdateOneAsync(filter, update);
+            if (result.MatchedCount == 0) return NotFound("Submission not found");
+
+            return Ok(new { success = true, message = "Submission graded successfully" });
+        }
+
+        [HttpPost("{id}/verify")]
+        public async Task<IActionResult> VerifyStudentEnrollment(string id, [FromBody] ApproveStudentRequest request)
+        {
+            if (request == null) return BadRequest("Status is required");
+            var status = request.Approve ? "approved" : "rejected";
+
+            var filter = Builders<Student>.Filter.Eq(s => s.Id, id);
+            var update = Builders<Student>.Update
+                .Set(s => s.VerificationStatus, status)
+                .Set(s => s.UpdatedAt, DateTime.UtcNow);
+
+            var result = await _mongoService.Students.UpdateOneAsync(filter, update);
+            if (result.MatchedCount == 0) return NotFound("Student not found");
+
+            return Ok(new { success = true, message = $"Student enrollment verification status set to {status}" });
+        }
+    }
+
+    public class StudyPlannerRequest
+    {
+        public string WeakSubjects { get; set; } = string.Empty;
+        public string LearningSpeed { get; set; } = string.Empty;
+        public string UpcomingExams { get; set; } = string.Empty;
+    }
+
+    public class GradeRequest
+    {
+        public string Grade { get; set; } = string.Empty;
+        public string Feedback { get; set; } = string.Empty;
+    }
+
+    public class ApproveStudentRequest
+    {
+        public bool Approve { get; set; }
     }
 
     public class StudentUpdatePayload
