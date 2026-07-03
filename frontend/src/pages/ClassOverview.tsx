@@ -40,12 +40,36 @@ const ClassOverview: React.FC = () => {
     : user?.assignedClasses?.length ? user.assignedClasses : ["BCA-A"];
 
   const fetchClassDetails = async () => {
+    const cacheKey = `class_data_${activeClass}`;
+    const cachedDataStr = sessionStorage.getItem(cacheKey);
+    if (cachedDataStr) {
+      try {
+        const cached = JSON.parse(cachedDataStr);
+        setClassStats(cached.stats);
+        setSubjectAverages(cached.subjectAverages);
+        setAiSummary(cached.aiSummary);
+        setStudents(cached.students);
+        setLoading(false);
+        return;
+      } catch (e) {
+        console.error("Failed to parse cached class data", e);
+      }
+    }
+
     setLoading(true);
+    setClassStats(null); // clear old stats
+    setSubjectAverages({}); // clear old averages
+    setStudents([]); // clear old students roster
     setAiSummary(""); // clear old AI summary
     try {
       const res = await axios.get(`/api/students/class/${activeClass}/summary`);
+      let stats = null;
+      let subAvgs = {};
+      let summary = "";
       if (res.data.success) {
-        const { stats, subjectAverages: subAvgs, summary } = res.data.data;
+        stats = res.data.data.stats;
+        subAvgs = res.data.data.subjectAverages;
+        summary = res.data.data.summary;
         setClassStats(stats);
         setSubjectAverages(subAvgs);
         setAiSummary(summary);
@@ -55,9 +79,21 @@ const ClassOverview: React.FC = () => {
       const studentsRes = await axios.get("/api/students", {
         params: { class: activeClass, limit: 50 },
       });
+      let fetchedStudents = [];
       if (studentsRes.data.success) {
-        setStudents(studentsRes.data.data);
+        fetchedStudents = studentsRes.data.data;
+        setStudents(fetchedStudents);
       }
+
+      // Save to cache
+      const dataToCache = {
+        stats,
+        subjectAverages: subAvgs,
+        aiSummary: summary,
+        students: fetchedStudents
+      };
+      sessionStorage.setItem(cacheKey, JSON.stringify(dataToCache));
+
     } catch (err: any) {
       console.error(err);
       toast.error(err.response?.data?.message || "Failed to load class analytics");
@@ -73,6 +109,26 @@ const ClassOverview: React.FC = () => {
   // Sync activeClass state with URL param when URL changes
   useEffect(() => {
     if (className && className !== activeClass) {
+      const cacheKey = `class_data_${className}`;
+      const cachedDataStr = sessionStorage.getItem(cacheKey);
+      if (cachedDataStr) {
+        try {
+          const cached = JSON.parse(cachedDataStr);
+          setClassStats(cached.stats);
+          setSubjectAverages(cached.subjectAverages);
+          setAiSummary(cached.aiSummary);
+          setStudents(cached.students);
+          setLoading(false);
+        } catch (e) {
+          console.error(e);
+        }
+      } else {
+        setLoading(true);
+        setClassStats(null);
+        setSubjectAverages({});
+        setStudents([]);
+        setAiSummary("");
+      }
       setActiveClass(className);
     }
   }, [className]);
@@ -83,8 +139,18 @@ const ClassOverview: React.FC = () => {
     try {
       const res = await axios.get(`/api/students/class/${activeClass}/summary`);
       if (res.data.success) {
-        setAiSummary(res.data.data.summary);
+        const summary = res.data.data.summary;
+        setAiSummary(summary);
         toast.success("AI class performance review completed!");
+
+        // Update cache with new AI summary
+        const cacheKey = `class_data_${activeClass}`;
+        const cachedDataStr = sessionStorage.getItem(cacheKey);
+        if (cachedDataStr) {
+          const cached = JSON.parse(cachedDataStr);
+          cached.aiSummary = summary;
+          sessionStorage.setItem(cacheKey, JSON.stringify(cached));
+        }
       }
     } catch (err) {
       console.error(err);
@@ -147,7 +213,30 @@ const ClassOverview: React.FC = () => {
           {classTabs.map((c) => (
             <button
               key={c}
-              onClick={() => { setActiveClass(c); navigate(`/class/${c}`); }}
+              onClick={() => {
+                const cacheKey = `class_data_${c}`;
+                const cachedDataStr = sessionStorage.getItem(cacheKey);
+                if (cachedDataStr) {
+                  try {
+                    const cached = JSON.parse(cachedDataStr);
+                    setClassStats(cached.stats);
+                    setSubjectAverages(cached.subjectAverages);
+                    setAiSummary(cached.aiSummary);
+                    setStudents(cached.students);
+                    setLoading(false);
+                  } catch (e) {
+                    console.error(e);
+                  }
+                } else {
+                  setLoading(true);
+                  setClassStats(null);
+                  setSubjectAverages({});
+                  setStudents([]);
+                  setAiSummary("");
+                }
+                setActiveClass(c);
+                navigate(`/class/${c}`);
+              }}
               className={`border-b-2 px-4 py-2.5 text-xs font-bold transition-all ${
                 activeClass === c
                   ? "border-primary text-primary"

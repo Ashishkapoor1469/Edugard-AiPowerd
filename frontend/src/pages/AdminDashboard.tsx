@@ -40,7 +40,35 @@ const AdminDashboard: React.FC = () => {
   const [allMentors, setAllMentors] = useState<Mentor[]>([]);
   const [allStudents, setAllStudents] = useState<Student[]>([]);
   const [colleges, setColleges] = useState<College[]>([]);
-  const [, setDegrees] = useState<Degree[]>([]);
+  const [degrees, setDegrees] = useState<Degree[]>([]);
+  const [selectedCollegeId, setSelectedCollegeId] = useState<string>("");
+  const [selectedDegreeId, setSelectedDegreeId] = useState<string>("");
+  const [collegeStudents, setCollegeStudents] = useState<Student[]>([]);
+  const [loadingStudents, setLoadingStudents] = useState(false);
+
+  useEffect(() => {
+    if (selectedCollegeId && selectedDegreeId) {
+      const fetchCollegeStudents = async () => {
+        setLoadingStudents(true);
+        try {
+          const res = await axios.get("/api/students", {
+            params: { collegeId: selectedCollegeId, courseId: selectedDegreeId, limit: 100 }
+          });
+          if (res.data.success) {
+            setCollegeStudents(res.data.data);
+          }
+        } catch (err) {
+          console.error("Failed to fetch college students:", err);
+          toast.error("Failed to load students for selection");
+        } finally {
+          setLoadingStudents(false);
+        }
+      };
+      fetchCollegeStudents();
+    } else {
+      setCollegeStudents([]);
+    }
+  }, [selectedCollegeId, selectedDegreeId]);
 
   // Inputs
   const [collegeName, setCollegeName] = useState("");
@@ -331,80 +359,192 @@ const AdminDashboard: React.FC = () => {
 
         {/* 2. COLLEGES & DEGREES */}
         {activeTab === "colleges" && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="rounded-2xl border border-[#dadce0] bg-white p-6 shadow-sm">
-              <h2 className="text-lg font-semibold text-[#202124] mb-4">Register New College</h2>
-              <form onSubmit={handleCreateCollege} className="space-y-4">
-                <div>
-                  <label className="block text-xs font-medium text-[#5f6368] mb-1">College Name</label>
-                  <input
-                    type="text"
-                    required
-                    value={collegeName}
-                    onChange={(e) => setCollegeName(e.target.value)}
-                    placeholder="e.g. Govt Degree College"
-                    className="w-full rounded-lg border border-[#dadce0] px-3.5 py-2 text-sm focus:border-[#1a73e8] focus:outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-[#5f6368] mb-1">Location</label>
-                  <input
-                    type="text"
-                    required
-                    value={collegeLocation}
-                    onChange={(e) => setCollegeLocation(e.target.value)}
-                    placeholder="e.g. Shimla, HP"
-                    className="w-full rounded-lg border border-[#dadce0] px-3.5 py-2 text-sm focus:border-[#1a73e8] focus:outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-[#5f6368] mb-1">Website URL</label>
-                  <input
-                    type="url"
-                    value={collegeWebsite}
-                    onChange={(e) => setCollegeWebsite(e.target.value)}
-                    placeholder="e.g. https://gdcshimla.edu"
-                    className="w-full rounded-lg border border-[#dadce0] px-3.5 py-2 text-sm focus:border-[#1a73e8] focus:outline-none"
-                  />
-                </div>
-                <button type="submit" className="w-full bg-[#1a73e8] text-white py-2 rounded-lg text-sm font-semibold hover:bg-[#1557b0] transition-colors">
-                  Create College
-                </button>
-              </form>
+          <div className="space-y-6">
+            {/* Forms Row */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* College Registration Form */}
+              <div className="rounded-2xl border border-[#dadce0] bg-white p-6 shadow-sm">
+                <h2 className="text-lg font-semibold text-[#202124] mb-4">Register New College</h2>
+                <form onSubmit={handleCreateCollege} className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-medium text-[#5f6368] mb-1">College Name</label>
+                    <input
+                      type="text"
+                      required
+                      value={collegeName}
+                      onChange={(e) => setCollegeName(e.target.value)}
+                      placeholder="e.g. Govt Degree College"
+                      className="w-full rounded-lg border border-[#dadce0] px-3.5 py-2 text-sm focus:border-[#1a73e8] focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-[#5f6368] mb-1">Location</label>
+                    <input
+                      type="text"
+                      required
+                      value={collegeLocation}
+                      onChange={(e) => setCollegeLocation(e.target.value)}
+                      placeholder="e.g. Shimla, HP"
+                      className="w-full rounded-lg border border-[#dadce0] px-3.5 py-2 text-sm focus:border-[#1a73e8] focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-[#5f6368] mb-1">Website URL</label>
+                    <input
+                      type="url"
+                      value={collegeWebsite}
+                      onChange={(e) => setCollegeWebsite(e.target.value)}
+                      placeholder="e.g. https://gdcshimla.edu"
+                      className="w-full rounded-lg border border-[#dadce0] px-3.5 py-2 text-sm focus:border-[#1a73e8] focus:outline-none"
+                    />
+                  </div>
+                  <button type="submit" className="w-full bg-[#1a73e8] text-white py-2 rounded-lg text-sm font-semibold hover:bg-[#1557b0] transition-colors">
+                    Create College
+                  </button>
+                </form>
+              </div>
+
+              {/* Configure Degree Program Form */}
+              <div className="rounded-2xl border border-[#dadce0] bg-white p-6 shadow-sm">
+                <h2 className="text-lg font-semibold text-[#202124] mb-4">Configure Degree Program</h2>
+                <form onSubmit={handleCreateDegree} className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-medium text-[#5f6368] mb-1">Select College</label>
+                    <select
+                      required
+                      value={degreeCollegeId}
+                      onChange={(e) => setDegreeCollegeId(e.target.value)}
+                      className="w-full rounded-lg border border-[#dadce0] px-3.5 py-2 text-sm focus:border-[#1a73e8] focus:outline-none bg-white"
+                    >
+                      <option value="">Choose College...</option>
+                      {colleges.map((c) => (
+                        <option key={c._id} value={c._id}>{c.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-[#5f6368] mb-1">Degree Name</label>
+                    <input
+                      type="text"
+                      required
+                      value={degreeName}
+                      onChange={(e) => setDegreeName(e.target.value)}
+                      placeholder="e.g. BCA, BBA, B.Tech CSE"
+                      className="w-full rounded-lg border border-[#dadce0] px-3.5 py-2 text-sm focus:border-[#1a73e8] focus:outline-none"
+                    />
+                  </div>
+                  <button type="submit" className="w-full bg-[#1a73e8] text-white py-2 rounded-lg text-sm font-semibold hover:bg-[#1557b0] transition-colors">
+                    Add Degree Program
+                  </button>
+                </form>
+              </div>
             </div>
 
+            {/* Colleges Directories Explorer */}
             <div className="rounded-2xl border border-[#dadce0] bg-white p-6 shadow-sm">
-              <h2 className="text-lg font-semibold text-[#202124] mb-4">Configure Degree Program</h2>
-              <form onSubmit={handleCreateDegree} className="space-y-4">
-                <div>
-                  <label className="block text-xs font-medium text-[#5f6368] mb-1">Select College</label>
-                  <select
-                    required
-                    value={degreeCollegeId}
-                    onChange={(e) => setDegreeCollegeId(e.target.value)}
-                    className="w-full rounded-lg border border-[#dadce0] px-3.5 py-2 text-sm focus:border-[#1a73e8] focus:outline-none bg-white"
-                  >
-                    <option value="">Choose College...</option>
+              <h2 className="text-lg font-semibold text-[#202124] mb-2">College Directory Explorer</h2>
+              <p className="text-xs text-[#5f6368] mb-6">Select a college to explore configured degrees/departments and view enrolled student rosters.</p>
+
+              {colleges.length === 0 ? (
+                <p className="text-sm text-[#5f6368] py-6 text-center italic">No colleges registered yet.</p>
+              ) : (
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                  {/* Left Column: Colleges List */}
+                  <div className="border-r border-[#dadce0] pr-0 lg:pr-6 space-y-2">
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-[#5f6368] mb-3">Registered Colleges</h3>
                     {colleges.map((c) => (
-                      <option key={c._id} value={c._id}>{c.name}</option>
+                      <div
+                        key={c._id}
+                        onClick={() => {
+                          setSelectedCollegeId(c._id);
+                          setSelectedDegreeId(""); // clear degree selection
+                        }}
+                        className={`p-4 rounded-xl border cursor-pointer transition-all ${
+                          selectedCollegeId === c._id
+                            ? "border-[#1a73e8] bg-blue-50/20 shadow-xs"
+                            : "border-[#dadce0] bg-white hover:bg-slate-50"
+                        }`}
+                      >
+                        <h4 className="font-semibold text-sm text-[#202124]">{c.name}</h4>
+                        <p className="text-xs text-[#5f6368] mt-1">{c.location}</p>
+                        {c.website && (
+                          <a
+                            href={c.website}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-[10px] text-[#1a73e8] hover:underline mt-2 inline-block font-medium"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            Visit Website &rarr;
+                          </a>
+                        )}
+                      </div>
                     ))}
-                  </select>
+                  </div>
+
+                  {/* Middle Column: Departments / Degrees List */}
+                  <div className="border-r border-[#dadce0] pr-0 lg:pr-6 space-y-2">
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-[#5f6368] mb-3">Departments / Degrees</h3>
+                    {!selectedCollegeId ? (
+                      <p className="text-xs text-[#5f6368] italic py-4 text-center">Select a college to view departments.</p>
+                    ) : degrees.filter(d => d.collegeId === selectedCollegeId).length === 0 ? (
+                      <p className="text-xs text-[#5f6368] italic py-4 text-center">No departments configured for this college.</p>
+                    ) : (
+                      degrees.filter(d => d.collegeId === selectedCollegeId).map((d) => (
+                        <div
+                          key={d._id}
+                          onClick={() => setSelectedDegreeId(d._id)}
+                          className={`p-3.5 rounded-lg border cursor-pointer transition-all ${
+                            selectedDegreeId === d._id
+                              ? "border-[#1a73e8] bg-blue-50/20 font-semibold"
+                              : "border-[#dadce0] bg-white hover:bg-slate-50"
+                          }`}
+                        >
+                          <span className="text-xs text-[#202124]">{d.name}</span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+
+                  {/* Right Column: Enrolled Students */}
+                  <div className="space-y-4">
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-[#5f6368]">Enrolled Student Roster</h3>
+                    {!selectedCollegeId || !selectedDegreeId ? (
+                      <p className="text-xs text-[#5f6368] italic py-4 text-center">Select both a college and a department to view enrolled students.</p>
+                    ) : loadingStudents ? (
+                      <div className="flex justify-center py-8">
+                        <svg className="h-6 w-6 animate-spin text-primary" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                        </svg>
+                      </div>
+                    ) : collegeStudents.length === 0 ? (
+                      <p className="text-xs text-[#5f6368] italic py-4 text-center">No students registered in this department.</p>
+                    ) : (
+                      <div className="max-h-[360px] overflow-y-auto border border-[#dadce0] rounded-xl bg-white">
+                        <table className="w-full text-left border-collapse text-xs">
+                          <thead>
+                            <tr className="border-b border-[#dadce0] text-[#5f6368] bg-slate-50 font-medium">
+                              <th className="py-2.5 px-3">Roll No</th>
+                              <th className="py-2.5 px-3">Name</th>
+                              <th className="py-2.5 px-3">Class</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {collegeStudents.map((s) => (
+                              <tr key={s._id} className="border-b border-slate-50 hover:bg-slate-50/50">
+                                <td className="py-2 px-3 font-mono font-semibold text-[#202124]">#{s.rollNo}</td>
+                                <td className="py-2 px-3 font-medium text-[#202124]">{s.name}</td>
+                                <td className="py-2 px-3 text-[#5f6368]">{s.class}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-xs font-medium text-[#5f6368] mb-1">Degree Name</label>
-                  <input
-                    type="text"
-                    required
-                    value={degreeName}
-                    onChange={(e) => setDegreeName(e.target.value)}
-                    placeholder="e.g. BCA, BBA, B.Tech CSE"
-                    className="w-full rounded-lg border border-[#dadce0] px-3.5 py-2 text-sm focus:border-[#1a73e8] focus:outline-none"
-                  />
-                </div>
-                <button type="submit" className="w-full bg-[#1a73e8] text-white py-2 rounded-lg text-sm font-semibold hover:bg-[#1557b0] transition-colors">
-                  Add Degree Program
-                </button>
-              </form>
+              )}
             </div>
           </div>
         )}

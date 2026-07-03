@@ -17,11 +17,13 @@ namespace EduGuard.Controllers
     {
         private readonly MongoService _mongoService;
         private readonly NvidiaNimService _nvidiaNimService;
+        private readonly NotificationService _notificationService;
 
-        public AdminController(MongoService mongoService, NvidiaNimService nvidiaNimService)
+        public AdminController(MongoService mongoService, NvidiaNimService nvidiaNimService, NotificationService notificationService)
         {
             _mongoService = mongoService;
             _nvidiaNimService = nvidiaNimService;
+            _notificationService = notificationService;
         }
 
         // --- MENTOR VERIFICATION SYSTEM ---
@@ -188,6 +190,36 @@ namespace EduGuard.Controllers
             
             var existing = await _mongoService.Students.Find(s => s.Id == id).FirstOrDefaultAsync();
             if (existing == null) return NotFound(new { success = false, message = "Student not found" });
+
+            // If mentor assignment is changing
+            if (model.MentorId != existing.MentorId)
+            {
+                if (!string.IsNullOrEmpty(model.MentorId))
+                {
+                    // Validate mentor exists
+                    var mentor = await _mongoService.Mentors.Find(m => m.Id == model.MentorId).FirstOrDefaultAsync();
+                    if (mentor == null)
+                    {
+                        return NotFound(new { success = false, message = "Mentor not found" });
+                    }
+
+                    // Validate mentor capacity limit (max 30 students)
+                    var currentCount = await _mongoService.Students.CountDocumentsAsync(s => s.MentorId == model.MentorId && s.Id != id);
+                    if (currentCount >= 30)
+                    {
+                        return BadRequest(new { success = false, message = $"Mentor {mentor.Name} has reached their maximum capacity of 30 students" });
+                    }
+
+                    // Send notification to student and mentor
+                    await _notificationService.CreateNotificationAsync(
+                        model.MentorId,
+                        id,
+                        "mentor_assigned",
+                        $"Mentor {mentor.Name} has been assigned to student {existing.Name}.",
+                        "medium"
+                    );
+                }
+            }
 
             existing.Name = model.Name;
             existing.Email = model.Email;

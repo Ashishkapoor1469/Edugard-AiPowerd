@@ -44,23 +44,21 @@ namespace EduGuard.Controllers
             [FromQuery] string? course = null,
             [FromQuery] string? @class = null,
             [FromQuery] string? search = null,
-            [FromQuery] string? riskLevel = null)
+            [FromQuery] string? riskLevel = null,
+            [FromQuery] string? collegeId = null,
+            [FromQuery] string? courseId = null)
         {
             page = Math.Max(1, page);
             limit = Math.Clamp(limit, 1, 100);
 
             var filters = new List<FilterDefinition<Student>>();
 
-            // Role-based visibility check: Mentors can only see their assigned classes
+            // Role-based visibility check: Mentors can only see their assigned students
             var userRole = User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value;
             var userId = User.FindFirst("id")?.Value;
             if (userRole == "mentor" && !string.IsNullOrEmpty(userId))
             {
-                var mentor = await _mongoService.Mentors.Find(m => m.Id == userId).FirstOrDefaultAsync();
-                if (mentor != null && mentor.AssignedClasses != null && mentor.AssignedClasses.Count > 0)
-                {
-                    filters.Add(Builders<Student>.Filter.In(s => s.Class, mentor.AssignedClasses));
-                }
+                filters.Add(Builders<Student>.Filter.Eq(s => s.MentorId, userId));
             }
 
             if (!string.IsNullOrWhiteSpace(course))
@@ -74,6 +72,14 @@ namespace EduGuard.Controllers
             if (!string.IsNullOrWhiteSpace(riskLevel))
             {
                 filters.Add(Builders<Student>.Filter.Eq(s => s.RiskLevel, riskLevel.ToLower()));
+            }
+            if (!string.IsNullOrWhiteSpace(collegeId))
+            {
+                filters.Add(Builders<Student>.Filter.Eq(s => s.CollegeId, collegeId));
+            }
+            if (!string.IsNullOrWhiteSpace(courseId))
+            {
+                filters.Add(Builders<Student>.Filter.Eq(s => s.CourseId, courseId));
             }
             if (!string.IsNullOrWhiteSpace(search))
             {
@@ -112,6 +118,14 @@ namespace EduGuard.Controllers
         public async Task<IActionResult> GetDashboardStats([FromQuery] string? course = null, [FromQuery] string? @class = null)
         {
             var filters = new List<FilterDefinition<Student>>();
+            var userRole = User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value;
+            var userId = User.FindFirst("id")?.Value;
+
+            if (userRole == "mentor" && !string.IsNullOrEmpty(userId))
+            {
+                filters.Add(Builders<Student>.Filter.Eq(s => s.MentorId, userId));
+            }
+
             if (!string.IsNullOrWhiteSpace(course))
             {
                 filters.Add(Builders<Student>.Filter.Eq(s => s.Course, course));
@@ -126,8 +140,18 @@ namespace EduGuard.Controllers
                 : Builders<Student>.Filter.Empty;
 
             var students = await _mongoService.Students.Find(filter).ToListAsync();
+
+            var notifFilters = new List<FilterDefinition<Notification>>();
+            if (userRole == "mentor" && !string.IsNullOrEmpty(userId))
+            {
+                notifFilters.Add(Builders<Notification>.Filter.Eq(n => n.MentorId, userId));
+            }
+            var notifFilter = notifFilters.Count > 0
+                ? Builders<Notification>.Filter.And(notifFilters)
+                : Builders<Notification>.Filter.Empty;
+
             var notifications = await _mongoService.Notifications
-                .Find(_ => true)
+                .Find(notifFilter)
                 .SortByDescending(n => n.CreatedAt)
                 .Limit(5)
                 .ToListAsync();
@@ -416,7 +440,21 @@ namespace EduGuard.Controllers
         [HttpGet("class/{className}/summary")]
         public async Task<IActionResult> GetClassSummary(string className)
         {
-            var students = await _mongoService.Students.Find(s => s.Class == className).ToListAsync();
+            var userRole = User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value;
+            var userId = User.FindFirst("id")?.Value;
+
+            var filters = new List<FilterDefinition<Student>>
+            {
+                Builders<Student>.Filter.Eq(s => s.Class, className)
+            };
+
+            if (userRole == "mentor" && !string.IsNullOrEmpty(userId))
+            {
+                filters.Add(Builders<Student>.Filter.Eq(s => s.MentorId, userId));
+            }
+
+            var filter = Builders<Student>.Filter.And(filters);
+            var students = await _mongoService.Students.Find(filter).ToListAsync();
             if (students.Count == 0)
             {
                 return NotFound(new { success = false, message = "No students found in this class" });
@@ -502,6 +540,67 @@ namespace EduGuard.Controllers
             });
         }
 
+        private async Task<object> MapToProfileDto(Student student)
+        {
+            object? mentorInfo = null;
+            if (!string.IsNullOrEmpty(student.MentorId))
+            {
+                var mentor = await _mongoService.Mentors.Find(m => m.Id == student.MentorId).FirstOrDefaultAsync();
+                if (mentor != null)
+                {
+                    mentorInfo = new
+                    {
+                        _id = mentor.Id,
+                        name = mentor.Name,
+                        email = mentor.Email,
+                        status = mentor.Status,
+                        isOnline = mentor.IsOnline
+                    };
+                }
+            }
+
+            if (mentorInfo == null)
+            {
+                // Fallback to EduGard AI Assistant details
+                mentorInfo = new
+                {
+                    _id = "ai-assistant",
+                    name = "EduGard AI Assistant",
+                    email = "ai@eduguard.com",
+                    status = "approved",
+                    isOnline = true
+                };
+            }
+
+            return new
+            {
+                _id = student.Id,
+                student.CollegeId,
+                student.CourseId,
+                student.VerificationStatus,
+                student.RollNo,
+                student.Name,
+                student.Email,
+                student.PhoneNo,
+                student.IsVerified,
+                student.Course,
+                student.Class,
+                mentorId = mentorInfo,
+                student.Semester,
+                student.Attendance,
+                student.Marks,
+                student.Behavior,
+                student.Contribution,
+                student.RiskScore,
+                student.RiskLevel,
+                student.RiskExplanation,
+                student.AiImprovementPlan,
+                student.Notifications,
+                student.CreatedAt,
+                student.UpdatedAt
+            };
+        }
+
         [HttpGet("{id}")]
         public async Task<IActionResult> GetStudent(string id)
         {
@@ -510,7 +609,8 @@ namespace EduGuard.Controllers
             {
                 return NotFound(new { success = false, message = "Student not found" });
             }
-            return Ok(new { success = true, data = student });
+            var dto = await MapToProfileDto(student);
+            return Ok(new { success = true, data = dto });
         }
 
         [HttpPut("{id}")]
@@ -561,7 +661,8 @@ namespace EduGuard.Controllers
             // Trigger notification check
             await _notificationService.CheckAndGenerateNotificationsAsync(student, oldValues);
 
-            return Ok(new { success = true, data = student });
+            var dto = await MapToProfileDto(student);
+            return Ok(new { success = true, data = dto });
         }
 
         [HttpPost("{id}/select-mentor")]
@@ -602,9 +703,19 @@ namespace EduGuard.Controllers
             student.MentorId = model.MentorId;
             student.UpdatedAt = DateTime.UtcNow;
 
-            await _mongoService.Students.ReplaceOneAsync(s => s.Id == id, student);
+            await _mongoService.Students.ReplaceOneAsync(s => s.Id == studentId, student);
 
-            return Ok(new { success = true, message = "Mentor successfully assigned", data = student });
+            // Send notification to student and mentor
+            await _notificationService.CreateNotificationAsync(
+                model.MentorId,
+                studentId,
+                "mentor_assigned",
+                $"Mentor {mentor.Name} has been assigned to student {student.Name}.",
+                "medium"
+            );
+
+            var dto = await MapToProfileDto(student);
+            return Ok(new { success = true, message = "Mentor successfully assigned", data = dto });
         }
 
         [HttpGet("{id}/explanation")]

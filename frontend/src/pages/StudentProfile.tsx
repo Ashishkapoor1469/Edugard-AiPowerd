@@ -98,13 +98,61 @@ const StudentProfile: React.FC = () => {
 
   const fetchStudent = async (resetOverrideInputs = false) => {
     if (!studentId) return;
+
+    // Load from sessionStorage if available
+    const cacheKey = `student_profile_${studentId}`;
+    const cachedDataStr = sessionStorage.getItem(cacheKey);
+    let cachedData: Student | null = null;
+    if (cachedDataStr) {
+      try {
+        cachedData = JSON.parse(cachedDataStr);
+        if (cachedData) {
+          setStudent(cachedData);
+          if (resetOverrideInputs) {
+            setFormAttendance(cachedData.attendance !== null ? String(cachedData.attendance) : "");
+            setFormBehavior(cachedData.behavior || "");
+            setFormContributions(cachedData.contribution.join(", "));
+
+            const marksInit: typeof formMarks = {};
+            for (const sub of cachedData.marks) {
+              const t1 = sub.classTests.find((t: any) => t.testNumber === 1);
+              const t2 = sub.classTests.find((t: any) => t.testNumber === 2);
+              const t3 = sub.classTests.find((t: any) => t.testNumber === 3);
+
+              marksInit[sub.subjectName] = {
+                test1: t1 ? String(t1.marks) : "",
+                test1Max: t1 ? String(t1.maxMarks) : "25",
+                test2: t2 ? String(t2.marks) : "",
+                test2Max: t2 ? String(t2.maxMarks) : "25",
+                test3: t3 ? String(t3.marks) : "",
+                test3Max: t3 ? String(t3.maxMarks) : "25",
+                midTerm: sub.midTerm.marks !== null ? String(sub.midTerm.marks) : "",
+                midTermMax: String(sub.midTerm.maxMarks || 100),
+                houseExam: sub.houseExam.marks !== null ? String(sub.houseExam.marks) : "",
+                houseExamMax: String(sub.houseExam.maxMarks || 100),
+              };
+            }
+            setFormMarks(marksInit);
+          }
+          setLoading(false);
+        }
+      } catch (e) {
+        console.error("Failed to parse cached student profile", e);
+      }
+    } else {
+      setLoading(true);
+    }
+
     try {
       const res = await axios.get(`/api/students/${studentId}`);
       if (res.data.success) {
         const data: Student = res.data.data;
         setStudent(data);
 
-        if (resetOverrideInputs) {
+        // Save to cache
+        sessionStorage.setItem(cacheKey, JSON.stringify(data));
+
+        if (resetOverrideInputs || !cachedData) {
           setFormAttendance(data.attendance !== null ? String(data.attendance) : "");
           setFormBehavior(data.behavior || "");
           setFormContributions(data.contribution.join(", "));
@@ -133,7 +181,9 @@ const StudentProfile: React.FC = () => {
       }
     } catch (err) {
       console.error(err);
-      toast.error("Failed to load student profile");
+      if (!cachedData) {
+        toast.error("Failed to load student profile");
+      }
     } finally {
       setLoading(false);
     }
@@ -161,7 +211,6 @@ const StudentProfile: React.FC = () => {
   };
 
   useEffect(() => {
-    setLoading(true);
     fetchStudent(true);
     if (user?.role === "student") {
       fetchMentors();
@@ -211,6 +260,12 @@ const StudentProfile: React.FC = () => {
       const res = await axios.patch("/api/students/select-mentor", { mentorId: selectedMentor });
       if (res.data.success) {
         toast.success("Joined mentor group!");
+        // Clear class overview cache
+        Object.keys(sessionStorage).forEach((key) => {
+          if (key.startsWith("class_data_")) {
+            sessionStorage.removeItem(key);
+          }
+        });
         fetchStudent(true);
       }
     } catch (err) {
@@ -306,6 +361,12 @@ const StudentProfile: React.FC = () => {
       const res = await axios.patch(`/api/students/${studentId}`, payload);
       if (res.data.success) {
         toast.success("Roster record updated successfully!");
+        // Clear class overview cache
+        Object.keys(sessionStorage).forEach((key) => {
+          if (key.startsWith("class_data_")) {
+            sessionStorage.removeItem(key);
+          }
+        });
         setShowOverrideForm(false);
         fetchStudent(false);
       }
@@ -434,7 +495,7 @@ ${student.aiImprovementPlan || "No plan generated."}
       {(user?.role !== "student" || activeTab === "performance") && (
         <div className="space-y-6">
           {/* Join Group Alert */}
-          {!student.mentorId && user?.role === "student" && (
+          {(!student.mentorId || student.mentorId._id === "ai-assistant") && user?.role === "student" && (
             <div className="p-5 bg-blue-50 border border-blue-100 rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
               <div>
                 <h3 className="text-sm font-semibold text-[#1a73e8]">Select Academic Mentor</h3>

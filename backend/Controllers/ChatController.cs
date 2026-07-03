@@ -85,6 +85,56 @@ namespace EduGuard.Controllers
 
             try
             {
+                var userRole = User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value;
+
+                if (userRole == "student")
+                {
+                    if (request.StudentId != userId)
+                    {
+                        return Forbid();
+                    }
+
+                    var student = await _mongoService.Students.Find(s => s.Id == request.StudentId).FirstOrDefaultAsync();
+                    if (student == null)
+                    {
+                        return NotFound(new { success = false, message = "Student not found" });
+                    }
+
+                    if (!string.IsNullOrEmpty(student.MentorId))
+                    {
+                        if (request.MentorId != student.MentorId)
+                        {
+                            return BadRequest(new { success = false, message = "Student can only chat with their assigned mentor." });
+                        }
+                    }
+                    else
+                    {
+                        // No mentor assigned, must chat with AI assistant
+                        if (request.MentorId != "ai-assistant")
+                        {
+                            return BadRequest(new { success = false, message = "No mentor assigned. You can only chat with EduGard AI Assistant." });
+                        }
+                    }
+                }
+                else if (userRole == "mentor")
+                {
+                    if (request.MentorId != userId)
+                    {
+                        return Forbid();
+                    }
+
+                    var student = await _mongoService.Students.Find(s => s.Id == request.StudentId).FirstOrDefaultAsync();
+                    if (student == null)
+                    {
+                        return NotFound(new { success = false, message = "Student not found" });
+                    }
+
+                    if (student.MentorId != userId)
+                    {
+                        return BadRequest(new { success = false, message = "You can only chat with students assigned to you." });
+                    }
+                }
+
                 // Determine sender role
                 var sender = request.Sender ?? "mentor";
 
@@ -105,45 +155,60 @@ namespace EduGuard.Controllers
                 var roomId = request.StudentId;
                 await _hubContext.Clients.Group(roomId).SendAsync("newMessage", message);
 
-                // If a student sent the message, check if mentor is offline for AI reply
+                // Check if we should trigger AI reply
+                // Condition A: If no mentor is assigned (MentorId == "ai-assistant")
+                // Condition B: If mentor is assigned, but offline
+                bool triggerAI = false;
                 if (string.Equals(sender, "student", StringComparison.OrdinalIgnoreCase))
                 {
-                    var mentor = await _mongoService.Mentors.Find(m => m.Id == request.MentorId).FirstOrDefaultAsync();
-                    if (mentor != null && !mentor.IsOnline)
+                    if (request.MentorId == "ai-assistant")
                     {
-                        var student = await _mongoService.Students.Find(s => s.Id == request.StudentId).FirstOrDefaultAsync();
-                        if (student != null)
+                        triggerAI = true;
+                    }
+                    else
+                    {
+                        var mentor = await _mongoService.Mentors.Find(m => m.Id == request.MentorId).FirstOrDefaultAsync();
+                        if (mentor != null && !mentor.IsOnline)
                         {
-                            // Fetch last 10 messages for context
-                            var history = await _mongoService.Messages
-                                .Find(m => m.StudentId == request.StudentId && m.MentorId == request.MentorId)
-                                .SortByDescending(m => m.CreatedAt)
-                                .Limit(10)
-                                .ToListAsync();
-                            history.Reverse();
-
-                            // Emit typing indicator
-                            await _hubContext.Clients.Group(roomId).SendAsync("typing", new { sender = "ai", isTyping = true });
-
-                            // Generate AI reply
-                            var aiReplyText = await _nvidiaNimService.GenerateAIChatReplyAsync(student, history, request.Text);
-
-                            var aiMessage = new Message
-                            {
-                                StudentId = request.StudentId,
-                                MentorId = request.MentorId,
-                                Sender = "ai",
-                                Text = aiReplyText,
-                                CreatedAt = DateTime.UtcNow,
-                                UpdatedAt = DateTime.UtcNow
-                            };
-
-                            await _mongoService.Messages.InsertOneAsync(aiMessage);
-
-                            // Turn off typing indicator and broadcast AI message
-                            await _hubContext.Clients.Group(roomId).SendAsync("typing", new { sender = "ai", isTyping = false });
-                            await _hubContext.Clients.Group(roomId).SendAsync("newMessage", aiMessage);
+                            triggerAI = true;
                         }
+                    }
+                }
+
+                if (triggerAI)
+                {
+                    var student = await _mongoService.Students.Find(s => s.Id == request.StudentId).FirstOrDefaultAsync();
+                    if (student != null)
+                    {
+                        // Fetch last 10 messages for context
+                        var history = await _mongoService.Messages
+                            .Find(m => m.StudentId == request.StudentId && m.MentorId == request.MentorId)
+                            .SortByDescending(m => m.CreatedAt)
+                            .Limit(10)
+                            .ToListAsync();
+                        history.Reverse();
+
+                        // Emit typing indicator
+                        await _hubContext.Clients.Group(roomId).SendAsync("typing", new { sender = "ai", isTyping = true });
+
+                        // Generate AI reply
+                        var aiReplyText = await _nvidiaNimService.GenerateAIChatReplyAsync(student, history, request.Text);
+
+                        var aiMessage = new Message
+                        {
+                            StudentId = request.StudentId,
+                            MentorId = request.MentorId,
+                            Sender = "ai",
+                            Text = aiReplyText,
+                            CreatedAt = DateTime.UtcNow,
+                            UpdatedAt = DateTime.UtcNow
+                        };
+
+                        await _mongoService.Messages.InsertOneAsync(aiMessage);
+
+                        // Turn off typing indicator and broadcast AI message
+                        await _hubContext.Clients.Group(roomId).SendAsync("typing", new { sender = "ai", isTyping = false });
+                        await _hubContext.Clients.Group(roomId).SendAsync("newMessage", aiMessage);
                     }
                 }
 

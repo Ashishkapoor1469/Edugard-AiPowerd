@@ -29,7 +29,7 @@ namespace EduGuard.Services
         private readonly string _nvidiaApiKey;
         private readonly bool _isMock;
         private const string BaseUrl = "https://integrate.api.nvidia.com/v1/chat/completions";
-        private const string AiModel = "meta/llama-3.1-8b-instruct";
+        private const string AiModel = "minimaxai/minimax-m3";
 
         public NvidiaNimService(IConfiguration configuration, ILogger<NvidiaNimService> logger)
         {

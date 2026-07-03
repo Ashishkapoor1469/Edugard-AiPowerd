@@ -211,90 +211,96 @@ const Navbar: React.FC = () => {
         <span className="font-bold text-lg md:text-xl tracking-tight text-primary">EduGuard</span>
       </div>
 
-      {/* Global Search Bar - hidden on mobile */}
-      <div ref={searchRef} className="hidden md:flex flex-1 max-w-md mx-8 relative">
-        <form onSubmit={handleSearchSubmit} className="w-full relative">
-          <input
-            type="text"
-            placeholder="Search students by name or roll number..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            onFocus={() => { if (searchResults.length > 0) setShowSearchDropdown(true); }}
-            className="w-full rounded-lg border border-slate-200 bg-slate-50 py-2 pl-10 pr-4 text-sm text-text-primary focus:border-primary focus:bg-white focus:outline-hidden transition-colors"
-          />
-          <button type="submit" className="absolute left-3 top-2.5 text-slate-400">
-            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
-          </button>
-        </form>
+      {/* Global Search Bar - hidden on mobile and for students */}
+      {user?.role !== "student" && (
+        <div ref={searchRef} className="hidden md:flex flex-1 max-w-md mx-8 relative">
+          <form onSubmit={handleSearchSubmit} className="w-full relative">
+            <input
+              type="text"
+              placeholder="Search students by name or roll number..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              onFocus={() => { if (searchResults.length > 0) setShowSearchDropdown(true); }}
+              className="w-full rounded-lg border border-slate-200 bg-slate-50 py-2 pl-10 pr-4 text-sm text-text-primary focus:border-primary focus:bg-white focus:outline-hidden transition-colors"
+            />
+            <button type="submit" className="absolute left-3 top-2.5 text-slate-400">
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+            </button>
+          </form>
 
-        {/* Search Results Dropdown */}
-        {showSearchDropdown && (
-          <div className="absolute top-full left-0 right-0 mt-1.5 rounded-xl border border-slate-200 bg-white shadow-xl ring-1 ring-black/5 z-50 overflow-hidden">
-            {searchLoading ? (
-              <div className="flex items-center justify-center py-6">
-                <svg className="h-5 w-5 animate-spin text-primary" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                </svg>
-              </div>
-            ) : searchResults.length === 0 ? (
-              <div className="px-4 py-6 text-center text-xs text-slate-400">No students found for "{search}"</div>
-            ) : (
-              <>
-                <div className="px-3 py-2 border-b border-slate-100">
-                  <span className="text-[10px] font-bold text-secondary uppercase tracking-wider">Search Results</span>
+          {/* Search Results Dropdown */}
+          {showSearchDropdown && (
+            <div className="absolute top-full left-0 right-0 mt-1.5 rounded-xl border border-slate-200 bg-white shadow-xl ring-1 ring-black/5 z-50 overflow-hidden">
+              {searchLoading ? (
+                <div className="flex items-center justify-center py-6">
+                  <svg className="h-5 w-5 animate-spin text-primary" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                  </svg>
                 </div>
-                {searchResults.map((student) => (
-                  <div
-                    key={student._id}
-                    onClick={() => handleSearchResultClick(student._id)}
-                    className="flex items-center gap-3 px-3 py-2.5 hover:bg-indigo-50/50 cursor-pointer transition-colors border-b border-slate-50 last:border-b-0"
-                  >
-                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[10px] font-bold text-primary">
-                      {student.name.substring(0, 2).toUpperCase()}
-                    </div>
-                    <div className="flex flex-col min-w-0 flex-1">
-                      <span className="text-xs font-semibold text-text-primary truncate">{student.name}</span>
-                      <span className="text-[10px] text-secondary">#{student.rollNo} · {student.class}</span>
-                    </div>
-                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[9px] font-bold uppercase ${riskBadgeClass(student.riskLevel)}`}>
-                      {student.riskLevel}
-                    </span>
+              ) : searchResults.length === 0 ? (
+                <div className="px-4 py-6 text-center text-xs text-slate-400">No students found for "{search}"</div>
+              ) : (
+                <>
+                  <div className="px-3 py-2 border-b border-slate-100">
+                    <span className="text-[10px] font-bold text-secondary uppercase tracking-wider">Search Results</span>
                   </div>
-                ))}
-              </>
-            )}
-          </div>
-        )}
-      </div>
+                  {searchResults.map((student) => (
+                    <div
+                      key={student._id}
+                      onClick={() => handleSearchResultClick(student._id)}
+                      className="flex items-center gap-3 px-3 py-2.5 hover:bg-indigo-50/50 cursor-pointer transition-colors border-b border-slate-50 last:border-b-0"
+                    >
+                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[10px] font-bold text-primary">
+                        {student.name.substring(0, 2).toUpperCase()}
+                      </div>
+                      <div className="flex flex-col min-w-0 flex-1">
+                        <span className="text-xs font-semibold text-text-primary truncate">{student.name}</span>
+                        <span className="text-[10px] text-secondary">#{student.rollNo} · {student.class}</span>
+                      </div>
+                      <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[9px] font-bold uppercase ${riskBadgeClass(student.riskLevel)}`}>
+                        {student.riskLevel}
+                      </span>
+                    </div>
+                  ))}
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Filters, Bell & Avatar */}
       <div className="flex items-center gap-2 md:gap-4">
-        {/* Course Filter - hidden on mobile */}
-        <select
-          value={selectedCourse}
-          onChange={(e) => handleFilterChange("course", e.target.value)}
-          className="hidden md:block rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-secondary focus:border-primary focus:outline-hidden"
-        >
-          <option value="">All Courses</option>
-          {courseOptions.map((c) => (
-            <option key={c} value={c}>{c}</option>
-          ))}
-        </select>
+        {/* Course Filter - hidden on mobile and for students */}
+        {user?.role !== "student" && (
+          <select
+            value={selectedCourse}
+            onChange={(e) => handleFilterChange("course", e.target.value)}
+            className="hidden md:block rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-secondary focus:border-primary focus:outline-hidden"
+          >
+            <option value="">All Courses</option>
+            {courseOptions.map((c) => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </select>
+        )}
 
-        {/* Class Filter - hidden on mobile */}
-        <select
-          value={selectedClass}
-          onChange={(e) => handleFilterChange("class", e.target.value)}
-          className="hidden md:block rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-secondary focus:border-primary focus:outline-hidden"
-        >
-          <option value="">All Classes</option>
-          {classOptions.map((c) => (
-            <option key={c} value={c}>{c}</option>
-          ))}
-        </select>
+        {/* Class Filter - hidden on mobile and for students */}
+        {user?.role !== "student" && (
+          <select
+            value={selectedClass}
+            onChange={(e) => handleFilterChange("class", e.target.value)}
+            className="hidden md:block rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-secondary focus:border-primary focus:outline-hidden"
+          >
+            <option value="">All Classes</option>
+            {classOptions.map((c) => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </select>
+        )}
 
         {/* Notification Bell */}
         <div className="relative" ref={bellRef}>
