@@ -2,118 +2,62 @@ import React, { useState, useEffect } from "react";
 import axios from "axios";
 import toast from "react-hot-toast";
 
-interface Mentor {
-  _id: string;
-  name: string;
-  email: string;
-  status: string;
-  department: string;
-  maxStudents: number;
-}
-
-interface Student {
-  _id: string;
-  name: string;
-  rollNo: string;
-  email: string;
-  class: string;
-}
-
 interface College {
   _id: string;
   name: string;
   location: string;
+  address: string;
   website: string;
+  contactInfo: string;
+  isBlocked: boolean;
 }
 
-interface Degree {
-  _id: string;
-  name: string;
+interface CollegeStats {
   collegeId: string;
+  collegeName: string;
+  location: string;
+  isBlocked: boolean;
+  mentorsCount: number;
+  studentsCount: number;
 }
 
 const AdminDashboard: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<"mentors" | "colleges" | "syllabus" | "announcements" | "events" | "students">("mentors");
+  const [activeTab, setActiveTab] = useState<"colleges" | "college-admins" | "stats">("colleges");
 
   // State
-  const [pendingMentors, setPendingMentors] = useState<Mentor[]>([]);
-  const [allMentors, setAllMentors] = useState<Mentor[]>([]);
-  const [allStudents, setAllStudents] = useState<Student[]>([]);
   const [colleges, setColleges] = useState<College[]>([]);
-  const [degrees, setDegrees] = useState<Degree[]>([]);
-  const [selectedCollegeId, setSelectedCollegeId] = useState<string>("");
-  const [selectedDegreeId, setSelectedDegreeId] = useState<string>("");
-  const [collegeStudents, setCollegeStudents] = useState<Student[]>([]);
-  const [loadingStudents, setLoadingStudents] = useState(false);
+  const [stats, setStats] = useState<CollegeStats[]>([]);
+  const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    if (selectedCollegeId && selectedDegreeId) {
-      const fetchCollegeStudents = async () => {
-        setLoadingStudents(true);
-        try {
-          const res = await axios.get("/api/students", {
-            params: { collegeId: selectedCollegeId, courseId: selectedDegreeId, limit: 100 }
-          });
-          if (res.data.success) {
-            setCollegeStudents(res.data.data);
-          }
-        } catch (err) {
-          console.error("Failed to fetch college students:", err);
-          toast.error("Failed to load students for selection");
-        } finally {
-          setLoadingStudents(false);
-        }
-      };
-      fetchCollegeStudents();
-    } else {
-      setCollegeStudents([]);
-    }
-  }, [selectedCollegeId, selectedDegreeId]);
-
-  // Inputs
+  // College Form State
   const [collegeName, setCollegeName] = useState("");
   const [collegeLocation, setCollegeLocation] = useState("");
+  const [collegeAddress, setCollegeAddress] = useState("");
   const [collegeWebsite, setCollegeWebsite] = useState("");
-  const [degreeName, setDegreeName] = useState("");
-  const [degreeCollegeId, setDegreeCollegeId] = useState("");
+  const [collegeContact, setCollegeContact] = useState("");
 
-  const [annTitle, setAnnTitle] = useState("");
-  const [annDesc, setAnnDesc] = useState("");
-  const [annTarget, setAnnTarget] = useState("all");
-  const [annExpiry, setAnnExpiry] = useState("");
+  // Edit College State
+  const [editingCollege, setEditingCollege] = useState<College | null>(null);
 
-  const [evtName, setEvtName] = useState("");
-  const [evtDesc, setEvtDesc] = useState("");
-  const [evtDate, setEvtDate] = useState("");
-  const [evtLocation, setEvtLocation] = useState("");
-  const [evtLink, setEvtLink] = useState("");
+  // College Admin Form State
+  const [adminName, setAdminName] = useState("");
+  const [adminEmail, setAdminEmail] = useState("");
+  const [adminPassword, setAdminPassword] = useState("");
+  const [adminCollegeId, setAdminCollegeId] = useState("");
 
-  // Syllabus generator state
-  const [syllUniv, setSyllUniv] = useState("HPU");
-  const [syllCourse, setSyllCourse] = useState("BCA");
-  const [generatedSyllabus, setGeneratedSyllabus] = useState("");
-  const [generatingSyllabus, setGeneratingSyllabus] = useState(false);
-
-  // Fetch Data
   const fetchData = async () => {
+    setLoading(true);
     try {
-      const pmRes = await axios.get("/api/admin/mentors/pending");
-      if (pmRes.data.success) setPendingMentors(pmRes.data.data);
-
-      const mRes = await axios.get("/api/mentors/list");
-      if (mRes.data.success) setAllMentors(mRes.data.data);
-
-      const sRes = await axios.get("/api/students", { params: { limit: 50 } });
-      if (sRes.data.success) setAllStudents(sRes.data.data);
-
       const cRes = await axios.get("/api/admin/colleges");
       if (cRes.data.success) setColleges(cRes.data.data);
 
-      const dRes = await axios.get("/api/admin/degrees");
-      if (dRes.data.success) setDegrees(dRes.data.data);
+      const sRes = await axios.get("/api/admin/colleges/stats");
+      if (sRes.data.success) setStats(sRes.data.data);
     } catch (err) {
       console.error(err);
       toast.error("Failed to load administration data");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -121,32 +65,23 @@ const AdminDashboard: React.FC = () => {
     fetchData();
   }, [activeTab]);
 
-  // Actions
-  const handleUpdateStatus = async (id: string, status: "approved" | "rejected" | "disabled") => {
-    try {
-      const res = await axios.post(`/api/admin/mentors/${id}/status`, { status });
-      if (res.data.success) {
-        toast.success(`Mentor status set to ${status}`);
-        fetchData();
-      }
-    } catch (err) {
-      toast.error("Action failed");
-    }
-  };
-
   const handleCreateCollege = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
       const res = await axios.post("/api/admin/colleges", {
         name: collegeName,
         location: collegeLocation,
+        address: collegeAddress,
         website: collegeWebsite,
+        contactInfo: collegeContact,
       });
       if (res.data.success) {
         toast.success("College registered successfully!");
         setCollegeName("");
         setCollegeLocation("");
+        setCollegeAddress("");
         setCollegeWebsite("");
+        setCollegeContact("");
         fetchData();
       }
     } catch (err) {
@@ -154,113 +89,89 @@ const AdminDashboard: React.FC = () => {
     }
   };
 
-  const handleCreateDegree = async (e: React.FormEvent) => {
+  const handleUpdateCollege = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!editingCollege) return;
     try {
-      const res = await axios.post("/api/admin/degrees", {
-        name: degreeName,
-        collegeId: degreeCollegeId,
-      });
+      const res = await axios.put(`/api/admin/colleges/${editingCollege._id}`, editingCollege);
       if (res.data.success) {
-        toast.success("Degree program configured!");
-        setDegreeName("");
-        setDegreeCollegeId("");
+        toast.success("College details updated successfully!");
+        setEditingCollege(null);
         fetchData();
       }
     } catch (err) {
-      toast.error("Configuration failed");
+      toast.error("Failed to update college details");
     }
   };
 
-  const handleCreateAnnouncement = async (e: React.FormEvent) => {
+  const handleToggleBlockCollege = async (id: string, currentlyBlocked: boolean) => {
+    try {
+      const res = await axios.post(`/api/admin/colleges/${id}/block`, null, {
+        params: { block: !currentlyBlocked }
+      });
+      if (res.data.success) {
+        toast.success(`College successfully ${!currentlyBlocked ? "blocked" : "unblocked"}!`);
+        fetchData();
+      }
+    } catch (err) {
+      toast.error("Failed to update block status");
+    }
+  };
+
+  const handleRegisterCollegeAdmin = async (e: React.FormEvent) => {
     e.preventDefault();
-    try {
-      const res = await axios.post("/api/admin/announcements", {
-        title: annTitle,
-        description: annDesc,
-        targetAudience: annTarget,
-        collegeId: colleges[0]?._id, // default to first college
-        expiryDate: annExpiry ? new Date(annExpiry) : null,
-      });
-      if (res.data.success) {
-        toast.success("Announcement broadcasted successfully!");
-        setAnnTitle("");
-        setAnnDesc("");
-        setAnnExpiry("");
-      }
-    } catch (err) {
-      toast.error("Failed to post announcement");
+    if (!adminCollegeId) {
+      toast.error("Please select a college");
+      return;
     }
-  };
-
-  const handleCreateEvent = async (e: React.FormEvent) => {
-    e.preventDefault();
     try {
-      const res = await axios.post("/api/admin/events", {
-        eventName: evtName,
-        description: evtDesc,
-        date: new Date(evtDate),
-        location: evtLocation,
-        registrationLink: evtLink,
-        collegeId: colleges[0]?._id,
+      const res = await axios.post("/api/admin/college-admins", {
+        name: adminName,
+        email: adminEmail,
+        password: adminPassword,
+        collegeId: adminCollegeId,
       });
-      if (res.data.success) {
-        toast.success("College event scheduled!");
-        setEvtName("");
-        setEvtDesc("");
-        setEvtDate("");
-        setEvtLocation("");
-        setEvtLink("");
+      if (res.status === 201 || res.data.success) {
+        toast.success("College Admin registered successfully!");
+        setAdminName("");
+        setAdminEmail("");
+        setAdminPassword("");
+        setAdminCollegeId("");
+        fetchData();
       }
-    } catch (err) {
-      toast.error("Failed to create event");
-    }
-  };
-
-  const handleGenerateSyllabus = async () => {
-    setGeneratingSyllabus(true);
-    try {
-      const res = await axios.get("/api/admin/university/syllabus-auto", {
-        params: { university: syllUniv, course: syllCourse },
-      });
-      if (res.data.success) {
-        setGeneratedSyllabus(res.data.data);
-        toast.success("Course structure auto-generated!");
-      }
-    } catch (err) {
-      toast.error("AI Generation failed");
-    } finally {
-      setGeneratingSyllabus(false);
+    } catch (err: any) {
+      const msg = err.response?.data?.message || "Failed to register College Admin";
+      toast.error(msg);
     }
   };
 
   return (
-    <div className="flex-1 overflow-y-auto bg-[#f8f9fa] p-6 font-sans">
-      {/* Top Banner */}
-      <div className="mb-6 rounded-2xl bg-white border border-[#dadce0] p-6 shadow-sm flex items-center justify-between">
+    <div className="flex-1 overflow-y-auto bg-[#f8f9fa] p-4 md:p-6 font-sans">
+      {/* Top Header */}
+      <div className="mb-6 rounded-2xl bg-white border border-slate-200 p-6 shadow-xs flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-[#202124]">EduGuard Workspace Administration</h1>
-          <p className="text-sm text-[#5f6368] mt-1">Configure multi-college directories, verify academic mentors, and manage portal announcements.</p>
+          <h1 className="text-xl font-bold tracking-tight text-slate-800">Workspace Portal Administration</h1>
+          <p className="text-xs text-slate-500 mt-1">Register SaaS colleges, manage access control, and track global network statistics.</p>
+        </div>
+        <div className="text-xs font-semibold text-primary bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-1.5 self-start md:self-auto uppercase tracking-wider">
+          Super Admin Panel
         </div>
       </div>
 
       {/* Tabs Menu */}
-      <div className="mb-6 border-b border-[#dadce0] flex gap-2 overflow-x-auto pb-px">
+      <div className="mb-6 border-b border-slate-200 flex gap-2 overflow-x-auto pb-px">
         {[
-          { id: "mentors", label: "Mentor Approvals" },
-          { id: "colleges", label: "Colleges & Degrees" },
-          { id: "syllabus", label: "University syllabus AI" },
-          { id: "announcements", label: "Announcements" },
-          { id: "events", label: "Events Manager" },
-          { id: "students", label: "Student Roster" },
+          { id: "colleges", label: "Colleges Directory" },
+          { id: "college-admins", label: "Register College Admins" },
+          { id: "stats", label: "College Strength Stats" },
         ].map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id as any)}
-            className={`px-4 py-2.5 text-sm font-medium border-b-2 rounded-t-lg transition-all ${
+            className={`px-4 py-2 text-xs font-bold border-b-2 rounded-t-lg transition-all ${
               activeTab === tab.id
-                ? "border-[#1a73e8] text-[#1a73e8] bg-blue-50/30"
-                : "border-transparent text-[#5f6368] hover:text-[#202124] hover:border-[#dadce0]"
+                ? "border-primary text-primary bg-indigo-50/20"
+                : "border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300"
             }`}
           >
             {tab.label}
@@ -268,484 +179,317 @@ const AdminDashboard: React.FC = () => {
         ))}
       </div>
 
-      {/* Tab Panels */}
-      <div className="grid grid-cols-1 gap-6">
-        {/* 1. MENTOR APPROVALS */}
-        {activeTab === "mentors" && (
-          <div className="rounded-2xl border border-[#dadce0] bg-white p-6 shadow-sm">
-            <h2 className="text-lg font-semibold text-[#202124] mb-4">Pending Verification Requests</h2>
-            {pendingMentors.length === 0 ? (
-              <p className="text-sm text-[#5f6368] py-8 text-center italic">No pending registrations found.</p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse text-sm">
-                  <thead>
-                    <tr className="border-b border-[#dadce0] text-[#5f6368] font-medium">
-                      <th className="py-3 px-4">Name</th>
-                      <th className="py-3 px-4">Email</th>
-                      <th className="py-3 px-4">Department</th>
-                      <th className="py-3 px-4 text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {pendingMentors.map((m) => (
-                      <tr key={m._id} className="border-b border-slate-50 hover:bg-slate-50/50">
-                        <td className="py-3.5 px-4 font-semibold text-[#202124]">{m.name}</td>
-                        <td className="py-3.5 px-4 text-[#5f6368]">{m.email}</td>
-                        <td className="py-3.5 px-4 text-[#5f6368] capitalize">{m.department || "N/A"}</td>
-                        <td className="py-3.5 px-4 text-right flex justify-end gap-2">
-                          <button
-                            onClick={() => handleUpdateStatus(m._id, "approved")}
-                            className="bg-[#1a73e8] text-white px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-[#1557b0] transition-colors"
-                          >
-                            Approve
-                          </button>
-                          <button
-                            onClick={() => handleUpdateStatus(m._id, "rejected")}
-                            className="bg-white border border-[#dadce0] text-[#d93025] px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-red-50 transition-colors"
-                          >
-                            Reject
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-
-            <h2 className="text-lg font-semibold text-[#202124] mt-8 mb-4">All Active Mentors</h2>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse text-sm">
-                <thead>
-                  <tr className="border-b border-[#dadce0] text-[#5f6368] font-medium">
-                    <th className="py-3 px-4">Name</th>
-                    <th className="py-3 px-4">Email</th>
-                    <th className="py-3 px-4">Department</th>
-                    <th className="py-3 px-4">Status</th>
-                    <th className="py-3 px-4 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {allMentors.map((m) => (
-                    <tr key={m._id} className="border-b border-slate-50">
-                      <td className="py-3 px-4 font-semibold text-[#202124]">{m.name}</td>
-                      <td className="py-3 px-4 text-[#5f6368]">{m.email}</td>
-                      <td className="py-3 px-4 text-[#5f6368] capitalize">{m.department || "N/A"}</td>
-                      <td className="py-3 px-4">
-                        <span className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-semibold ${
-                          m.status === "approved" ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"
-                        }`}>
-                          {m.status}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 text-right">
-                        {m.status !== "disabled" && (
-                          <button
-                            onClick={() => handleUpdateStatus(m._id, "disabled")}
-                            className="text-[#d93025] hover:underline text-xs font-semibold"
-                          >
-                            Disable
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        {/* 2. COLLEGES & DEGREES */}
-        {activeTab === "colleges" && (
-          <div className="space-y-6">
-            {/* Forms Row */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* College Registration Form */}
-              <div className="rounded-2xl border border-[#dadce0] bg-white p-6 shadow-sm">
-                <h2 className="text-lg font-semibold text-[#202124] mb-4">Register New College</h2>
-                <form onSubmit={handleCreateCollege} className="space-y-4">
-                  <div>
-                    <label className="block text-xs font-medium text-[#5f6368] mb-1">College Name</label>
-                    <input
-                      type="text"
-                      required
-                      value={collegeName}
-                      onChange={(e) => setCollegeName(e.target.value)}
-                      placeholder="e.g. Govt Degree College"
-                      className="w-full rounded-lg border border-[#dadce0] px-3.5 py-2 text-sm focus:border-[#1a73e8] focus:outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-[#5f6368] mb-1">Location</label>
-                    <input
-                      type="text"
-                      required
-                      value={collegeLocation}
-                      onChange={(e) => setCollegeLocation(e.target.value)}
-                      placeholder="e.g. Shimla, HP"
-                      className="w-full rounded-lg border border-[#dadce0] px-3.5 py-2 text-sm focus:border-[#1a73e8] focus:outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-[#5f6368] mb-1">Website URL</label>
-                    <input
-                      type="url"
-                      value={collegeWebsite}
-                      onChange={(e) => setCollegeWebsite(e.target.value)}
-                      placeholder="e.g. https://gdcshimla.edu"
-                      className="w-full rounded-lg border border-[#dadce0] px-3.5 py-2 text-sm focus:border-[#1a73e8] focus:outline-none"
-                    />
-                  </div>
-                  <button type="submit" className="w-full bg-[#1a73e8] text-white py-2 rounded-lg text-sm font-semibold hover:bg-[#1557b0] transition-colors">
-                    Create College
-                  </button>
-                </form>
-              </div>
-
-              {/* Configure Degree Program Form */}
-              <div className="rounded-2xl border border-[#dadce0] bg-white p-6 shadow-sm">
-                <h2 className="text-lg font-semibold text-[#202124] mb-4">Configure Degree Program</h2>
-                <form onSubmit={handleCreateDegree} className="space-y-4">
-                  <div>
-                    <label className="block text-xs font-medium text-[#5f6368] mb-1">Select College</label>
-                    <select
-                      required
-                      value={degreeCollegeId}
-                      onChange={(e) => setDegreeCollegeId(e.target.value)}
-                      className="w-full rounded-lg border border-[#dadce0] px-3.5 py-2 text-sm focus:border-[#1a73e8] focus:outline-none bg-white"
-                    >
-                      <option value="">Choose College...</option>
-                      {colleges.map((c) => (
-                        <option key={c._id} value={c._id}>{c.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-[#5f6368] mb-1">Degree Name</label>
-                    <input
-                      type="text"
-                      required
-                      value={degreeName}
-                      onChange={(e) => setDegreeName(e.target.value)}
-                      placeholder="e.g. BCA, BBA, B.Tech CSE"
-                      className="w-full rounded-lg border border-[#dadce0] px-3.5 py-2 text-sm focus:border-[#1a73e8] focus:outline-none"
-                    />
-                  </div>
-                  <button type="submit" className="w-full bg-[#1a73e8] text-white py-2 rounded-lg text-sm font-semibold hover:bg-[#1557b0] transition-colors">
-                    Add Degree Program
-                  </button>
-                </form>
-              </div>
-            </div>
-
-            {/* Colleges Directories Explorer */}
-            <div className="rounded-2xl border border-[#dadce0] bg-white p-6 shadow-sm">
-              <h2 className="text-lg font-semibold text-[#202124] mb-2">College Directory Explorer</h2>
-              <p className="text-xs text-[#5f6368] mb-6">Select a college to explore configured degrees/departments and view enrolled student rosters.</p>
-
-              {colleges.length === 0 ? (
-                <p className="text-sm text-[#5f6368] py-6 text-center italic">No colleges registered yet.</p>
-              ) : (
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                  {/* Left Column: Colleges List */}
-                  <div className="border-r border-[#dadce0] pr-0 lg:pr-6 space-y-2">
-                    <h3 className="text-xs font-bold uppercase tracking-wider text-[#5f6368] mb-3">Registered Colleges</h3>
-                    {colleges.map((c) => (
-                      <div
-                        key={c._id}
-                        onClick={() => {
-                          setSelectedCollegeId(c._id);
-                          setSelectedDegreeId(""); // clear degree selection
-                        }}
-                        className={`p-4 rounded-xl border cursor-pointer transition-all ${
-                          selectedCollegeId === c._id
-                            ? "border-[#1a73e8] bg-blue-50/20 shadow-xs"
-                            : "border-[#dadce0] bg-white hover:bg-slate-50"
-                        }`}
+      {/* Main Content Panels */}
+      {loading ? (
+        <div className="flex items-center justify-center py-12">
+          <svg className="h-8 w-8 animate-spin text-primary" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+          </svg>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-6">
+          {/* TAB 1: COLLEGES DIRECTORY */}
+          {activeTab === "colleges" && (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* College Registration / Edit Form */}
+              <div className="lg:col-span-1 bg-white border border-slate-200 rounded-2xl p-5 shadow-xs h-fit">
+                <h2 className="text-sm font-bold text-slate-800 mb-4">
+                  {editingCollege ? "Edit College Details" : "Register New College"}
+                </h2>
+                {editingCollege ? (
+                  <form onSubmit={handleUpdateCollege} className="space-y-3">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">College Name</label>
+                      <input
+                        type="text"
+                        required
+                        value={editingCollege.name}
+                        onChange={(e) => setEditingCollege({ ...editingCollege, name: e.target.value })}
+                        className="w-full rounded-lg border border-slate-200 px-3 py-1.5 text-xs focus:border-primary focus:outline-hidden"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Location</label>
+                      <input
+                        type="text"
+                        required
+                        value={editingCollege.location}
+                        onChange={(e) => setEditingCollege({ ...editingCollege, location: e.target.value })}
+                        className="w-full rounded-lg border border-slate-200 px-3 py-1.5 text-xs focus:border-primary focus:outline-hidden"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Address</label>
+                      <textarea
+                        required
+                        rows={2}
+                        value={editingCollege.address || ""}
+                        onChange={(e) => setEditingCollege({ ...editingCollege, address: e.target.value })}
+                        className="w-full rounded-lg border border-slate-200 px-3 py-1.5 text-xs focus:border-primary focus:outline-hidden"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Website URL</label>
+                      <input
+                        type="url"
+                        value={editingCollege.website}
+                        onChange={(e) => setEditingCollege({ ...editingCollege, website: e.target.value })}
+                        className="w-full rounded-lg border border-slate-200 px-3 py-1.5 text-xs focus:border-primary focus:outline-hidden"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Contact Info</label>
+                      <input
+                        type="text"
+                        value={editingCollege.contactInfo || ""}
+                        onChange={(e) => setEditingCollege({ ...editingCollege, contactInfo: e.target.value })}
+                        className="w-full rounded-lg border border-slate-200 px-3 py-1.5 text-xs focus:border-primary focus:outline-hidden"
+                      />
+                    </div>
+                    <div className="flex gap-2 pt-2">
+                      <button
+                        type="submit"
+                        className="flex-1 bg-primary text-white py-1.5 rounded-lg text-xs font-bold hover:bg-primary-hover transition-colors"
                       >
-                        <h4 className="font-semibold text-sm text-[#202124]">{c.name}</h4>
-                        <p className="text-xs text-[#5f6368] mt-1">{c.location}</p>
-                        {c.website && (
-                          <a
-                            href={c.website}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-[10px] text-[#1a73e8] hover:underline mt-2 inline-block font-medium"
-                            onClick={(e) => e.stopPropagation()}
+                        Save Changes
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEditingCollege(null)}
+                        className="flex-1 border border-slate-200 text-slate-600 py-1.5 rounded-lg text-xs font-bold hover:bg-slate-50 transition-colors"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </form>
+                ) : (
+                  <form onSubmit={handleCreateCollege} className="space-y-3">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">College Name</label>
+                      <input
+                        type="text"
+                        required
+                        value={collegeName}
+                        onChange={(e) => setCollegeName(e.target.value)}
+                        placeholder="e.g. Chandigarh Engineering College"
+                        className="w-full rounded-lg border border-slate-200 px-3 py-1.5 text-xs focus:border-primary focus:outline-hidden"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Location / City</label>
+                      <input
+                        type="text"
+                        required
+                        value={collegeLocation}
+                        onChange={(e) => setCollegeLocation(e.target.value)}
+                        placeholder="e.g. Mohali, Punjab"
+                        className="w-full rounded-lg border border-slate-200 px-3 py-1.5 text-xs focus:border-primary focus:outline-hidden"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Full Address</label>
+                      <textarea
+                        required
+                        rows={2}
+                        value={collegeAddress}
+                        onChange={(e) => setCollegeAddress(e.target.value)}
+                        placeholder="Complete postal address..."
+                        className="w-full rounded-lg border border-slate-200 px-3 py-1.5 text-xs focus:border-primary focus:outline-hidden"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Official Website</label>
+                      <input
+                        type="url"
+                        value={collegeWebsite}
+                        onChange={(e) => setCollegeWebsite(e.target.value)}
+                        placeholder="e.g. https://www.cgc.edu.in"
+                        className="w-full rounded-lg border border-slate-200 px-3 py-1.5 text-xs focus:border-primary focus:outline-hidden"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Contact Email/Phone</label>
+                      <input
+                        type="text"
+                        value={collegeContact}
+                        onChange={(e) => setCollegeContact(e.target.value)}
+                        placeholder="e.g. info@cgc.edu.in"
+                        className="w-full rounded-lg border border-slate-200 px-3 py-1.5 text-xs focus:border-primary focus:outline-hidden"
+                      />
+                    </div>
+                    <button
+                      type="submit"
+                      className="w-full bg-primary text-white py-1.5 rounded-lg text-xs font-bold hover:bg-primary-hover transition-colors pt-2"
+                    >
+                      Register College
+                    </button>
+                  </form>
+                )}
+              </div>
+
+              {/* Registered Colleges List */}
+              <div className="lg:col-span-2 bg-white border border-slate-200 rounded-2xl p-5 shadow-xs">
+                <h2 className="text-sm font-bold text-slate-800 mb-4">Registered Colleges</h2>
+                {colleges.length === 0 ? (
+                  <p className="text-xs text-slate-500 py-8 text-center italic">No colleges registered yet.</p>
+                ) : (
+                  <div className="divide-y divide-slate-100 max-h-[500px] overflow-y-auto pr-1">
+                    {colleges.map((c) => (
+                      <div key={c._id} className="py-3.5 flex justify-between items-center gap-4 first:pt-0 last:pb-0">
+                        <div className="flex flex-col gap-0.5 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold text-xs text-slate-800 truncate">{c.name}</span>
+                            {c.isBlocked && (
+                              <span className="inline-flex rounded-full bg-red-50 text-red-600 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider border border-red-100">
+                                Blocked
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-[10px] text-slate-500">{c.location} · {c.website || "No Website"}</span>
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <button
+                            onClick={() => setEditingCollege(c)}
+                            className="px-2.5 py-1 border border-slate-200 rounded-lg text-[10px] font-bold text-slate-600 hover:bg-slate-50 transition-colors"
                           >
-                            Visit Website &rarr;
-                          </a>
-                        )}
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => handleToggleBlockCollege(c._id, c.isBlocked || false)}
+                            className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-colors ${
+                              c.isBlocked
+                                ? "bg-emerald-50 text-emerald-600 border border-emerald-100 hover:bg-emerald-100"
+                                : "bg-red-50 text-red-600 border border-red-100 hover:bg-red-100"
+                            }`}
+                          >
+                            {c.isBlocked ? "Unblock" : "Block"}
+                          </button>
+                        </div>
                       </div>
                     ))}
                   </div>
-
-                  {/* Middle Column: Departments / Degrees List */}
-                  <div className="border-r border-[#dadce0] pr-0 lg:pr-6 space-y-2">
-                    <h3 className="text-xs font-bold uppercase tracking-wider text-[#5f6368] mb-3">Departments / Degrees</h3>
-                    {!selectedCollegeId ? (
-                      <p className="text-xs text-[#5f6368] italic py-4 text-center">Select a college to view departments.</p>
-                    ) : degrees.filter(d => d.collegeId === selectedCollegeId).length === 0 ? (
-                      <p className="text-xs text-[#5f6368] italic py-4 text-center">No departments configured for this college.</p>
-                    ) : (
-                      degrees.filter(d => d.collegeId === selectedCollegeId).map((d) => (
-                        <div
-                          key={d._id}
-                          onClick={() => setSelectedDegreeId(d._id)}
-                          className={`p-3.5 rounded-lg border cursor-pointer transition-all ${
-                            selectedDegreeId === d._id
-                              ? "border-[#1a73e8] bg-blue-50/20 font-semibold"
-                              : "border-[#dadce0] bg-white hover:bg-slate-50"
-                          }`}
-                        >
-                          <span className="text-xs text-[#202124]">{d.name}</span>
-                        </div>
-                      ))
-                    )}
-                  </div>
-
-                  {/* Right Column: Enrolled Students */}
-                  <div className="space-y-4">
-                    <h3 className="text-xs font-bold uppercase tracking-wider text-[#5f6368]">Enrolled Student Roster</h3>
-                    {!selectedCollegeId || !selectedDegreeId ? (
-                      <p className="text-xs text-[#5f6368] italic py-4 text-center">Select both a college and a department to view enrolled students.</p>
-                    ) : loadingStudents ? (
-                      <div className="flex justify-center py-8">
-                        <svg className="h-6 w-6 animate-spin text-primary" fill="none" viewBox="0 0 24 24">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                        </svg>
-                      </div>
-                    ) : collegeStudents.length === 0 ? (
-                      <p className="text-xs text-[#5f6368] italic py-4 text-center">No students registered in this department.</p>
-                    ) : (
-                      <div className="max-h-[360px] overflow-y-auto border border-[#dadce0] rounded-xl bg-white">
-                        <table className="w-full text-left border-collapse text-xs">
-                          <thead>
-                            <tr className="border-b border-[#dadce0] text-[#5f6368] bg-slate-50 font-medium">
-                              <th className="py-2.5 px-3">Roll No</th>
-                              <th className="py-2.5 px-3">Name</th>
-                              <th className="py-2.5 px-3">Class</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {collegeStudents.map((s) => (
-                              <tr key={s._id} className="border-b border-slate-50 hover:bg-slate-50/50">
-                                <td className="py-2 px-3 font-mono font-semibold text-[#202124]">#{s.rollNo}</td>
-                                <td className="py-2 px-3 font-medium text-[#202124]">{s.name}</td>
-                                <td className="py-2 px-3 text-[#5f6368]">{s.class}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* 3. SYLLABUS GENERATOR */}
-        {activeTab === "syllabus" && (
-          <div className="rounded-2xl border border-[#dadce0] bg-white p-6 shadow-sm">
-            <h2 className="text-lg font-semibold text-[#202124] mb-2">University Syllabus AI Fetcher</h2>
-            <p className="text-xs text-[#5f6368] mb-6">Autodetect course structural details, subjects, and credits dynamically using NVIDIA NIM LLM endpoints.</p>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-              <div>
-                <label className="block text-xs font-medium text-[#5f6368] mb-1">Board / University</label>
-                <input
-                  type="text"
-                  value={syllUniv}
-                  onChange={(e) => setSyllUniv(e.target.value)}
-                  placeholder="e.g. HPU, HP Board"
-                  className="w-full rounded-lg border border-[#dadce0] px-3.5 py-2 text-sm focus:border-[#1a73e8] focus:outline-none"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-[#5f6368] mb-1">Course / Subject</label>
-                <input
-                  type="text"
-                  value={syllCourse}
-                  onChange={(e) => setSyllCourse(e.target.value)}
-                  placeholder="e.g. BCA, BBA"
-                  className="w-full rounded-lg border border-[#dadce0] px-3.5 py-2 text-sm focus:border-[#1a73e8] focus:outline-none"
-                />
-              </div>
-              <div className="flex items-end">
-                <button
-                  onClick={handleGenerateSyllabus}
-                  disabled={generatingSyllabus}
-                  className="w-full bg-[#1a73e8] text-white py-2.5 rounded-lg text-sm font-semibold hover:bg-[#1557b0] disabled:bg-slate-300 transition-colors"
-                >
-                  {generatingSyllabus ? "Searching & Generating..." : "Generate Syllabus Structure"}
-                </button>
+                )}
               </div>
             </div>
+          )}
 
-            {generatedSyllabus && (
-              <div className="p-4 rounded-xl border border-blue-100 bg-blue-50/20 max-h-96 overflow-y-auto">
-                <pre className="text-xs font-mono text-slate-800 whitespace-pre-wrap">{generatedSyllabus}</pre>
-              </div>
-            )}
-          </div>
-        )}
+          {/* TAB 2: REGISTER COLLEGE ADMINS */}
+          {activeTab === "college-admins" && (
+            <div className="max-w-md mx-auto bg-white border border-slate-200 rounded-2xl p-6 shadow-xs">
+              <h2 className="text-sm font-bold text-slate-800 mb-1">Create College Administrator</h2>
+              <p className="text-[11px] text-slate-500 mb-5">College admins are restricted to managing a single, pre-existing college.</p>
 
-        {/* 4. ANNOUNCEMENTS */}
-        {activeTab === "announcements" && (
-          <div className="rounded-2xl border border-[#dadce0] bg-white p-6 shadow-sm max-w-xl mx-auto w-full">
-            <h2 className="text-lg font-semibold text-[#202124] mb-4">Create Announcement</h2>
-            <form onSubmit={handleCreateAnnouncement} className="space-y-4">
-              <div>
-                <label className="block text-xs font-medium text-[#5f6368] mb-1">Target Audience</label>
-                <select
-                  value={annTarget}
-                  onChange={(e) => setAnnTarget(e.target.value)}
-                  className="w-full rounded-lg border border-[#dadce0] px-3.5 py-2 text-sm focus:border-[#1a73e8] focus:outline-none bg-white"
-                >
-                  <option value="all">All Users</option>
-                  <option value="students">Students Only</option>
-                  <option value="mentors">Mentors Only</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-[#5f6368] mb-1">Title</label>
-                <input
-                  type="text"
-                  required
-                  value={annTitle}
-                  onChange={(e) => setAnnTitle(e.target.value)}
-                  placeholder="e.g. End Semester Exam Registration Dates"
-                  className="w-full rounded-lg border border-[#dadce0] px-3.5 py-2 text-sm focus:border-[#1a73e8] focus:outline-none"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-[#5f6368] mb-1">Description</label>
-                <textarea
-                  required
-                  rows={4}
-                  value={annDesc}
-                  onChange={(e) => setAnnDesc(e.target.value)}
-                  placeholder="Write announcement body details here..."
-                  className="w-full rounded-lg border border-[#dadce0] px-3.5 py-2 text-sm focus:border-[#1a73e8] focus:outline-none"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-[#5f6368] mb-1">Expiry Date (Optional)</label>
-                <input
-                  type="date"
-                  value={annExpiry}
-                  onChange={(e) => setAnnExpiry(e.target.value)}
-                  className="w-full rounded-lg border border-[#dadce0] px-3.5 py-2 text-sm focus:border-[#1a73e8] focus:outline-none"
-                />
-              </div>
-              <button type="submit" className="w-full bg-[#1a73e8] text-white py-2 rounded-lg text-sm font-semibold hover:bg-[#1557b0] transition-colors">
-                Publish Announcement
-              </button>
-            </form>
-          </div>
-        )}
-
-        {/* 5. EVENTS MANAGER */}
-        {activeTab === "events" && (
-          <div className="rounded-2xl border border-[#dadce0] bg-white p-6 shadow-sm max-w-xl mx-auto w-full">
-            <h2 className="text-lg font-semibold text-[#202124] mb-4">Post College Event</h2>
-            <form onSubmit={handleCreateEvent} className="space-y-4">
-              <div>
-                <label className="block text-xs font-medium text-[#5f6368] mb-1">Event Name</label>
-                <input
-                  type="text"
-                  required
-                  value={evtName}
-                  onChange={(e) => setEvtName(e.target.value)}
-                  placeholder="e.g. Annual Tech Fest 2026"
-                  className="w-full rounded-lg border border-[#dadce0] px-3.5 py-2 text-sm focus:border-[#1a73e8] focus:outline-none"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-[#5f6368] mb-1">Description</label>
-                <textarea
-                  required
-                  rows={3}
-                  value={evtDesc}
-                  onChange={(e) => setEvtDesc(e.target.value)}
-                  placeholder="Event highlights, scheduling, etc."
-                  className="w-full rounded-lg border border-[#dadce0] px-3.5 py-2 text-sm focus:border-[#1a73e8] focus:outline-none"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
+              <form onSubmit={handleRegisterCollegeAdmin} className="space-y-4">
                 <div>
-                  <label className="block text-xs font-medium text-[#5f6368] mb-1">Event Date</label>
-                  <input
-                    type="date"
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Assigned College</label>
+                  <select
                     required
-                    value={evtDate}
-                    onChange={(e) => setEvtDate(e.target.value)}
-                    className="w-full rounded-lg border border-[#dadce0] px-3.5 py-2 text-sm focus:border-[#1a73e8] focus:outline-none"
-                  />
+                    value={adminCollegeId}
+                    onChange={(e) => setAdminCollegeId(e.target.value)}
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs focus:border-primary focus:outline-hidden bg-white font-medium"
+                  >
+                    <option value="">Select College...</option>
+                    {colleges.map((col) => (
+                      <option key={col._id} value={col._id}>
+                        {col.name} {col.isBlocked ? "(Blocked)" : ""}
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-[#5f6368] mb-1">Location</label>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Admin Name</label>
                   <input
                     type="text"
                     required
-                    value={evtLocation}
-                    onChange={(e) => setEvtLocation(e.target.value)}
-                    placeholder="e.g. Auditorium Hall"
-                    className="w-full rounded-lg border border-[#dadce0] px-3.5 py-2 text-sm focus:border-[#1a73e8] focus:outline-none"
+                    value={adminName}
+                    onChange={(e) => setAdminName(e.target.value)}
+                    placeholder="e.g. Prof. R. K. Sharma"
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs focus:border-primary focus:outline-hidden"
                   />
                 </div>
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-[#5f6368] mb-1">Registration Link (Optional)</label>
-                <input
-                  type="url"
-                  value={evtLink}
-                  onChange={(e) => setEvtLink(e.target.value)}
-                  placeholder="https://forms.gle/..."
-                  className="w-full rounded-lg border border-[#dadce0] px-3.5 py-2 text-sm focus:border-[#1a73e8] focus:outline-none"
-                />
-              </div>
-              <button type="submit" className="w-full bg-[#1a73e8] text-white py-2 rounded-lg text-sm font-semibold hover:bg-[#1557b0] transition-colors">
-                Publish Event
-              </button>
-            </form>
-          </div>
-        )}
-
-        {/* 6. STUDENT ROSTER */}
-        {activeTab === "students" && (
-          <div className="rounded-2xl border border-[#dadce0] bg-white p-6 shadow-sm">
-            <h2 className="text-lg font-semibold text-[#202124] mb-4">Total Registered Student Directory</h2>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse text-sm">
-                <thead>
-                  <tr className="border-b border-[#dadce0] text-[#5f6368] font-medium">
-                    <th className="py-3 px-4">Roll No</th>
-                    <th className="py-3 px-4">Name</th>
-                    <th className="py-3 px-4">Email</th>
-                    <th className="py-3 px-4">Class</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {allStudents.map((s) => (
-                    <tr key={s._id} className="border-b border-slate-50 hover:bg-slate-50/50">
-                      <td className="py-3 px-4 font-mono text-[#202124] font-semibold">#{s.rollNo}</td>
-                      <td className="py-3 px-4 text-[#202124] font-medium">{s.name}</td>
-                      <td className="py-3 px-4 text-[#5f6368]">{s.email || "N/A"}</td>
-                      <td className="py-3 px-4 text-[#5f6368]">{s.class}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Email Address</label>
+                  <input
+                    type="email"
+                    required
+                    value={adminEmail}
+                    onChange={(e) => setAdminEmail(e.target.value)}
+                    placeholder="e.g. admin@cec.edu.in"
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs focus:border-primary focus:outline-hidden"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Secure Password</label>
+                  <input
+                    type="password"
+                    required
+                    value={adminPassword}
+                    onChange={(e) => setAdminPassword(e.target.value)}
+                    placeholder="••••••••"
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs focus:border-primary focus:outline-hidden"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  className="w-full bg-primary text-white py-2 rounded-lg text-xs font-bold hover:bg-primary-hover transition-colors"
+                >
+                  Create Admin Account
+                </button>
+              </form>
             </div>
-          </div>
-        )}
-      </div>
+          )}
+
+          {/* TAB 3: COLLEGE STRENGTH STATS */}
+          {activeTab === "stats" && (
+            <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs">
+              <h2 className="text-sm font-bold text-slate-800 mb-2">College Network Enrollment & Strength</h2>
+              <p className="text-[11px] text-slate-500 mb-6">Real-time counts of verified academic mentors and enrolled student profiles per college node.</p>
+
+              {stats.length === 0 ? (
+                <p className="text-xs text-slate-500 py-8 text-center italic">No stats available.</p>
+              ) : (
+                <div className="overflow-x-auto border border-slate-100 rounded-xl">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-slate-100 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                        <th className="px-4 py-3">College Name</th>
+                        <th className="px-4 py-3">Location</th>
+                        <th className="px-4 py-3">Status</th>
+                        <th className="px-4 py-3 text-center">Mentors</th>
+                        <th className="px-4 py-3 text-center">Students</th>
+                        <th className="px-4 py-3 text-center">Total Strength</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-50 text-xs">
+                      {stats.map((s) => (
+                        <tr key={s.collegeId} className="hover:bg-slate-50/50">
+                          <td className="px-4 py-3 font-semibold text-slate-800">{s.collegeName}</td>
+                          <td className="px-4 py-3 text-slate-500">{s.location}</td>
+                          <td className="px-4 py-3">
+                            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider ${
+                              s.isBlocked ? "bg-red-50 text-red-600" : "bg-emerald-50 text-emerald-600"
+                            }`}>
+                              {s.isBlocked ? "Blocked" : "Active"}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-center font-medium text-slate-700">{s.mentorsCount}</td>
+                          <td className="px-4 py-3 text-center font-medium text-slate-700">{s.studentsCount}</td>
+                          <td className="px-4 py-3 text-center">
+                            <span className="inline-flex items-center justify-center h-6 min-w-6 rounded-md bg-indigo-50 text-primary text-[10px] font-bold px-1.5">
+                              {s.mentorsCount + s.studentsCount}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 };

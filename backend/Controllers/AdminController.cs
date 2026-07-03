@@ -10,7 +10,7 @@ using EduGuard.Services;
 
 namespace EduGuard.Controllers
 {
-    [Authorize(Roles = "admin")]
+    [Authorize(Roles = "admin,college-admin")]
     [ApiController]
     [Route("api/admin")]
     public class AdminController : ControllerBase
@@ -26,18 +26,47 @@ namespace EduGuard.Controllers
             _notificationService = notificationService;
         }
 
+        private bool IsSuperAdmin()
+        {
+            var role = User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value;
+            return role == "admin";
+        }
+
+        private string? GetCollegeId()
+        {
+            var role = User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value;
+            if (role == "college-admin")
+            {
+                var userId = User.FindFirst("id")?.Value;
+                if (!string.IsNullOrEmpty(userId))
+                {
+                    var admin = _mongoService.Admins.Find(a => a.Id == userId).FirstOrDefault();
+                    return admin?.CollegeId;
+                }
+            }
+            return null;
+        }
+
         // --- MENTOR VERIFICATION SYSTEM ---
 
         [HttpGet("mentors/pending")]
         public async Task<IActionResult> GetPendingMentors()
         {
-            var mentors = await _mongoService.Mentors.Find(m => m.Status == "pending_verification").ToListAsync();
+            if (IsSuperAdmin()) return Forbid();
+            var collegeId = GetCollegeId();
+            var mentors = await _mongoService.Mentors.Find(m => m.Status == "pending_verification" && m.CollegeId == collegeId).ToListAsync();
             return Ok(new { success = true, data = mentors });
         }
 
         [HttpPost("mentors/{id}/status")]
         public async Task<IActionResult> UpdateMentorStatus(string id, [FromBody] UpdateStatusRequest request)
         {
+            if (IsSuperAdmin()) return Forbid();
+            var collegeId = GetCollegeId();
+            var existing = await _mongoService.Mentors.Find(m => m.Id == id).FirstOrDefaultAsync();
+            if (existing == null) return NotFound(new { success = false, message = "Mentor not found" });
+            if (existing.CollegeId != collegeId) return Forbid();
+
             if (request == null || string.IsNullOrEmpty(request.Status))
             {
                 return BadRequest(new { success = false, message = "Status parameter is required" });
@@ -53,22 +82,20 @@ namespace EduGuard.Controllers
             var update = Builders<Mentor>.Update.Set(m => m.Status, request.Status.ToLower()).Set(m => m.UpdatedAt, DateTime.UtcNow);
             
             var result = await _mongoService.Mentors.UpdateOneAsync(filter, update);
-            if (result.MatchedCount == 0)
-            {
-                return NotFound(new { success = false, message = "Mentor not found" });
-            }
-
             return Ok(new { success = true, message = $"Mentor status updated to {request.Status}" });
         }
 
         [HttpPut("mentors/{id}")]
         public async Task<IActionResult> UpdateMentorDetails(string id, [FromBody] Mentor model)
         {
-            if (model == null) return BadRequest(new { success = false, message = "Invalid body" });
-            
+            if (IsSuperAdmin()) return Forbid();
+            var collegeId = GetCollegeId();
             var existing = await _mongoService.Mentors.Find(m => m.Id == id).FirstOrDefaultAsync();
             if (existing == null) return NotFound(new { success = false, message = "Mentor not found" });
+            if (existing.CollegeId != collegeId) return Forbid();
 
+            if (model == null) return BadRequest(new { success = false, message = "Invalid body" });
+            
             existing.Name = model.Name;
             existing.Email = model.Email;
             existing.AssignedCourseId = model.AssignedCourseId;
@@ -86,8 +113,13 @@ namespace EduGuard.Controllers
         [HttpDelete("mentors/{id}")]
         public async Task<IActionResult> DeleteMentor(string id)
         {
-            var result = await _mongoService.Mentors.DeleteOneAsync(m => m.Id == id);
-            if (result.DeletedCount == 0) return NotFound(new { success = false, message = "Mentor not found" });
+            if (IsSuperAdmin()) return Forbid();
+            var collegeId = GetCollegeId();
+            var existing = await _mongoService.Mentors.Find(m => m.Id == id).FirstOrDefaultAsync();
+            if (existing == null) return NotFound(new { success = false, message = "Mentor not found" });
+            if (existing.CollegeId != collegeId) return Forbid();
+
+            await _mongoService.Mentors.DeleteOneAsync(m => m.Id == id);
             return Ok(new { success = true, message = "Mentor deleted successfully" });
         }
 
@@ -167,18 +199,21 @@ namespace EduGuard.Controllers
             return Ok(new { success = true, data = model });
         }
 
-        // --- STUDENT MANAGEMENT ---
-
         [HttpPost("students")]
         public async Task<IActionResult> AddStudent([FromBody] Student model)
         {
+            if (IsSuperAdmin()) return Forbid();
+            var collegeId = GetCollegeId();
+
             if (model == null || string.IsNullOrEmpty(model.Name) || string.IsNullOrEmpty(model.RollNo))
             {
                 return BadRequest(new { success = false, message = "Name and RollNo are required" });
             }
 
+            model.CollegeId = collegeId!;
             model.IsVerified = true;
             model.VerificationStatus = "approved";
+            model.IsRegistered = false; // waiting for self-registration signup
             await _mongoService.Students.InsertOneAsync(model);
             return Ok(new { success = true, data = model });
         }
@@ -186,10 +221,14 @@ namespace EduGuard.Controllers
         [HttpPut("students/{id}")]
         public async Task<IActionResult> UpdateStudent(string id, [FromBody] Student model)
         {
+            if (IsSuperAdmin()) return Forbid();
+            var collegeId = GetCollegeId();
+
             if (model == null) return BadRequest(new { success = false, message = "Invalid body" });
             
             var existing = await _mongoService.Students.Find(s => s.Id == id).FirstOrDefaultAsync();
             if (existing == null) return NotFound(new { success = false, message = "Student not found" });
+            if (existing.CollegeId != collegeId) return Forbid();
 
             // If mentor assignment is changing
             if (model.MentorId != existing.MentorId)
@@ -218,6 +257,12 @@ namespace EduGuard.Controllers
                         $"Mentor {mentor.Name} has been assigned to student {existing.Name}.",
                         "medium"
                     );
+
+                    existing.MentorName = mentor.Name;
+                }
+                else
+                {
+                    existing.MentorName = null;
                 }
             }
 
@@ -228,7 +273,6 @@ namespace EduGuard.Controllers
             existing.Semester = model.Semester;
             existing.MentorId = model.MentorId;
             existing.CourseId = model.CourseId;
-            existing.CollegeId = model.CollegeId;
             existing.Attendance = model.Attendance;
             existing.UpdatedAt = DateTime.UtcNow;
 
@@ -239,10 +283,18 @@ namespace EduGuard.Controllers
         [HttpDelete("students/{id}")]
         public async Task<IActionResult> DeleteStudent(string id)
         {
-            var result = await _mongoService.Students.DeleteOneAsync(s => s.Id == id);
-            if (result.DeletedCount == 0) return NotFound(new { success = false, message = "Student not found" });
+            if (IsSuperAdmin()) return Forbid();
+            var collegeId = GetCollegeId();
+
+            var existing = await _mongoService.Students.Find(s => s.Id == id).FirstOrDefaultAsync();
+            if (existing == null) return NotFound(new { success = false, message = "Student not found" });
+            if (existing.CollegeId != collegeId) return Forbid();
+
+            await _mongoService.Students.DeleteOneAsync(s => s.Id == id);
             return Ok(new { success = true, message = "Student deleted successfully" });
         }
+
+
 
         // --- UNIVERSITY / BOARD INTEGRATION ---
 
@@ -265,6 +317,98 @@ namespace EduGuard.Controllers
             {
                 return StatusCode(500, new { success = false, message = $"Failed to auto-fetch syllabus: {ex.Message}" });
             }
+        }
+
+        // --- COLLEGE ADMIN & BLOCKING ENHANCEMENTS ---
+
+        [Authorize(Roles = "admin")]
+        [HttpPost("colleges/{id}/block")]
+        public async Task<IActionResult> BlockCollege(string id, [FromQuery] bool block)
+        {
+            var filter = Builders<College>.Filter.Eq(c => c.Id, id);
+            var update = Builders<College>.Update.Set(c => c.IsBlocked, block).Set(c => c.UpdatedAt, DateTime.UtcNow);
+            var result = await _mongoService.Colleges.UpdateOneAsync(filter, update);
+            if (result.MatchedCount == 0) return NotFound(new { success = false, message = "College not found" });
+            return Ok(new { success = true, message = $"College successfully {(block ? "blocked" : "unblocked")}" });
+        }
+
+        [Authorize(Roles = "admin")]
+        [HttpPut("colleges/{id}")]
+        public async Task<IActionResult> UpdateCollegeDetails(string id, [FromBody] College model)
+        {
+            if (model == null) return BadRequest("Invalid body");
+            var existing = await _mongoService.Colleges.Find(c => c.Id == id).FirstOrDefaultAsync();
+            if (existing == null) return NotFound("College not found");
+
+            existing.Name = model.Name;
+            existing.Location = model.Location;
+            existing.Address = model.Address;
+            existing.Website = model.Website;
+            existing.ContactInfo = model.ContactInfo;
+            existing.UpdatedAt = DateTime.UtcNow;
+
+            await _mongoService.Colleges.ReplaceOneAsync(c => c.Id == id, existing);
+            return Ok(new { success = true, message = "College details updated successfully" });
+        }
+
+        [Authorize(Roles = "admin")]
+        [HttpPost("college-admins")]
+        public async Task<IActionResult> RegisterCollegeAdmin([FromBody] Admin model)
+        {
+            if (model == null || string.IsNullOrEmpty(model.Email) || string.IsNullOrEmpty(model.Password) || string.IsNullOrEmpty(model.CollegeId))
+            {
+                return BadRequest(new { success = false, message = "Email, password, and CollegeId are required" });
+            }
+
+            // Validate college exists
+            var college = await _mongoService.Colleges.Find(c => c.Id == model.CollegeId).FirstOrDefaultAsync();
+            if (college == null)
+            {
+                return BadRequest(new { success = false, message = "Selected college does not exist" });
+            }
+
+            model.Email = model.Email.Trim().ToLower();
+            var existing = await _mongoService.Admins.Find(a => a.Email == model.Email).FirstOrDefaultAsync();
+            if (existing != null)
+            {
+                return BadRequest(new { success = false, message = "Email is already registered" });
+            }
+
+            model.Password = BCrypt.Net.BCrypt.HashPassword(model.Password);
+            model.Role = "college-admin";
+            model.IsCollegeAdmin = true;
+            model.IsSuperAdmin = false;
+            model.CreatedAt = DateTime.UtcNow;
+            model.UpdatedAt = DateTime.UtcNow;
+
+            await _mongoService.Admins.InsertOneAsync(model);
+            return StatusCode(201, new { success = true, message = "College Admin account registered successfully!" });
+        }
+
+        [Authorize(Roles = "admin")]
+        [HttpGet("colleges/stats")]
+        public async Task<IActionResult> GetCollegeStats()
+        {
+            var colleges = await _mongoService.Colleges.Find(_ => true).ToListAsync();
+            var statsList = new List<object>();
+
+            foreach (var college in colleges)
+            {
+                var mentorCount = await _mongoService.Mentors.CountDocumentsAsync(m => m.CollegeId == college.Id);
+                var studentCount = await _mongoService.Students.CountDocumentsAsync(s => s.CollegeId == college.Id);
+
+                statsList.Add(new
+                {
+                    collegeId = college.Id,
+                    collegeName = college.Name,
+                    location = college.Location,
+                    isBlocked = college.IsBlocked,
+                    mentorsCount = mentorCount,
+                    studentsCount = studentCount
+                });
+            }
+
+            return Ok(new { success = true, data = statsList });
         }
     }
 

@@ -107,6 +107,15 @@ namespace EduGuard.Models
         [BsonRepresentation(BsonType.ObjectId)]
         public string? MentorId { get; set; }
 
+        [BsonElement("collegeName")]
+        public string? CollegeName { get; set; }
+
+        [BsonElement("isRegistered")]
+        public bool IsRegistered { get; set; } = false;
+
+        [BsonElement("mentorName")]
+        public string? MentorName { get; set; }
+
         [BsonElement("semester")]
         public int Semester { get; set; } = 1;
 

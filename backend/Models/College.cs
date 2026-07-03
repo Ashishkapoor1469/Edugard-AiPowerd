@@ -29,6 +29,9 @@ namespace EduGuard.Models
         [BsonElement("website")]
         public string Website { get; set; } = string.Empty;
 
+        [BsonElement("isBlocked")]
+        public bool IsBlocked { get; set; } = false;
+
         [BsonElement("contactInfo")]
         public string ContactInfo { get; set; } = string.Empty;
 

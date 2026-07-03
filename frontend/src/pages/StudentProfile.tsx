@@ -189,33 +189,77 @@ const StudentProfile: React.FC = () => {
     }
   };
 
-  const fetchMentors = async () => {
+  const fetchMentors = async (signal?: AbortSignal) => {
+    const CACHE_KEY = "eduguard_mentors_list";
+    const TTL = 10 * 60 * 1000; // 10 minutes
+
+    // Show cached data immediately
+    try {
+      const cached = sessionStorage.getItem(CACHE_KEY);
+      if (cached) {
+        const { data, timestamp } = JSON.parse(cached);
+        if (Date.now() - timestamp < TTL) {
+          setMentorsList(data);
+          setLoadingMentors(false);
+        }
+      }
+    } catch (_) { /* ignore parse errors */ }
+
+    // Fetch fresh data in background
     setLoadingMentors(true);
     try {
-      const res = await axios.get("/api/mentors/list");
-      if (res.data.success) setMentorsList(res.data.data);
+      const res = await axios.get("/api/mentors/list", { signal });
+      if (res.data.success) {
+        setMentorsList(res.data.data);
+        sessionStorage.setItem(CACHE_KEY, JSON.stringify({ data: res.data.data, timestamp: Date.now() }));
+      }
     } catch (err) {
-      console.error(err);
+      if (!axios.isCancel(err)) console.error(err);
     } finally {
       setLoadingMentors(false);
     }
   };
 
-  const fetchNotifications = async () => {
+  const fetchNotifications = async (signal?: AbortSignal) => {
+    const CACHE_KEY = "eduguard_student_alerts";
+    const TTL = 5 * 60 * 1000; // 5 minutes
+
+    // Show cached data immediately
     try {
-      const res = await axios.get("/api/notifications");
-      if (res.data.success) setAlerts(res.data.data);
+      const cached = sessionStorage.getItem(CACHE_KEY);
+      if (cached) {
+        const { data, timestamp } = JSON.parse(cached);
+        if (Date.now() - timestamp < TTL) {
+          setAlerts(data);
+        }
+      }
+    } catch (_) { /* ignore parse errors */ }
+
+    // Fetch fresh data in background
+    try {
+      const res = await axios.get("/api/students/my-alerts", { signal });
+      if (res.data.success) {
+        setAlerts(res.data.data);
+        sessionStorage.setItem(CACHE_KEY, JSON.stringify({ data: res.data.data, timestamp: Date.now() }));
+      }
     } catch (err) {
-      console.error(err);
+      if (!axios.isCancel(err)) console.error(err);
     }
   };
 
   useEffect(() => {
+    const controller = new AbortController();
+    const { signal } = controller;
+
     fetchStudent(true);
     if (user?.role === "student") {
-      fetchMentors();
-      fetchNotifications();
+      fetchMentors(signal);
+      fetchNotifications(signal);
     }
+
+    return () => {
+      controller.abort();
+    };
   }, [studentId]);
 
   // Socket communication
@@ -468,32 +512,64 @@ ${student.aiImprovementPlan || "No plan generated."}
         </div>
       </div>
 
-      {/* Tabs Menu (Only if student views their own portal) */}
-      {user?.role === "student" && (
-        <div className="mb-6 border-b border-[#dadce0] flex gap-2 overflow-x-auto pb-px">
-          {[
-            { id: "performance", label: "Academic Performance" },
-            { id: "chat", label: `Chat with Mentor ${student.mentorId?.isOnline ? "●" : ""}` },
-            { id: "notifications", label: `Alerts (${alerts.length})` },
-          ].map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id as any)}
-              className={`px-4 py-2 text-sm font-semibold border-b-2 rounded-t-lg transition-all ${
-                activeTab === tab.id
-                  ? "border-[#1a73e8] text-[#1a73e8] bg-blue-50/30"
-                  : "border-transparent text-[#5f6368] hover:text-[#202124] hover:border-[#dadce0]"
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
+      {/* Blocker overlay for Flow B pending approval */}
+      {user?.role === "student" && student.verificationStatus === "pending_mentor_approval" && (
+        <div className="mb-6 p-6 rounded-2xl bg-amber-50 border border-amber-200 text-amber-800 shadow-sm flex flex-col gap-3">
+          <div className="flex items-center gap-2">
+            <svg className="h-6 w-6 text-amber-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+            <h2 className="font-bold text-sm">Enrollment Pending Mentor Approval</h2>
+          </div>
+          <p className="text-xs leading-normal max-w-2xl">
+            Your self-registered account has been successfully verified via OTP. However, full access to your academic records, mentor chat, and assignment portal requires approval from your assigned mentor <strong>{student.mentorId?.name || student.mentorName || "Unassigned"}</strong>. Please contact them or wait for verification.
+          </p>
         </div>
       )}
 
-      {/* 1. PERFORMANCE TAB */}
-      {(user?.role !== "student" || activeTab === "performance") && (
-        <div className="space-y-6">
+      {user?.role === "student" && student.verificationStatus === "rejected" && (
+        <div className="mb-6 p-6 rounded-2xl bg-red-50 border border-red-200 text-red-800 shadow-sm flex flex-col gap-3">
+          <div className="flex items-center gap-2">
+            <svg className="h-6 w-6 text-red-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <h2 className="font-bold text-sm">Enrollment Rejected</h2>
+          </div>
+          <p className="text-xs leading-normal max-w-2xl">
+            Your enrollment request has been rejected by your assigned mentor. Please consult the college administration department for assistance.
+          </p>
+        </div>
+      )}
+
+      {/* Rest of the page is only accessible if student is approved, or if logged in user is a mentor/admin */}
+      {(user?.role !== "student" || student.verificationStatus === "approved") ? (
+        <>
+          {/* Tabs Menu (Only if student views their own portal) */}
+          {user?.role === "student" && (
+            <div className="mb-6 border-b border-[#dadce0] flex gap-2 overflow-x-auto pb-px">
+              {[
+                { id: "performance", label: "Academic Performance" },
+                { id: "chat", label: `Chat with Mentor ${student.mentorId?.isOnline ? "●" : ""}` },
+                { id: "notifications", label: `Alerts (${alerts.length})` },
+              ].map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id as any)}
+                  className={`px-4 py-2 text-sm font-semibold border-b-2 rounded-t-lg transition-all ${
+                    activeTab === tab.id
+                      ? "border-[#1a73e8] text-[#1a73e8] bg-blue-50/30"
+                      : "border-transparent text-[#5f6368] hover:text-[#202124] hover:border-[#dadce0]"
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* 1. PERFORMANCE TAB */}
+          {(user?.role !== "student" || activeTab === "performance") && (
+            <div className="space-y-6">
           {/* Join Group Alert */}
           {(!student.mentorId || student.mentorId._id === "ai-assistant") && user?.role === "student" && (
             <div className="p-5 bg-blue-50 border border-blue-100 rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -870,12 +946,30 @@ ${student.aiImprovementPlan || "No plan generated."}
           {alerts.length === 0 ? (
             <p className="text-xs text-[#5f6368] italic py-8 text-center">No alerts broadcasted yet.</p>
           ) : (
-            <div className="space-y-4">
+            <div className="space-y-3">
               {alerts.map((n) => (
-                <div key={n._id} className="p-4 border rounded-xl bg-slate-50/50 flex gap-3">
-                  <div className="h-2 w-2 rounded-full bg-blue-500 mt-1.5 shrink-0" />
-                  <div>
-                    <span className="text-xs font-bold text-[#202124] block">{n.message}</span>
+                <div key={n._id} className={`p-4 border rounded-xl flex gap-3 ${n.type === "event" ? "bg-purple-50/50 border-purple-100" : "bg-blue-50/50 border-blue-100"}`}>
+                  <div className={`h-8 w-8 rounded-lg flex items-center justify-center shrink-0 ${n.type === "event" ? "bg-purple-100" : "bg-blue-100"}`}>
+                    {n.type === "event" ? (
+                      <svg className="h-4 w-4 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                    ) : (
+                      <svg className="h-4 w-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" /></svg>
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded ${n.type === "event" ? "bg-purple-200 text-purple-800" : "bg-blue-200 text-blue-800"}`}>
+                        {n.type === "event" ? "Event" : "Announcement"}
+                      </span>
+                    </div>
+                    {n.title && <span className="text-xs font-bold text-[#202124] block">{n.title}</span>}
+                    <span className="text-xs text-[#3c4043] block mt-0.5">{n.message}</span>
+                    {n.type === "event" && n.location && (
+                      <span className="text-[10px] text-purple-700 mt-1 block">📍 {n.location}{n.date ? ` · ${new Date(n.date).toLocaleDateString()}` : ""}</span>
+                    )}
+                    {n.type === "event" && n.registrationLink && (
+                      <a href={n.registrationLink} target="_blank" rel="noopener noreferrer" className="text-[10px] text-indigo-600 font-semibold hover:underline mt-1 inline-block">Register →</a>
+                    )}
                     <span className="text-[10px] text-[#5f6368] mt-1 block">
                       {new Date(n.createdAt).toLocaleDateString()} at {new Date(n.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </span>
@@ -884,6 +978,18 @@ ${student.aiImprovementPlan || "No plan generated."}
               ))}
             </div>
           )}
+        </div>
+      )}
+        </>
+      ) : (
+        <div className="text-center py-16 bg-white border border-[#dadce0] rounded-2xl p-6 shadow-sm mt-6">
+          <svg className="h-12 w-12 text-slate-300 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+          </svg>
+          <h3 className="text-sm font-semibold text-slate-700">Access Restricted</h3>
+          <p className="text-xs text-slate-500 mt-1">
+            Please wait for mentor verification to unlock your student profile workspace.
+          </p>
         </div>
       )}
     </div>

@@ -52,6 +52,8 @@ namespace EduGuard.Services
         public IMongoCollection<Assignment> Assignments => _database.GetCollection<Assignment>("assignments");
         public IMongoCollection<Submission> Submissions => _database.GetCollection<Submission>("submissions");
         public IMongoCollection<Admin> Admins => _database.GetCollection<Admin>("admins");
+        public IMongoCollection<ReportCardJob> ReportCardJobs => _database.GetCollection<ReportCardJob>("report_card_jobs");
+        public IMongoCollection<Syllabus> Syllabi => _database.GetCollection<Syllabus>("syllabi");
 
         private void CreateIndexesSafe()
         {
@@ -65,6 +67,10 @@ namespace EduGuard.Services
                 // Student email index
                 var studentEmailKey = Builders<Student>.IndexKeys.Ascending(s => s.Email);
                 Students.Indexes.CreateOne(new CreateIndexModel<Student>(studentEmailKey));
+
+                // Student collegeName index
+                var studentCollegeNameKey = Builders<Student>.IndexKeys.Ascending(s => s.CollegeName);
+                Students.Indexes.CreateOne(new CreateIndexModel<Student>(studentCollegeNameKey));
 
                 // Mentor email unique index
                 var mentorEmailKey = Builders<Mentor>.IndexKeys.Ascending(m => m.Email);

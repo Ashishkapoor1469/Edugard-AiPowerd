@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import axios from "axios";
 import { useDropzone } from "react-dropzone";
@@ -84,17 +84,37 @@ const Dashboard: React.FC = () => {
   const [plannerExams, setPlannerExams] = useState("");
   const [generatedPlan, setGeneratedPlan] = useState("");
   const [generatingPlan, setGeneratingPlan] = useState(false);
+  const [showExcelHelp, setShowExcelHelp] = useState(false);
+
+  const STATS_CACHE_KEY = "eduguard_dashboard_stats";
+  const STATS_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
   const fetchDashboardStats = async () => {
     try {
+      // 1. Show cached stats immediately (stale-while-revalidate)
+      const cached = sessionStorage.getItem(STATS_CACHE_KEY);
+      if (cached) {
+        const { data, timestamp } = JSON.parse(cached);
+        setStats(data);
+        // If cache is still fresh, skip the network call
+        if (Date.now() - timestamp < STATS_TTL_MS) return;
+      }
+
+      // 2. Fetch fresh stats in background
       const res = await axios.get("/api/students/stats");
-      if (res.data.success) setStats(res.data.data);
+      if (res.data.success) {
+        setStats(res.data.data);
+        sessionStorage.setItem(
+          STATS_CACHE_KEY,
+          JSON.stringify({ data: res.data.data, timestamp: Date.now() })
+        );
+      }
     } catch (err) {
       console.error(err);
     }
   };
 
-  const fetchStudents = async () => {
+  const fetchStudents = async (signal?: AbortSignal) => {
     setLoading(true);
     try {
       const params: any = {
@@ -106,12 +126,13 @@ const Dashboard: React.FC = () => {
       };
       if (riskFilter) params.riskLevel = riskFilter;
 
-      const res = await axios.get("/api/students", { params });
+      const res = await axios.get("/api/students", { params, signal });
       if (res.data.success) {
         setStudents(res.data.data);
         setTotalPages(res.data.pages);
       }
     } catch (err) {
+      if (axios.isCancel(err)) return; // Request was aborted, ignore
       console.error(err);
       toast.error("Failed to fetch students list");
     } finally {
@@ -151,9 +172,11 @@ const Dashboard: React.FC = () => {
   }, [courseFilter, classFilter]);
 
   useEffect(() => {
-    fetchStudents();
+    const controller = new AbortController();
+    fetchStudents(controller.signal);
     fetchPendingStudents();
     fetchAssignments();
+    return () => controller.abort(); // Cancel in-flight requests on dependency change
   }, [courseFilter, classFilter, searchFilter, riskFilter, page, activeTab]);
 
   // Actions
@@ -303,12 +326,132 @@ const Dashboard: React.FC = () => {
         </div>
 
         {/* Excel Import Card */}
-        <div {...getRootProps()} className="border border-dashed border-[#dadce0] rounded-xl px-4 py-3 bg-slate-50/50 hover:bg-slate-50 cursor-pointer transition-colors text-center max-w-xs w-full">
-          <input {...getInputProps()} />
-          <span className="text-xs font-semibold text-[#1a73e8]">Upload Student Excel Roster</span>
-          <p className="text-[10px] text-[#5f6368] mt-0.5">Drag and drop .xlsx file to import / merge grades</p>
+        <div className="flex items-center gap-2 max-w-xs w-full">
+          <div {...getRootProps()} className="flex-1 border border-dashed border-[#dadce0] rounded-xl px-4 py-3 bg-slate-50/50 hover:bg-slate-50 cursor-pointer transition-colors text-center">
+            <input {...getInputProps()} />
+            <span className="text-xs font-semibold text-[#1a73e8]">Upload Student Excel Roster</span>
+            <p className="text-[10px] text-[#5f6368] mt-0.5">Drag and drop .xlsx file to import / merge grades</p>
+          </div>
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); setShowExcelHelp(true); }}
+            className="shrink-0 h-8 w-8 rounded-full border border-slate-200 bg-white flex items-center justify-center text-slate-400 hover:text-[#1a73e8] hover:border-[#1a73e8] hover:bg-blue-50 transition-all shadow-sm"
+            title="Excel format help"
+          >
+            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+          </button>
         </div>
       </div>
+
+      {/* Excel Help Modal */}
+      {showExcelHelp && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4" onClick={() => setShowExcelHelp(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
+              <div>
+                <h3 className="text-sm font-bold text-slate-800">📋 Excel File Format Guide</h3>
+                <p className="text-[10px] text-slate-500 mt-0.5">Required columns and example data for the student roster</p>
+              </div>
+              <button onClick={() => setShowExcelHelp(false)} className="h-8 w-8 rounded-full hover:bg-slate-100 flex items-center justify-center text-slate-400 hover:text-slate-600 transition-colors">
+                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
+            </div>
+            <div className="px-6 py-5 space-y-5">
+              {/* Required Fields */}
+              <div>
+                <h4 className="text-xs font-bold text-slate-700 mb-2 flex items-center gap-1.5">
+                  <span className="h-5 w-5 rounded bg-red-100 text-red-600 flex items-center justify-center text-[9px] font-black">!</span>
+                  Required Columns
+                </h4>
+                <div className="grid grid-cols-2 gap-2">
+                  {[{col: "RollNo", desc: "Unique student roll number", alt: "roll, studentroll, id"}, {col: "Name", desc: "Full name of student", alt: "studentname, fullname"}].map(f => (
+                    <div key={f.col} className="rounded-lg border border-red-100 bg-red-50/50 px-3 py-2">
+                      <span className="text-[11px] font-bold text-red-700 block">{f.col}</span>
+                      <span className="text-[9px] text-red-600/70">{f.desc}</span>
+                      <span className="text-[9px] text-slate-400 block mt-0.5">Aliases: {f.alt}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              {/* Optional Fields */}
+              <div>
+                <h4 className="text-xs font-bold text-slate-700 mb-2 flex items-center gap-1.5">
+                  <span className="h-5 w-5 rounded bg-blue-100 text-blue-600 flex items-center justify-center text-[9px] font-black">~</span>
+                  Optional Columns
+                </h4>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    {col: "Email", desc: "Student email", alt: "emailaddress"},
+                    {col: "PhoneNo", desc: "Contact number", alt: "phone, mobile, contact"},
+                    {col: "Attendance", desc: "Attendance % (0-100)", alt: "att, attendancepercentage"},
+                    {col: "Behavior", desc: "Conduct note", alt: "conduct"},
+                    {col: "Contribution", desc: "Comma-separated activities", alt: "contributions, cocurricular"},
+                  ].map(f => (
+                    <div key={f.col} className="rounded-lg border border-blue-100 bg-blue-50/30 px-3 py-2">
+                      <span className="text-[11px] font-bold text-blue-700 block">{f.col}</span>
+                      <span className="text-[9px] text-blue-600/70">{f.desc}</span>
+                      <span className="text-[9px] text-slate-400 block mt-0.5">Aliases: {f.alt}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              {/* Subject Marks */}
+              <div>
+                <h4 className="text-xs font-bold text-slate-700 mb-2 flex items-center gap-1.5">
+                  <span className="h-5 w-5 rounded bg-purple-100 text-purple-600 flex items-center justify-center text-[9px] font-black">★</span>
+                  Subject Marks Columns (Dynamic)
+                </h4>
+                <p className="text-[10px] text-slate-500 mb-2">Use this pattern: <code className="bg-slate-100 px-1.5 py-0.5 rounded text-[10px] font-mono text-purple-700">SubjectName_ExamType</code> and <code className="bg-slate-100 px-1.5 py-0.5 rounded text-[10px] font-mono text-purple-700">SubjectName_ExamType_Max</code></p>
+                <div className="grid grid-cols-3 gap-1.5 text-[9px]">
+                  {["Math_Test1","Math_Test1_Max","Math_Test2","Math_MidTerm","Math_MidTerm_Max","Math_HouseExam"].map(c => (
+                    <span key={c} className="bg-purple-50 border border-purple-100 text-purple-700 rounded-md px-2 py-1 font-mono text-center">{c}</span>
+                  ))}
+                </div>
+              </div>
+              {/* Example Table */}
+              <div>
+                <h4 className="text-xs font-bold text-slate-700 mb-2">📊 Example Excel Sheet</h4>
+                <div className="overflow-x-auto rounded-xl border border-slate-200">
+                  <table className="w-full text-[9px]">
+                    <thead>
+                      <tr className="bg-slate-50">
+                        {["RollNo","Name","Email","Attendance","Behavior","Math_Test1","Math_Test1_Max","Math_MidTerm"].map(h => (
+                          <th key={h} className="px-2.5 py-2 font-bold text-slate-600 text-left border-b border-slate-200 whitespace-nowrap">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr className="border-b border-slate-100">
+                        <td className="px-2.5 py-1.5 text-slate-700">BCA001</td>
+                        <td className="px-2.5 py-1.5 text-slate-700">Rahul Sharma</td>
+                        <td className="px-2.5 py-1.5 text-slate-500">rahul@mail.com</td>
+                        <td className="px-2.5 py-1.5 text-slate-700">85</td>
+                        <td className="px-2.5 py-1.5 text-slate-500">Good</td>
+                        <td className="px-2.5 py-1.5 text-slate-700">18</td>
+                        <td className="px-2.5 py-1.5 text-slate-500">25</td>
+                        <td className="px-2.5 py-1.5 text-slate-700">72</td>
+                      </tr>
+                      <tr>
+                        <td className="px-2.5 py-1.5 text-slate-700">BCA002</td>
+                        <td className="px-2.5 py-1.5 text-slate-700">Priya Singh</td>
+                        <td className="px-2.5 py-1.5 text-slate-500">priya@mail.com</td>
+                        <td className="px-2.5 py-1.5 text-slate-700">92</td>
+                        <td className="px-2.5 py-1.5 text-slate-500">Excellent</td>
+                        <td className="px-2.5 py-1.5 text-slate-700">23</td>
+                        <td className="px-2.5 py-1.5 text-slate-500">25</td>
+                        <td className="px-2.5 py-1.5 text-slate-700">88</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div className="border-t border-slate-100 px-6 py-3 flex justify-end">
+              <button onClick={() => setShowExcelHelp(false)} className="px-4 py-2 rounded-lg bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors">Got it</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Tabs Menu */}
       <div className="mb-6 border-b border-[#dadce0] flex gap-2 overflow-x-auto pb-px">

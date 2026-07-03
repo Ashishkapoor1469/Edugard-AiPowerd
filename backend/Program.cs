@@ -81,6 +81,7 @@ builder.Services.AddTransient<NotificationService>();
 // Configure Email Queue Service as a Hosted background service
 builder.Services.AddSingleton<EmailQueueService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<EmailQueueService>());
+builder.Services.AddHostedService<ReportQueueWorker>();
 
 // Configure JWT Authentication
 var jwtSecret = builder.Configuration.GetValue<string>("JWT_SECRET") ?? "eduguard_jwt_secret_dev_2026";
@@ -133,6 +134,8 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseCors("AllowAll");
+
+app.UseStaticFiles(); // Serve wwwroot/ (report cards, etc.)
 
 app.UseRateLimiter();
 

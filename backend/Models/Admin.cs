@@ -33,6 +33,9 @@ namespace EduGuard.Models
         [BsonElement("isSuperAdmin")]
         public bool IsSuperAdmin { get; set; } = false;
 
+        [BsonElement("isCollegeAdmin")]
+        public bool IsCollegeAdmin { get; set; } = false;
+
         [BsonElement("createdAt")]
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 

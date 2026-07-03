@@ -49,5 +49,70 @@ namespace EduGuard.Controllers
 
             return Ok(new { success = true, data = resultList });
         }
+
+        // --- MENTOR ALERTS: Announcements + Events for their college ---
+        [HttpGet("my-alerts")]
+        public async Task<IActionResult> GetMyAlerts()
+        {
+            var userId = User.FindFirst("id")?.Value;
+            if (string.IsNullOrEmpty(userId))
+                return Unauthorized(new { success = false, message = "Not authenticated" });
+
+            var mentor = await _mongoService.Mentors.Find(m => m.Id == userId).FirstOrDefaultAsync();
+            if (mentor == null)
+                return NotFound(new { success = false, message = "Mentor not found" });
+
+            var collegeId = mentor.CollegeId;
+            var results = new System.Collections.Generic.List<object>();
+
+            if (!string.IsNullOrEmpty(collegeId))
+            {
+                var announcements = await _mongoService.Announcements
+                    .Find(a => a.CollegeId == collegeId)
+                    .SortByDescending(a => a.CreatedAt)
+                    .Limit(50)
+                    .ToListAsync();
+
+                foreach (var a in announcements)
+                {
+                    if (a.ExpiryDate.HasValue && a.ExpiryDate.Value < System.DateTime.UtcNow) continue;
+
+                    results.Add(new
+                    {
+                        _id = a.Id,
+                        type = "announcement",
+                        title = a.Title,
+                        message = a.Description,
+                        targetAudience = a.TargetAudience,
+                        createdAt = a.CreatedAt
+                    });
+                }
+
+                var events = await _mongoService.Events
+                    .Find(e => e.CollegeId == collegeId)
+                    .SortByDescending(e => e.CreatedAt)
+                    .Limit(50)
+                    .ToListAsync();
+
+                foreach (var ev in events)
+                {
+                    results.Add(new
+                    {
+                        _id = ev.Id,
+                        type = "event",
+                        title = ev.EventName,
+                        message = ev.Description,
+                        date = ev.Date,
+                        location = ev.Location,
+                        registrationLink = ev.RegistrationLink,
+                        createdAt = ev.CreatedAt
+                    });
+                }
+            }
+
+            results = results.OrderByDescending(r => ((dynamic)r).createdAt).ToList();
+
+            return Ok(new { success = true, data = results });
+        }
     }
 }

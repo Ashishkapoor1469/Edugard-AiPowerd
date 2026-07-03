@@ -8,6 +8,15 @@ using EduGuard.Models;
 
 namespace EduGuard.Services
 {
+    public class ParsedSyllabusRow
+    {
+        public int Semester { get; set; }
+        public string SubjectCode { get; set; } = string.Empty;
+        public string SubjectName { get; set; } = string.Empty;
+        public int Credits { get; set; }
+        public string Description { get; set; } = string.Empty;
+    }
+
     public class ParsedStudentRow
     {
         public string RollNo { get; set; } = string.Empty;
@@ -196,6 +205,60 @@ namespace EduGuard.Services
                 }
             }
 
+            return parsedRows;
+        }
+
+        public List<ParsedSyllabusRow> ParseSyllabus(Stream fileStream)
+        {
+            var parsedRows = new List<ParsedSyllabusRow>();
+            using (var reader = ExcelReaderFactory.CreateReader(fileStream))
+            {
+                var result = reader.AsDataSet(new ExcelDataSetConfiguration
+                {
+                    ConfigureDataTable = (_) => new ExcelDataTableConfiguration
+                    {
+                        UseHeaderRow = true
+                    }
+                });
+
+                if (result.Tables.Count == 0) return parsedRows;
+
+                var table = result.Tables[0];
+                var columns = table.Columns;
+
+                var headerMap = new Dictionary<string, int>();
+                for (int i = 0; i < columns.Count; i++)
+                {
+                    var colName = columns[i].ColumnName?.Trim().ToLower().Replace(" ", "").Replace("_", "").Replace("-", "") ?? "";
+                    if (!headerMap.ContainsKey(colName))
+                    {
+                        headerMap[colName] = i;
+                    }
+                }
+
+                foreach (DataRow row in table.Rows)
+                {
+                    var semStr = GetRowStringValue(row, headerMap, new[] { "semester", "sem" });
+                    var subjectCode = GetRowStringValue(row, headerMap, new[] { "subjectcode", "code", "subcode" });
+                    var subjectName = GetRowStringValue(row, headerMap, new[] { "subjectname", "subject", "subname", "name" });
+                    var creditsStr = GetRowStringValue(row, headerMap, new[] { "credits", "credit" });
+                    var description = GetRowStringValue(row, headerMap, new[] { "description", "syllabus", "content" });
+
+                    if (string.IsNullOrEmpty(subjectName)) continue;
+
+                    int.TryParse(semStr, out int sem);
+                    int.TryParse(creditsStr, out int credits);
+
+                    parsedRows.Add(new ParsedSyllabusRow
+                    {
+                        Semester = sem > 0 ? sem : 1,
+                        SubjectCode = subjectCode,
+                        SubjectName = subjectName,
+                        Credits = credits > 0 ? credits : 4,
+                        Description = description
+                    });
+                }
+            }
             return parsedRows;
         }
 

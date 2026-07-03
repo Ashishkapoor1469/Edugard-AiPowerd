@@ -106,7 +106,6 @@ namespace EduGuard.Controllers
             });
         }
 
-        // --- STUDENT SIGNUP & VERIFICATION ---
         [HttpPost("student/signup")]
         public async Task<IActionResult> StudentSignup([FromBody] StudentSignupRequest model)
         {
@@ -120,11 +119,44 @@ namespace EduGuard.Controllers
 
             model.Email = model.Email.Trim().ToLower();
 
-            // Verify student doesn't exist already
-            var existing = await _mongoService.Students.Find(s => s.Email == model.Email || (s.CollegeId == model.CollegeId && s.RollNo == model.RollNo)).FirstOrDefaultAsync();
+            // Check if student was pre-added by Mentor (Flow A)
+            var existing = await _mongoService.Students.Find(s => s.Email == model.Email).FirstOrDefaultAsync();
+            
+            var otp = new Random().Next(100000, 999999).ToString();
+
             if (existing != null)
             {
-                return BadRequest(new { success = false, message = "Email or Roll Number already registered in this college" });
+                if (existing.IsRegistered)
+                {
+                    return BadRequest(new { success = false, message = "Email or Roll Number already registered in this college" });
+                }
+
+                // Flow A (Pre-added by Mentor): Update existing record
+                existing.Name = model.Name;
+                existing.Password = BCrypt.Net.BCrypt.HashPassword(model.Password);
+                existing.IsRegistered = true;
+                existing.IsVerified = true; // Mark verified as true per instructions
+                existing.VerificationStatus = "approved"; // Pre-added means pre-approved
+                existing.Otp = otp;
+                existing.OtpExpiry = DateTime.UtcNow.AddMinutes(15);
+
+                await _mongoService.Students.ReplaceOneAsync(s => s.Id == existing.Id, existing);
+
+                // Queue verification OTP email
+                _emailQueueService.QueueEmail(existing.Email, $"Your verification code is: {otp}");
+
+                return StatusCode(200, new
+                {
+                    success = true,
+                    message = "Verification code sent to your email. Please verify to complete your signup."
+                });
+            }
+
+            // Flow B (Self-Registered): Verify Roll number doesn't exist either
+            var existingRoll = await _mongoService.Students.Find(s => s.CollegeId == model.CollegeId && s.RollNo == model.RollNo).FirstOrDefaultAsync();
+            if (existingRoll != null)
+            {
+                return BadRequest(new { success = false, message = "Roll Number is already registered in this college" });
             }
 
             // Check Mentor Capacity
@@ -140,8 +172,7 @@ namespace EduGuard.Controllers
                 return BadRequest(new { success = false, message = "The selected mentor has reached maximum student capacity. Please choose another mentor." });
             }
 
-            // Generate 6-digit verification code OTP
-            var otp = new Random().Next(100000, 999999).ToString();
+            // Flow B (Self-Registered): Create new record
             var student = new Student
             {
                 Name = model.Name,
@@ -152,8 +183,10 @@ namespace EduGuard.Controllers
                 CourseId = model.CourseId,
                 Class = model.Class ?? "BCA-A",
                 MentorId = model.MentorId,
-                IsVerified = false,
-                VerificationStatus = "pending_mentor_approval",
+                MentorName = mentor.Name,
+                IsVerified = false, // Flow B starts unverified
+                IsRegistered = true,
+                VerificationStatus = "pending_mentor_approval", // Flow B requires mentor approval
                 Otp = otp,
                 OtpExpiry = DateTime.UtcNow.AddMinutes(15)
             };
@@ -169,6 +202,7 @@ namespace EduGuard.Controllers
                 message = "Verification code sent to your email. Please verify to continue."
             });
         }
+
 
         [HttpPost("student/verify-otp")]
         public async Task<IActionResult> VerifyOtp([FromBody] VerifyOtpRequest model)
@@ -221,7 +255,17 @@ namespace EduGuard.Controllers
             var admin = await _mongoService.Admins.Find(a => a.Email == model.Email).FirstOrDefaultAsync();
             if (admin != null && BCrypt.Net.BCrypt.Verify(model.Password, admin.Password))
             {
-                var token = GenerateJwtToken(admin.Id!, "admin");
+                if (!string.IsNullOrEmpty(admin.CollegeId))
+                {
+                    var college = await _mongoService.Colleges.Find(c => c.Id == admin.CollegeId).FirstOrDefaultAsync();
+                    if (college != null && college.IsBlocked)
+                    {
+                        return Unauthorized(new { success = false, message = "Your college has been blocked by the system administrator." });
+                    }
+                }
+
+                var role = admin.Role; // could be "admin" or "college-admin"
+                var token = GenerateJwtToken(admin.Id!, role);
                 var rToken = GenerateRefreshToken();
                 SetTokenCookies(token, rToken);
 
@@ -234,7 +278,7 @@ namespace EduGuard.Controllers
                         id = admin.Id,
                         name = admin.Name,
                         email = admin.Email,
-                        role = "admin",
+                        role = role,
                         collegeId = admin.CollegeId
                     }
                 });
@@ -244,10 +288,15 @@ namespace EduGuard.Controllers
             var mentor = await _mongoService.Mentors.Find(m => m.Email == model.Email).FirstOrDefaultAsync();
             if (mentor != null && BCrypt.Net.BCrypt.Verify(model.Password, mentor.Password))
             {
-                if (mentor.Status == "pending_verification")
+                if (!string.IsNullOrEmpty(mentor.CollegeId))
                 {
-                    return Unauthorized(new { success = false, message = "Your mentor account is pending administrator verification. Access denied." });
+                    var college = await _mongoService.Colleges.Find(c => c.Id == mentor.CollegeId).FirstOrDefaultAsync();
+                    if (college != null && college.IsBlocked)
+                    {
+                        return Unauthorized(new { success = false, message = "Your college has been blocked by the system administrator." });
+                    }
                 }
+
                 if (mentor.Status == "rejected" || mentor.Status == "disabled")
                 {
                     return Unauthorized(new { success = false, message = "Your account is inactive. Please consult your administrator." });
@@ -271,6 +320,7 @@ namespace EduGuard.Controllers
                         name = mentor.Name,
                         email = mentor.Email,
                         role = "mentor",
+                        status = mentor.Status,
                         collegeId = mentor.CollegeId,
                         assignedClasses = mentor.AssignedClasses
                     }
@@ -281,17 +331,18 @@ namespace EduGuard.Controllers
             var student = await _mongoService.Students.Find(s => s.Email == model.Email).FirstOrDefaultAsync();
             if (student != null && !string.IsNullOrEmpty(student.Password) && BCrypt.Net.BCrypt.Verify(model.Password, student.Password))
             {
+                if (!string.IsNullOrEmpty(student.CollegeId))
+                {
+                    var college = await _mongoService.Colleges.Find(c => c.Id == student.CollegeId).FirstOrDefaultAsync();
+                    if (college != null && college.IsBlocked)
+                    {
+                        return Unauthorized(new { success = false, message = "Your college has been blocked by the system administrator." });
+                    }
+                }
+
                 if (!student.IsVerified)
                 {
                     return Unauthorized(new { success = false, message = "Email verification code is pending. Please verify your email." });
-                }
-                if (student.VerificationStatus == "pending_mentor_approval")
-                {
-                    return Unauthorized(new { success = false, message = "Your enrollment is pending verification from your assigned mentor." });
-                }
-                if (student.VerificationStatus == "rejected")
-                {
-                    return Unauthorized(new { success = false, message = "Your enrollment was rejected by your assigned mentor." });
                 }
 
                 var token = GenerateJwtToken(student.Id!, "student");
@@ -315,7 +366,8 @@ namespace EduGuard.Controllers
                         rollNo = student.RollNo,
                         course = student.Course,
                         collegeId = student.CollegeId,
-                        mentorId = student.MentorId
+                        mentorId = student.MentorId,
+                        verificationStatus = student.VerificationStatus
                     }
                 });
             }
@@ -389,6 +441,15 @@ namespace EduGuard.Controllers
             var admin = await _mongoService.Admins.Find(a => a.Id == userId).FirstOrDefaultAsync();
             if (admin != null)
             {
+                if (!string.IsNullOrEmpty(admin.CollegeId))
+                {
+                    var college = await _mongoService.Colleges.Find(c => c.Id == admin.CollegeId).FirstOrDefaultAsync();
+                    if (college != null && college.IsBlocked)
+                    {
+                        return Unauthorized(new { success = false, message = "Your college has been blocked by the system administrator." });
+                    }
+                }
+
                 return Ok(new
                 {
                     success = true,
@@ -397,8 +458,11 @@ namespace EduGuard.Controllers
                         id = admin.Id,
                         name = admin.Name,
                         email = admin.Email,
-                        role = "admin",
-                        collegeId = admin.CollegeId
+                        role = admin.Role,
+                        collegeId = admin.CollegeId,
+                        collegeName = !string.IsNullOrEmpty(admin.CollegeId)
+                            ? (await _mongoService.Colleges.Find(c => c.Id == admin.CollegeId).FirstOrDefaultAsync())?.Name ?? ""
+                            : ""
                     }
                 });
             }
@@ -407,6 +471,15 @@ namespace EduGuard.Controllers
             var mentor = await _mongoService.Mentors.Find(m => m.Id == userId).FirstOrDefaultAsync();
             if (mentor != null)
             {
+                if (!string.IsNullOrEmpty(mentor.CollegeId))
+                {
+                    var college = await _mongoService.Colleges.Find(c => c.Id == mentor.CollegeId).FirstOrDefaultAsync();
+                    if (college != null && college.IsBlocked)
+                    {
+                        return Unauthorized(new { success = false, message = "Your college has been blocked by the system administrator." });
+                    }
+                }
+
                 return Ok(new
                 {
                     success = true,
@@ -416,6 +489,7 @@ namespace EduGuard.Controllers
                         name = mentor.Name,
                         email = mentor.Email,
                         role = "mentor",
+                        status = mentor.Status,
                         collegeId = mentor.CollegeId,
                         assignedClasses = mentor.AssignedClasses
                     }
@@ -426,6 +500,15 @@ namespace EduGuard.Controllers
             var student = await _mongoService.Students.Find(s => s.Id == userId).FirstOrDefaultAsync();
             if (student != null)
             {
+                if (!string.IsNullOrEmpty(student.CollegeId))
+                {
+                    var college = await _mongoService.Colleges.Find(c => c.Id == student.CollegeId).FirstOrDefaultAsync();
+                    if (college != null && college.IsBlocked)
+                    {
+                        return Unauthorized(new { success = false, message = "Your college has been blocked by the system administrator." });
+                    }
+                }
+
                 return Ok(new
                 {
                     success = true,
@@ -438,12 +521,15 @@ namespace EduGuard.Controllers
                         rollNo = student.RollNo,
                         course = student.Course,
                         collegeId = student.CollegeId,
-                        mentorId = student.MentorId
+                        mentorId = student.MentorId,
+                        verificationStatus = student.VerificationStatus
                     }
                 });
             }
 
             return Unauthorized(new { success = false, message = "User not found" });
+
+
         }
 
         // --- TEMP DEVELOPER SEEDING ADAPTERS ---

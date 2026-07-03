@@ -5,12 +5,14 @@ export interface User {
   id: string;
   name: string;
   email?: string;
-  role: "mentor" | "admin" | "student";
+  role: "mentor" | "admin" | "student" | "college-admin";
   assignedClasses?: string[];
   rollNo?: string;
   course?: string;
   class?: string;
   mentorId?: string;
+  collegeId?: string;
+  collegeName?: string;
 }
 
 interface AuthContextType {
@@ -25,6 +27,7 @@ interface AuthContextType {
     role?: string;
     assignedClasses?: string[];
     department?: string;
+    collegeId?: string;
   }) => Promise<void>;
   logout: () => void;
 }
@@ -91,6 +94,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     password: string;
     role?: string;
     assignedClasses?: string[];
+    department?: string;
+    collegeId?: string;
   }) => {
     try {
       const res = await axios.post("/api/auth/register", data);

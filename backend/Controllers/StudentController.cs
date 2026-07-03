@@ -37,6 +37,76 @@ namespace EduGuard.Controllers
             _nvidiaNimService = nvidiaNimService;
         }
 
+        // --- STUDENT ALERTS: Announcements + Events for their college ---
+        [HttpGet("my-alerts")]
+        public async Task<IActionResult> GetMyAlerts()
+        {
+            var userId = User.FindFirst("id")?.Value;
+            if (string.IsNullOrEmpty(userId))
+                return Unauthorized(new { success = false, message = "Not authenticated" });
+
+            // Resolve the student to get their collegeId
+            var student = await _mongoService.Students.Find(s => s.Id == userId).FirstOrDefaultAsync();
+            if (student == null)
+                return NotFound(new { success = false, message = "Student not found" });
+
+            var collegeId = student.CollegeId;
+            var results = new List<object>();
+
+            // Fetch announcements for this college (not expired)
+            if (!string.IsNullOrEmpty(collegeId))
+            {
+                var announcements = await _mongoService.Announcements
+                    .Find(a => a.CollegeId == collegeId)
+                    .SortByDescending(a => a.CreatedAt)
+                    .Limit(50)
+                    .ToListAsync();
+
+                foreach (var a in announcements)
+                {
+                    // Skip expired announcements
+                    if (a.ExpiryDate.HasValue && a.ExpiryDate.Value < DateTime.UtcNow) continue;
+
+                    results.Add(new
+                    {
+                        _id = a.Id,
+                        type = "announcement",
+                        title = a.Title,
+                        message = a.Description,
+                        targetAudience = a.TargetAudience,
+                        createdAt = a.CreatedAt
+                    });
+                }
+
+                // Fetch events for this college
+                var events = await _mongoService.Events
+                    .Find(e => e.CollegeId == collegeId)
+                    .SortByDescending(e => e.CreatedAt)
+                    .Limit(50)
+                    .ToListAsync();
+
+                foreach (var ev in events)
+                {
+                    results.Add(new
+                    {
+                        _id = ev.Id,
+                        type = "event",
+                        title = ev.EventName,
+                        message = ev.Description,
+                        date = ev.Date,
+                        location = ev.Location,
+                        registrationLink = ev.RegistrationLink,
+                        createdAt = ev.CreatedAt
+                    });
+                }
+            }
+
+            // Sort combined results by createdAt descending
+            results = results.OrderByDescending(r => ((dynamic)r).createdAt).ToList();
+
+            return Ok(new { success = true, data = results });
+        }
+
         [HttpGet]
         public async Task<IActionResult> GetStudents(
             [FromQuery] int page = 1,
@@ -224,20 +294,33 @@ namespace EduGuard.Controllers
 
                     string verificationToken = Guid.NewGuid().ToString("N");
 
+
                     if (isNew)
                     {
+                        var collegeName = "";
+                        if (currentMentor != null && !string.IsNullOrEmpty(currentMentor.CollegeId))
+                        {
+                            var college = await _mongoService.Colleges.Find(c => c.Id == currentMentor.CollegeId).FirstOrDefaultAsync();
+                            if (college != null) collegeName = college.Name;
+                        }
+
                         student = new Student
                         {
                             RollNo = row.RollNo,
                             Name = row.Name,
                             Email = row.Email,
                             PhoneNo = row.PhoneNo,
-                            IsVerified = false,
+                            IsVerified = true, // pre-added student is pre-verified
+                            IsRegistered = false, // waiting for signup
+                            VerificationStatus = "approved", // pre-added is pre-approved
                             VerificationToken = verificationToken,
                             CollegeId = currentMentor?.CollegeId,
+                            CollegeName = collegeName,
                             CourseId = currentMentor?.AssignedCourseId,
-                            Course = currentMentor?.Department ?? "BCA", // resolved from mentor department
+                            Course = currentMentor?.Department ?? "BCA", 
                             Class = currentMentor?.AssignedClasses?.FirstOrDefault() ?? "BCA-A",
+                            MentorId = currentMentor?.Id,
+                            MentorName = currentMentor?.Name,
                             Semester = 1,
                             Marks = new(),
                             Contribution = new(),
@@ -651,13 +734,29 @@ namespace EduGuard.Controllers
             student.RiskScore = riskResult.RiskScore;
             student.RiskLevel = riskResult.RiskLevel;
 
-            // Reset AI cache
-            student.RiskExplanation = string.Empty;
-            student.AiImprovementPlan = string.Empty;
+            // Reset AI cache only if metrics changed, or apply explicit updates
+            if (model.AiImprovementPlan != null)
+            {
+                student.AiImprovementPlan = model.AiImprovementPlan;
+            }
+            else if (model.Attendance != null || model.Behavior != null || model.Marks != null)
+            {
+                student.AiImprovementPlan = string.Empty;
+            }
+
+            if (model.RiskExplanation != null)
+            {
+                student.RiskExplanation = model.RiskExplanation;
+            }
+            else if (model.Attendance != null || model.Behavior != null || model.Marks != null)
+            {
+                student.RiskExplanation = string.Empty;
+            }
+
             student.UpdatedAt = DateTime.UtcNow;
 
             await _mongoService.Students.ReplaceOneAsync(s => s.Id == id, student);
-
+ 
             // Trigger notification check
             await _notificationService.CheckAndGenerateNotificationsAsync(student, oldValues);
 
@@ -796,6 +895,17 @@ namespace EduGuard.Controllers
             {
                 return BadRequest("Title and MentorId are required");
             }
+
+            var mentor = await _mongoService.Mentors.Find(m => m.Id == model.MentorId).FirstOrDefaultAsync();
+            if (mentor != null)
+            {
+                if (string.IsNullOrEmpty(model.CollegeId)) model.CollegeId = mentor.CollegeId ?? string.Empty;
+                if (string.IsNullOrEmpty(model.CourseId)) model.CourseId = mentor.AssignedCourseId ?? string.Empty;
+            }
+
+            model.CreatedAt = DateTime.UtcNow;
+            model.UpdatedAt = DateTime.UtcNow;
+
             await _mongoService.Assignments.InsertOneAsync(model);
             return Ok(new { success = true, data = model });
         }
@@ -861,6 +971,52 @@ namespace EduGuard.Controllers
 
             return Ok(new { success = true, message = $"Student enrollment verification status set to {status}" });
         }
+
+        // --- REPORT CARD BACKGROUND JOBS ---
+
+        [HttpPost("{studentId}/report-card/generate")]
+        public async Task<IActionResult> GenerateReportCardJob(string studentId)
+        {
+            var requesterId = User.FindFirst("id")?.Value ?? "system";
+
+            var student = await _mongoService.Students.Find(s => s.Id == studentId).FirstOrDefaultAsync();
+            if (student == null)
+            {
+                return NotFound(new { success = false, message = "Student not found" });
+            }
+
+            var job = new ReportCardJob
+            {
+                RequesterId = requesterId,
+                StudentId = studentId,
+                StudentName = student.Name,
+                Status = "pending",
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
+
+            await _mongoService.ReportCardJobs.InsertOneAsync(job);
+            return Ok(new { success = true, message = "Report card generation queued in background.", jobId = job.Id });
+        }
+
+        [HttpGet("report-card/jobs/{jobId}")]
+        public async Task<IActionResult> GetReportCardJob(string jobId)
+        {
+            var job = await _mongoService.ReportCardJobs.Find(j => j.Id == jobId).FirstOrDefaultAsync();
+            if (job == null)
+            {
+                return NotFound(new { success = false, message = "Job not found" });
+            }
+
+            return Ok(new { success = true, data = job });
+        }
+
+        [HttpGet("{studentId}/report-card/jobs")]
+        public async Task<IActionResult> ListStudentReportCardJobs(string studentId)
+        {
+            var list = await _mongoService.ReportCardJobs.Find(j => j.StudentId == studentId).SortByDescending(j => j.CreatedAt).ToListAsync();
+            return Ok(new { success = true, data = list });
+        }
     }
 
     public class StudyPlannerRequest
@@ -890,6 +1046,8 @@ namespace EduGuard.Controllers
         public string? Behavior { get; set; }
         public List<string>? Contribution { get; set; }
         public List<SubjectMarks>? Marks { get; set; }
+        public string? AiImprovementPlan { get; set; }
+        public string? RiskExplanation { get; set; }
     }
 
     public class SelectMentorPayload
