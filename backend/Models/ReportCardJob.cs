@@ -30,6 +30,9 @@ namespace EduGuard.Models
         [BsonElement("outputFile")]
         public string OutputFile { get; set; } = string.Empty;
 
+        [BsonElement("htmlContent")]
+        public string HtmlContent { get; set; } = string.Empty;
+
         [BsonElement("error")]
         public string Error { get; set; } = string.Empty;
 

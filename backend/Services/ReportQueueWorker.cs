@@ -16,11 +16,13 @@ namespace EduGuard.Services
     {
         private readonly IServiceProvider _serviceProvider;
         private readonly ILogger<ReportQueueWorker> _logger;
+        private readonly IHostEnvironment _hostEnvironment;
 
-        public ReportQueueWorker(IServiceProvider serviceProvider, ILogger<ReportQueueWorker> logger)
+        public ReportQueueWorker(IServiceProvider serviceProvider, ILogger<ReportQueueWorker> logger, IHostEnvironment hostEnvironment)
         {
             _serviceProvider = serviceProvider;
             _logger = logger;
+            _hostEnvironment = hostEnvironment;
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -99,49 +101,51 @@ namespace EduGuard.Services
                                 htmlBuilder.AppendLine("</style>");
                                 htmlBuilder.AppendLine("</head>");
                                 htmlBuilder.AppendLine("<body>");
-                                htmlBuilder.AppendLine("  <div className=\"container\">");
-                                htmlBuilder.AppendLine("    <div className=\"header\">");
-                                htmlBuilder.AppendLine($"      <div className=\"institution\">{collegeName}</div>");
-                                htmlBuilder.AppendLine("      <div className=\"title\">Academic Progress & Performance Report Card</div>");
+                                htmlBuilder.AppendLine("  <div class=\"container\">");
+                                htmlBuilder.AppendLine("    <div class=\"header\">");
+                                htmlBuilder.AppendLine($"      <div class=\"institution\">{collegeName}</div>");
+                                htmlBuilder.AppendLine("      <div class=\"title\">Academic Progress & Performance Report Card</div>");
                                 htmlBuilder.AppendLine("    </div>");
                                 
                                 // Info Grid
-                                htmlBuilder.AppendLine("    <div className=\"info-grid\">");
-                                htmlBuilder.AppendLine("      <div className=\"info-item\">");
-                                htmlBuilder.AppendLine("        <div className=\"info-label\">Student Name</div>");
-                                htmlBuilder.AppendLine($"        <div className=\"info-value\">{student.Name}</div>");
+                                htmlBuilder.AppendLine("    <div class=\"info-grid\">");
+                                htmlBuilder.AppendLine("      <div class=\"info-item\">");
+                                htmlBuilder.AppendLine("        <div class=\"info-label\">Student Name</div>");
+                                htmlBuilder.AppendLine($"        <div class=\"info-value\">{student.Name}</div>");
                                 htmlBuilder.AppendLine("      </div>");
-                                htmlBuilder.AppendLine("      <div className=\"info-item\">");
-                                htmlBuilder.AppendLine("        <div className=\"info-label\">Roll Number</div>");
-                                htmlBuilder.AppendLine($"        <div className=\"info-value\">#{student.RollNo}</div>");
+                                htmlBuilder.AppendLine("      <div class=\"info-item\">");
+                                htmlBuilder.AppendLine("        <div class=\"info-label\">Roll Number</div>");
+                                htmlBuilder.AppendLine($"        <div class=\"info-value\">#{student.RollNo}</div>");
                                 htmlBuilder.AppendLine("      </div>");
-                                htmlBuilder.AppendLine("      <div className=\"info-item\">");
-                                htmlBuilder.AppendLine("        <div className=\"info-label\">Course & Semester</div>");
-                                htmlBuilder.AppendLine($"        <div className=\"info-value\">{student.Course} (Semester {student.Semester})</div>");
+                                htmlBuilder.AppendLine("      <div class=\"info-item\">");
+                                htmlBuilder.AppendLine("        <div class=\"info-label\">Course & Semester</div>");
+                                htmlBuilder.AppendLine($"        <div class=\"info-value\">{student.Course} (Semester {student.Semester})</div>");
                                 htmlBuilder.AppendLine("      </div>");
-                                htmlBuilder.AppendLine("      <div className=\"info-item\">");
-                                htmlBuilder.AppendLine("        <div className=\"info-label\">Assigned Class</div>");
-                                htmlBuilder.AppendLine($"        <div className=\"info-value\">{student.Class}</div>");
+                                htmlBuilder.AppendLine("      <div class=\"info-item\">");
+                                htmlBuilder.AppendLine("        <div class=\"info-label\">Assigned Class</div>");
+                                htmlBuilder.AppendLine($"        <div class=\"info-value\">{student.Class}</div>");
                                 htmlBuilder.AppendLine("      </div>");
-                                htmlBuilder.AppendLine("      <div className=\"info-item\">");
-                                htmlBuilder.AppendLine("        <div className=\"info-label\">Attendance Rate</div>");
-                                htmlBuilder.AppendLine($"        <div className=\"info-value\">{student.Attendance}%</div>");
+                                htmlBuilder.AppendLine("      <div class=\"info-item\">");
+                                htmlBuilder.AppendLine("        <div class=\"info-label\">Attendance Rate</div>");
+                                htmlBuilder.AppendLine($"        <div class=\"info-value\">{student.Attendance}%</div>");
                                 htmlBuilder.AppendLine("      </div>");
-                                htmlBuilder.AppendLine("      <div className=\"info-item\">");
-                                htmlBuilder.AppendLine("        <div className=\"info-label\">Risk Evaluation Status</div>");
-                                htmlBuilder.AppendLine($"        <div className=\"info-value\"><span className=\"badge badge-{student.RiskLevel}\">{student.RiskLevel} Risk</span></div>");
+                                htmlBuilder.AppendLine("      <div class=\"info-item\">");
+                                htmlBuilder.AppendLine("        <div class=\"info-label\">Risk Evaluation Status</div>");
+                                htmlBuilder.AppendLine($"        <div class=\"info-value\"><span class=\"badge badge-{student.RiskLevel}\">{student.RiskLevel} Risk</span></div>");
                                 htmlBuilder.AppendLine("      </div>");
                                 htmlBuilder.AppendLine("    </div>");
 
                                 // Marks Table
-                                htmlBuilder.AppendLine("    <div className=\"section-title\">Subject-wise Performance Record</div>");
+                                htmlBuilder.AppendLine("    <div class=\"section-title\">Subject-wise Performance Record</div>");
                                 htmlBuilder.AppendLine("    <table>");
                                 htmlBuilder.AppendLine("      <thead>");
                                 htmlBuilder.AppendLine("        <tr>");
-                                htmlBuilder.AppendLine("          <th>Subject Title</th>");
+                                htmlBuilder.AppendLine("          <th>Subject</th>");
                                 htmlBuilder.AppendLine("          <th>Class Tests</th>");
-                                htmlBuilder.AppendLine("          <th>Mid Term (100)</th>");
-                                htmlBuilder.AppendLine("          <th>House Exam (100)</th>");
+                                htmlBuilder.AppendLine("          <th>Mid Term</th>");
+                                htmlBuilder.AppendLine("          <th>House Exam</th>");
+                                htmlBuilder.AppendLine("          <th>Total</th>");
+                                htmlBuilder.AppendLine("          <th>Grade</th>");
                                 htmlBuilder.AppendLine("        </tr>");
                                 htmlBuilder.AppendLine("      </thead>");
                                 htmlBuilder.AppendLine("      <tbody>");
@@ -150,26 +154,42 @@ namespace EduGuard.Services
                                 {
                                     foreach (var mark in student.Marks)
                                     {
-                                        var midTermStr = mark.MidTerm?.Marks?.ToString() ?? "N/A";
-                                        var houseExamStr = mark.HouseExam?.Marks?.ToString() ?? "N/A";
+                                        var midTermMarks = mark.MidTerm?.Marks;
+                                        var midTermMax = mark.MidTerm?.MaxMarks ?? 100;
+                                        var houseExamMarks = mark.HouseExam?.Marks;
+                                        var houseExamMax = mark.HouseExam?.MaxMarks ?? 100;
+                                        var midTermStr = midTermMarks.HasValue ? $"{midTermMarks}/{midTermMax}" : "N/A";
+                                        var houseExamStr = houseExamMarks.HasValue ? $"{houseExamMarks}/{houseExamMax}" : "N/A";
                                         var testsStr = "No Tests";
+                                        double totalMarks = 0;
+                                        double totalMax = 0;
                                         if (mark.ClassTests != null && mark.ClassTests.Count > 0)
                                         {
                                             testsStr = string.Join(", ", mark.ClassTests.Select(t => $"{t.Marks}/{t.MaxMarks}"));
+                                            totalMarks += mark.ClassTests.Sum(t => t.Marks);
+                                            totalMax += mark.ClassTests.Sum(t => t.MaxMarks);
                                         }
+                                        if (midTermMarks.HasValue) { totalMarks += midTermMarks.Value; totalMax += midTermMax; }
+                                        if (houseExamMarks.HasValue) { totalMarks += houseExamMarks.Value; totalMax += houseExamMax; }
+
+                                        var percentage = totalMax > 0 ? (totalMarks / totalMax) * 100 : 0;
+                                        var grade = percentage >= 91 ? "A1" : percentage >= 81 ? "A2" : percentage >= 71 ? "B1" : percentage >= 61 ? "B2" : percentage >= 51 ? "C1" : percentage >= 41 ? "C2" : percentage >= 33 ? "D" : "E";
+                                        var gradeColor = percentage >= 71 ? "#03543F" : percentage >= 51 ? "#92400E" : "#9B1C1C";
 
                                         htmlBuilder.AppendLine("        <tr>");
                                         htmlBuilder.AppendLine($"          <td style=\"font-weight: 600;\">{mark.SubjectName}</td>");
                                         htmlBuilder.AppendLine($"          <td>{testsStr}</td>");
                                         htmlBuilder.AppendLine($"          <td>{midTermStr}</td>");
                                         htmlBuilder.AppendLine($"          <td>{houseExamStr}</td>");
+                                        htmlBuilder.AppendLine($"          <td style=\"font-weight: 700;\">{totalMarks}/{totalMax}</td>");
+                                        htmlBuilder.AppendLine($"          <td><span class=\"badge\" style=\"color: {gradeColor}; background: {(percentage >= 71 ? "#DEF7EC" : percentage >= 51 ? "#FEF3C7" : "#FDE8E8")};\">{grade}</span></td>");
                                         htmlBuilder.AppendLine("        </tr>");
                                     }
                                 }
                                 else
                                 {
                                     htmlBuilder.AppendLine("        <tr>");
-                                    htmlBuilder.AppendLine("          <td colspan=\"4\" style=\"text-align: center; color: #718096; font-style: italic;\">No academic marks recorded for this semester yet.</td>");
+                                    htmlBuilder.AppendLine("          <td colspan=\"6\" style=\"text-align: center; color: #718096; font-style: italic;\">No academic marks recorded for this semester yet.</td>");
                                     htmlBuilder.AppendLine("        </tr>");
                                 }
 
@@ -177,36 +197,65 @@ namespace EduGuard.Services
                                 htmlBuilder.AppendLine("    </table>");
 
                                 // Mentor Feedback & Plans
-                                htmlBuilder.AppendLine("    <div className=\"section-title\">AI Assessed Development Plans</div>");
-                                htmlBuilder.AppendLine("    <div className=\"summary-box\">");
-                                htmlBuilder.AppendLine("      <div className=\"info-label\" style=\"margin-bottom: 6px;\">Risk Factor Diagnostics:</div>");
+                                htmlBuilder.AppendLine("    <div class=\"section-title\">AI Assessed Development Plans</div>");
+                                htmlBuilder.AppendLine("    <div class=\"summary-box\">");
+                                htmlBuilder.AppendLine("      <div class=\"info-label\" style=\"margin-bottom: 6px;\">Risk Factor Diagnostics:</div>");
                                 htmlBuilder.AppendLine($"      <p style=\"font-size: 12px; color: #4A5568; margin-top: 0; margin-bottom: 16px;\">{(string.IsNullOrEmpty(student.RiskExplanation) ? "No detailed risk diagnosis is generated yet." : student.RiskExplanation)}</p>");
-                                htmlBuilder.AppendLine("      <div className=\"info-label\" style=\"margin-bottom: 6px;\">Academic Remedial Study Plan:</div>");
+                                htmlBuilder.AppendLine("      <div class=\"info-label\" style=\"margin-bottom: 6px;\">Academic Remedial Study Plan:</div>");
                                 htmlBuilder.AppendLine($"      <p style=\"font-size: 12px; color: #4A5568; margin: 0;\">{(string.IsNullOrEmpty(student.AiImprovementPlan) ? "No study improvement plan generated yet." : student.AiImprovementPlan)}</p>");
                                 htmlBuilder.AppendLine("    </div>");
 
-                                htmlBuilder.AppendLine("    <div className=\"footer\">");
-                                htmlBuilder.AppendLine($"      Generated automatically by EduGuard. Report Card ID: {job.Id} &middot; Date: {DateTime.UtcNow.ToShortDateString()}");
+                                // Grading Scale
+                                htmlBuilder.AppendLine("    <div class=\"section-title\">Grading Scale</div>");
+                                htmlBuilder.AppendLine("    <table style=\"max-width: 400px;\">");
+                                htmlBuilder.AppendLine("      <thead><tr><th>Marks Range</th><th>Grade</th></tr></thead>");
+                                htmlBuilder.AppendLine("      <tbody>");
+                                htmlBuilder.AppendLine("        <tr><td>91 - 100</td><td><span class=\"badge badge-low\">A1</span></td></tr>");
+                                htmlBuilder.AppendLine("        <tr><td>81 - 90</td><td><span class=\"badge badge-low\">A2</span></td></tr>");
+                                htmlBuilder.AppendLine("        <tr><td>71 - 80</td><td><span class=\"badge badge-low\">B1</span></td></tr>");
+                                htmlBuilder.AppendLine("        <tr><td>61 - 70</td><td><span class=\"badge badge-medium\">B2</span></td></tr>");
+                                htmlBuilder.AppendLine("        <tr><td>51 - 60</td><td><span class=\"badge badge-medium\">C1</span></td></tr>");
+                                htmlBuilder.AppendLine("        <tr><td>41 - 50</td><td><span class=\"badge badge-medium\">C2</span></td></tr>");
+                                htmlBuilder.AppendLine("        <tr><td>33 - 40</td><td><span class=\"badge badge-high\">D</span></td></tr>");
+                                htmlBuilder.AppendLine("        <tr><td>Below 33</td><td><span class=\"badge badge-critical\">E</span></td></tr>");
+                                htmlBuilder.AppendLine("      </tbody>");
+                                htmlBuilder.AppendLine("    </table>");
+
+                                // Signatures
+                                htmlBuilder.AppendLine("    <div style=\"display: flex; justify-content: space-between; margin-top: 40px; padding-top: 20px; border-top: 1px solid #E2E8F0;\">");
+                                htmlBuilder.AppendLine("      <div style=\"text-align: center;\">");
+                                htmlBuilder.AppendLine("        <div style=\"border-top: 1px solid #CBD5E0; width: 180px; margin-bottom: 6px;\"></div>");
+                                htmlBuilder.AppendLine("        <div style=\"font-size: 11px; color: #718096;\">Class Teacher</div>");
+                                htmlBuilder.AppendLine("      </div>");
+                                htmlBuilder.AppendLine("      <div style=\"text-align: center;\">");
+                                htmlBuilder.AppendLine("        <div style=\"border-top: 1px solid #CBD5E0; width: 180px; margin-bottom: 6px;\"></div>");
+                                htmlBuilder.AppendLine("        <div style=\"font-size: 11px; color: #718096;\">Principal / HOD</div>");
+                                htmlBuilder.AppendLine("      </div>");
+                                htmlBuilder.AppendLine("    </div>");
+
+                                htmlBuilder.AppendLine("    <div class=\"footer\">");
+                                htmlBuilder.AppendLine($"      Generated automatically by EduGuard &middot; Report Card ID: {job.Id} &middot; Date: {DateTime.UtcNow.ToShortDateString()}");
                                 htmlBuilder.AppendLine("    </div>");
                                 htmlBuilder.AppendLine("  </div>");
                                 htmlBuilder.AppendLine("</body>");
                                 htmlBuilder.AppendLine("</html>");
 
                                 // Ensure directories exist in wwwroot
-                                var reportsDir = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "reports");
+                                var reportsDir = Path.Combine(_hostEnvironment.ContentRootPath, "wwwroot", "reports");
                                 if (!Directory.Exists(reportsDir))
                                 {
                                     Directory.CreateDirectory(reportsDir);
                                 }
 
-                                var fileName = $"report-card-{job.Id}.html";
+                                var fileName = $"report-card-{job.StudentId}.html";
                                 var filePath = Path.Combine(reportsDir, fileName);
                                 await File.WriteAllTextAsync(filePath, htmlBuilder.ToString(), Encoding.UTF8, stoppingToken);
 
                                 // Mark Job as completed
                                 var updateCompleted = Builders<ReportCardJob>.Update
                                     .Set(j => j.Status, "completed")
-                                    .Set(j => j.OutputFile, $"/reports/{fileName}")
+                                    .Set(j => j.OutputFile, $"/api/students/report-card/download/{job.Id}")
+                                    .Set(j => j.HtmlContent, htmlBuilder.ToString())
                                     .Set(j => j.UpdatedAt, DateTime.UtcNow);
                                 await mongoService.ReportCardJobs.UpdateOneAsync(j => j.Id == job.Id, updateCompleted, cancellationToken: stoppingToken);
                                 

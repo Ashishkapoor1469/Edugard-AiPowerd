@@ -42,7 +42,7 @@ const Dashboard: React.FC = () => {
   const [searchParams] = useSearchParams();
 
   // Active workspace tab
-  const [activeTab, setActiveTab] = useState<"stream" | "enrollments" | "assignments" | "study-planner">("stream");
+  const [activeTab, setActiveTab] = useState<"stream" | "enrollments" | "assignments" | "study-planner" | "report-cards">("stream");
 
   // Route Filters (from Navbar)
   const courseFilter = searchParams.get("course") || "";
@@ -86,6 +86,11 @@ const Dashboard: React.FC = () => {
   const [generatingPlan, setGeneratingPlan] = useState(false);
   const [showExcelHelp, setShowExcelHelp] = useState(false);
 
+  // Report Card states
+  const [rcStudentId, setRcStudentId] = useState("");
+  const [rcGenerating, setRcGenerating] = useState(false);
+  const [rcJobs, setRcJobs] = useState<any[]>([]);
+  const [rcLoadingJobs, setRcLoadingJobs] = useState(false);
   const STATS_CACHE_KEY = "eduguard_dashboard_stats";
   const STATS_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
@@ -460,6 +465,7 @@ const Dashboard: React.FC = () => {
           { id: "enrollments", label: `Enrollments (${pendingStudents.length})` },
           { id: "assignments", label: "Assignments manager" },
           { id: "study-planner", label: "AI Study Planner" },
+          { id: "report-cards", label: "Report Cards" },
         ].map((tab) => (
           <button
             key={tab.id}
@@ -867,6 +873,194 @@ const Dashboard: React.FC = () => {
                 </div>
               </div>
             )}
+          </div>
+        )}
+
+        {/* TAB 5: REPORT CARDS */}
+        {activeTab === "report-cards" && (
+          <div className="space-y-6">
+            {/* Generate Card */}
+            <div className="bg-white border border-[#dadce0] rounded-2xl p-6 shadow-sm">
+              <h3 className="text-sm font-semibold text-[#202124] mb-1">Generate Student Report Card</h3>
+              <p className="text-[10px] text-[#5f6368] mb-4">Select a student to generate a printable academic report card in the CBSE format.</p>
+
+              <div className="flex flex-col sm:flex-row gap-3">
+                <select
+                  value={rcStudentId}
+                  onChange={(e) => {
+                    setRcStudentId(e.target.value);
+                    if (e.target.value) {
+                      setRcLoadingJobs(true);
+                      axios.get(`/api/students/${e.target.value}/report-card/jobs`)
+                        .then(res => { if (res.data.success) setRcJobs(res.data.data); })
+                        .catch(console.error)
+                        .finally(() => setRcLoadingJobs(false));
+                    } else {
+                      setRcJobs([]);
+                    }
+                  }}
+                  className="flex-1 rounded-lg border border-[#dadce0] px-3 py-2.5 text-xs focus:border-[#1a73e8] focus:outline-hidden bg-white font-medium"
+                >
+                  <option value="">Select a student...</option>
+                  {students.map(s => (
+                    <option key={s._id} value={s._id}>{s.name} — #{s.rollNo} ({s.class})</option>
+                  ))}
+                </select>
+                <button
+                  disabled={!rcStudentId || rcGenerating}
+                  onClick={async () => {
+                    if (!rcStudentId) return;
+                    setRcGenerating(true);
+                    try {
+                      const res = await axios.post(`/api/students/${rcStudentId}/report-card/generate`);
+                      if (res.data.success) {
+                        toast.success("Report card generation queued!");
+                        // Poll for completion
+                        const jobId = res.data.jobId;
+                        const poll = setInterval(async () => {
+                          try {
+                            const jr = await axios.get(`/api/students/report-card/jobs/${jobId}`);
+                            if (jr.data.data.status === "completed" || jr.data.data.status === "failed") {
+                              clearInterval(poll);
+                              if (jr.data.data.status === "completed") {
+                                toast.success("Report card ready for download!");
+                              } else {
+                                toast.error("Report card generation failed.");
+                              }
+                              // Refresh jobs list
+                              const lr = await axios.get(`/api/students/${rcStudentId}/report-card/jobs`);
+                              if (lr.data.success) setRcJobs(lr.data.data);
+                            }
+                          } catch { clearInterval(poll); }
+                        }, 3000);
+                      }
+                    } catch {
+                      toast.error("Failed to queue report card generation.");
+                    } finally {
+                      setRcGenerating(false);
+                    }
+                  }}
+                  className="px-5 py-2.5 bg-[#1a73e8] text-white rounded-lg text-xs font-bold hover:bg-[#1557b0] disabled:bg-slate-300 transition-colors flex items-center gap-2"
+                >
+                  {rcGenerating ? (
+                    <><svg className="h-3.5 w-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg> Generating...</>
+                  ) : (
+                    <><svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg> Generate Report Card</>
+                  )}
+                </button>
+              </div>
+            </div>
+
+            {/* Jobs History */}
+            {rcStudentId && (
+              <div className="bg-white border border-[#dadce0] rounded-2xl p-6 shadow-sm">
+                <h3 className="text-sm font-semibold text-[#202124] mb-4">Report Card History</h3>
+                {rcLoadingJobs ? (
+                  <div className="space-y-3">
+                    {[1,2].map(i => <div key={i} className="h-14 rounded-xl bg-slate-100 animate-pulse" />)}
+                  </div>
+                ) : rcJobs.length === 0 ? (
+                  <p className="text-xs text-[#5f6368] italic text-center py-8">No report cards generated for this student yet.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {rcJobs.map((job) => (
+                      <div key={job._id} className={`flex items-center justify-between rounded-xl border px-4 py-3 ${
+                        job.status === "completed" ? "bg-emerald-50/50 border-emerald-100" :
+                        job.status === "failed" ? "bg-red-50/50 border-red-100" :
+                        job.status === "processing" ? "bg-amber-50/50 border-amber-100" :
+                        "bg-blue-50/50 border-blue-100"
+                      }`}>
+                        <div className="flex items-center gap-3">
+                          <div className={`h-9 w-9 rounded-lg flex items-center justify-center ${
+                            job.status === "completed" ? "bg-emerald-100" :
+                            job.status === "failed" ? "bg-red-100" :
+                            "bg-amber-100"
+                          }`}>
+                            {job.status === "completed" ? (
+                              <svg className="h-4 w-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" /></svg>
+                            ) : job.status === "failed" ? (
+                              <svg className="h-4 w-4 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                            ) : (
+                              <svg className="h-4 w-4 text-amber-600 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
+                            )}
+                          </div>
+                          <div>
+                            <span className="text-xs font-bold text-slate-800 block">Report Card — {job.studentName}</span>
+                            <span className="text-[10px] text-slate-500">
+                              {new Date(job.createdAt).toLocaleDateString()} at {new Date(job.createdAt).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})}
+                              {" · "}
+                              <span className={`font-bold uppercase ${
+                                job.status === "completed" ? "text-emerald-600" :
+                                job.status === "failed" ? "text-red-600" :
+                                "text-amber-600"
+                              }`}>{job.status}</span>
+                            </span>
+                          </div>
+                        </div>
+                        {job.status === "completed" && job.outputFile && (
+                          <button
+                            onClick={async () => {
+                              try {
+                                const res = await axios.get(job.outputFile, { responseType: "blob" });
+                                const url = window.URL.createObjectURL(new Blob([res.data], { type: "text/html" }));
+                                const a = document.createElement("a");
+                                a.href = url;
+                                a.download = `Report-Card-${job.studentName.replace(/\s+/g, "-")}-${new Date(job.createdAt).toISOString().slice(0,10)}.html`;
+                                document.body.appendChild(a);
+                                a.click();
+                                a.remove();
+                                window.URL.revokeObjectURL(url);
+                                toast.success("Report card downloaded!");
+                              } catch {
+                                toast.error("Failed to download report card.");
+                              }
+                            }}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-emerald-200 rounded-lg text-[10px] font-bold text-emerald-700 hover:bg-emerald-50 transition-colors shadow-sm cursor-pointer"
+                          >
+                            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                            Download
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Grading Scale Reference */}
+            <div className="bg-white border border-[#dadce0] rounded-2xl p-6 shadow-sm">
+              <h3 className="text-sm font-semibold text-[#202124] mb-3">Grading Scale Reference</h3>
+              <div className="overflow-x-auto rounded-xl border border-slate-200">
+                <table className="w-full text-[10px]">
+                  <thead>
+                    <tr className="bg-slate-50">
+                      <th className="px-4 py-2 font-bold text-slate-600 text-left border-b border-slate-200">Marks Range</th>
+                      <th className="px-4 py-2 font-bold text-slate-600 text-left border-b border-slate-200">Grade</th>
+                      <th className="px-4 py-2 font-bold text-slate-600 text-left border-b border-slate-200">Remark</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[
+                      { range: "91 – 100", grade: "A1", remark: "Outstanding", color: "text-emerald-700 bg-emerald-50" },
+                      { range: "81 – 90", grade: "A2", remark: "Excellent", color: "text-emerald-600 bg-emerald-50/50" },
+                      { range: "71 – 80", grade: "B1", remark: "Very Good", color: "text-blue-700 bg-blue-50" },
+                      { range: "61 – 70", grade: "B2", remark: "Good", color: "text-blue-600 bg-blue-50/50" },
+                      { range: "51 – 60", grade: "C1", remark: "Average", color: "text-amber-700 bg-amber-50" },
+                      { range: "41 – 50", grade: "C2", remark: "Below Average", color: "text-amber-600 bg-amber-50/50" },
+                      { range: "33 – 40", grade: "D", remark: "Pass", color: "text-orange-700 bg-orange-50" },
+                      { range: "Below 33", grade: "E", remark: "Needs Improvement", color: "text-red-700 bg-red-50" },
+                    ].map((r) => (
+                      <tr key={r.grade} className={`border-b border-slate-100 ${r.color}`}>
+                        <td className="px-4 py-2 font-semibold">{r.range}</td>
+                        <td className="px-4 py-2 font-black">{r.grade}</td>
+                        <td className="px-4 py-2">{r.remark}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
         )}
       </div>

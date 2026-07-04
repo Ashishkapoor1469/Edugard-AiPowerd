@@ -985,6 +985,22 @@ namespace EduGuard.Controllers
                 return NotFound(new { success = false, message = "Student not found" });
             }
 
+            // Delete all previous report card jobs for this student (replace old with new)
+            var oldJobs = await _mongoService.ReportCardJobs.Find(j => j.StudentId == studentId).ToListAsync();
+            foreach (var oldJob in oldJobs)
+            {
+                // Delete old output file if it exists
+                if (!string.IsNullOrEmpty(oldJob.OutputFile))
+                {
+                    var oldFilePath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", oldJob.OutputFile.TrimStart('/'));
+                    if (System.IO.File.Exists(oldFilePath))
+                    {
+                        System.IO.File.Delete(oldFilePath);
+                    }
+                }
+            }
+            await _mongoService.ReportCardJobs.DeleteManyAsync(j => j.StudentId == studentId);
+
             var job = new ReportCardJob
             {
                 RequesterId = requesterId,
@@ -996,7 +1012,7 @@ namespace EduGuard.Controllers
             };
 
             await _mongoService.ReportCardJobs.InsertOneAsync(job);
-            return Ok(new { success = true, message = "Report card generation queued in background.", jobId = job.Id });
+            return Ok(new { success = true, message = "Report card generation queued. Previous report replaced.", jobId = job.Id });
         }
 
         [HttpGet("report-card/jobs/{jobId}")]
@@ -1016,6 +1032,36 @@ namespace EduGuard.Controllers
         {
             var list = await _mongoService.ReportCardJobs.Find(j => j.StudentId == studentId).SortByDescending(j => j.CreatedAt).ToListAsync();
             return Ok(new { success = true, data = list });
+        }
+
+        [HttpGet("report-card/download/{jobId}")]
+        public async Task<IActionResult> DownloadReportCard(string jobId)
+        {
+            var job = await _mongoService.ReportCardJobs.Find(j => j.Id == jobId).FirstOrDefaultAsync();
+            if (job == null)
+            {
+                return NotFound("Report card job not found.");
+            }
+
+            // 1. Try serving from database
+            if (!string.IsNullOrEmpty(job.HtmlContent))
+            {
+                var bytes = System.Text.Encoding.UTF8.GetBytes(job.HtmlContent);
+                var fileName = $"Report-Card-{job.StudentName.Replace(" ", "-")}.html";
+                return File(bytes, "text/html", fileName);
+            }
+
+            // 2. Fallback to serving from local wwwroot/reports folder
+            var localFileName = $"report-card-{job.StudentId}.html";
+            var localFilePath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "reports", localFileName);
+            if (System.IO.File.Exists(localFilePath))
+            {
+                var bytes = await System.IO.File.ReadAllBytesAsync(localFilePath);
+                var fileName = $"Report-Card-{job.StudentName.Replace(" ", "-")}.html";
+                return File(bytes, "text/html", fileName);
+            }
+
+            return NotFound("Report card file not found in database or local storage.");
         }
     }
 
