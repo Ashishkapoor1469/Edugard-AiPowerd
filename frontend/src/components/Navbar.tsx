@@ -203,10 +203,11 @@ const Navbar: React.FC = () => {
 
   return (
     <header className="sticky top-0 z-40 flex h-14 md:h-16 w-full items-center justify-between border-b border-slate-200 bg-white px-4 md:px-6 shadow-xs">
-      {/* Brand Logo & Name */}
+    
       <div className="flex items-center gap-2 cursor-pointer shrink-0" onClick={() => navigate("/")}>
-        <svg className="h-7 w-7 md:h-8 md:w-8 text-primary" fill="currentColor" viewBox="0 0 24 24">
-          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm1-13h-2v6h2v-6zm0 8h-2v2h2v-2z" />
+        <svg className="h-9 w-9 text-[#1a73e8]" fill="currentColor" viewBox="0 0 24 24">
+          <path d="M12 3L1 9l11 6 9-4.91V17h2V9L12 3z" />
+          <path d="M21 12.09c-.28-.05-.56-.09-.84-.13C19.26 12 18 13.5 18 15v2.24l-6 3.27-6-3.27V12h-2v6l8 4.36 8-4.36v-3.55c0-1.04-.57-1.92-1-2.36z" />
         </svg>
         <span className="font-bold text-lg md:text-xl tracking-tight text-primary">EduGuard</span>
       </div>

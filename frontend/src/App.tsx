@@ -15,6 +15,50 @@ import { Toaster } from "react-hot-toast";
 import CollegeAdminDashboard from "./pages/CollegeAdminDashboard";
 import StudentAssignmentsPage from "./pages/StudentAssignmentsPage";
 
+const MentorApprovalStatus: React.FC = () => {
+  const { user, logout } = useAuth();
+
+  const isRejected = user?.status === "rejected" || user?.status === "disabled";
+
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-[#f8f9fa] p-4 font-sans">
+      <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 text-center shadow-sm">
+        <div className={`mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full ${isRejected ? "bg-red-50 text-red-600" : "bg-amber-50 text-amber-600"}`}>
+          {isRejected ? (
+            <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          ) : (
+            <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          )}
+        </div>
+        <h1 className="text-xl font-semibold text-[#202124]">
+          {isRejected ? "Account Not Active" : "Waiting for College Admin Approval"}
+        </h1>
+        <p className="mt-2 text-sm leading-6 text-[#5f6368]">
+          {isRejected
+            ? "Your mentor account is not active. Please contact your college administration department."
+            : "Your mentor registration has been submitted. You can access the instructor dashboard after your college admin approves your account."}
+        </p>
+        <div className="mt-5 rounded-lg border border-slate-100 bg-slate-50 px-4 py-3 text-left">
+          <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-400">Signed in as</span>
+          <span className="mt-1 block text-sm font-semibold text-slate-800">{user?.name}</span>
+          <span className="block text-xs text-slate-500">{user?.email}</span>
+        </div>
+        <button
+          type="button"
+          onClick={logout}
+          className="mt-5 w-full rounded-lg bg-primary py-2.5 text-sm font-semibold text-white transition-colors hover:bg-primary-hover"
+        >
+          Sign Out
+        </button>
+      </div>
+    </div>
+  );
+};
+
 // Bottom Navigation Bar for mobile devices
 const BottomNav: React.FC = () => {
   const { user } = useAuth();
@@ -137,6 +181,10 @@ const ProtectedLayout: React.FC = () => {
 
   if (!token) {
     return <Navigate to="/login" replace />;
+  }
+
+  if (user?.role === "mentor" && user.status !== "approved") {
+    return <MentorApprovalStatus />;
   }
 
   return (

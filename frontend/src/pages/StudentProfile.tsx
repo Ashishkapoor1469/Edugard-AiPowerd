@@ -46,11 +46,13 @@ interface Student {
   behavior: string | null;
   riskScore: number;
   riskLevel: "low" | "medium" | "high" | "critical";
+  verificationStatus?: "approved" | "pending_mentor_approval" | "rejected" | string;
   riskExplanation?: string;
   aiImprovementPlan?: string;
   contribution: string[];
   marks: SubjectMarks[];
   mentorId?: MentorInfo | null;
+  mentorName?: string;
 }
 
 const StudentProfile: React.FC = () => {
@@ -94,7 +96,6 @@ const StudentProfile: React.FC = () => {
   }>>({});
 
   const [generatingExplanation, setGeneratingExplanation] = useState(false);
-  const [generatingPlan, setGeneratingPlan] = useState(false);
 
   const fetchStudent = async (resetOverrideInputs = false) => {
     if (!studentId) return;
@@ -277,8 +278,89 @@ const StudentProfile: React.FC = () => {
 
     socket.on("newMessage", (msg: any) => {
       if (msg.studentId === student._id) {
-        setMessages((prev) => [...prev, msg]);
+        setMessages((prev) => {
+          const existingIndex = prev.findIndex((m) => m._id && m._id === msg._id);
+          if (existingIndex !== -1) {
+            const next = [...prev];
+            next[existingIndex] = msg;
+            return next;
+          }
+
+          const pendingIndex = prev.findIndex((m) =>
+            m.pending &&
+            m.studentId === msg.studentId &&
+            m.mentorId === msg.mentorId &&
+            m.sender === msg.sender &&
+            m.text === msg.text
+          );
+
+          if (pendingIndex !== -1) {
+            const next = [...prev];
+            next[pendingIndex] = msg;
+            return next;
+          }
+
+          const streamingAiIndex = prev.findIndex((m) =>
+            m.streaming &&
+            m.sender === "ai" &&
+            msg.sender === "ai" &&
+            m.studentId === msg.studentId &&
+            m.mentorId === msg.mentorId
+          );
+
+          if (streamingAiIndex !== -1) {
+            const next = [...prev];
+            next[streamingAiIndex] = msg;
+            return next;
+          }
+
+          return [...prev, msg];
+        });
       }
+    });
+
+    socket.on("aiMessageStart", (data: any) => {
+      if (data.studentId !== student._id) return;
+
+      setAiTyping(false);
+      setMessages((prev) => {
+        if (prev.some((msg) => msg._id === data.messageId)) return prev;
+
+        return [
+          ...prev,
+          {
+            _id: data.messageId,
+            studentId: data.studentId,
+            mentorId: data.mentorId,
+            sender: "ai",
+            text: "",
+            streaming: true,
+            createdAt: new Date().toISOString(),
+          },
+        ];
+      });
+    });
+
+    socket.on("aiMessageChunk", (data: any) => {
+      if (data.studentId !== student._id) return;
+
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg._id === data.messageId
+            ? { ...msg, text: `${msg.text || ""}${data.chunk || ""}` }
+            : msg
+        )
+      );
+    });
+
+    socket.on("aiMessageEnd", (data: any) => {
+      if (data.studentId !== student._id) return;
+
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg._id === data.messageId ? { ...msg, streaming: false } : msg
+        )
+      );
     });
 
     socket.on("typing", (data: { sender: string; isTyping: boolean }) => {
@@ -289,6 +371,9 @@ const StudentProfile: React.FC = () => {
 
     return () => {
       socket.off("newMessage");
+      socket.off("aiMessageStart");
+      socket.off("aiMessageChunk");
+      socket.off("aiMessageEnd");
       socket.off("typing");
     };
   }, [student]);
@@ -332,38 +417,40 @@ const StudentProfile: React.FC = () => {
     }
   };
 
-  const handleGenerateRecoveryPlan = async () => {
-    setGeneratingPlan(true);
-    try {
-      const res = await axios.get(`/api/students/${studentId}/improvement`);
-      if (res.data.success) {
-        toast.success("AI Recovery Plan ready!");
-        fetchStudent(false);
-      }
-    } catch (err) {
-      toast.error("AI Plan generation failed");
-    } finally {
-      setGeneratingPlan(false);
-    }
-  };
-
   const handleSendChat = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!chatInput.trim() || !student || !user || !student.mentorId?._id) return;
 
     const text = chatInput.trim();
+    const sender = user.role === "student" ? "student" : "mentor";
+    const tempId = `temp-${Date.now()}`;
+    const mentorId = student.mentorId._id;
     setChatInput("");
+    setMessages((prev) => [
+      ...prev,
+      {
+        _id: tempId,
+        studentId: student._id,
+        mentorId,
+        sender,
+        text,
+        pending: true,
+        createdAt: new Date().toISOString(),
+      },
+    ]);
 
     try {
       await axios.post("/api/chat/send", {
         studentId: student._id,
-        mentorId: student.mentorId._id,
-        sender: user.role === "student" ? "student" : "mentor",
+        mentorId,
+        sender,
         text,
       });
     } catch (err) {
       console.error("Failed to send message:", err);
+      setMessages((prev) => prev.filter((msg) => msg._id !== tempId));
       setChatInput(text); // restore input on failure
+      toast.error("Message failed to send");
     }
   };
 
@@ -656,7 +743,7 @@ ${student.aiImprovementPlan || "No plan generated."}
               </div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 gap-6">
               {/* Risk explanation */}
               <div className="p-4 rounded-xl border border-[#dadce0] bg-slate-50/50">
                 <div className="flex justify-between items-center mb-3">
@@ -677,29 +764,6 @@ ${student.aiImprovementPlan || "No plan generated."}
                   </div>
                 ) : (
                   <p className="text-xs text-[#5f6368] italic py-6 text-center">No AI explanation cached. Click Re-evaluate to generate.</p>
-                )}
-              </div>
-
-              {/* Recovery Plan */}
-              <div className="p-4 rounded-xl border border-[#dadce0] bg-slate-50/50">
-                <div className="flex justify-between items-center mb-3">
-                  <span className="text-xs font-bold text-[#202124]">Weekly Learning Study Plan</span>
-                  {user?.role !== "student" && (
-                    <button
-                      onClick={handleGenerateRecoveryPlan}
-                      disabled={generatingPlan}
-                      className="text-xs text-[#1a73e8] font-bold hover:underline"
-                    >
-                      {generatingPlan ? "Constructing..." : "Re-generate Plan"}
-                    </button>
-                  )}
-                </div>
-                {student.aiImprovementPlan ? (
-                  <div className="text-xs text-[#202124] leading-relaxed prose prose-sm max-w-none">
-                    <ReactMarkdown>{student.aiImprovementPlan}</ReactMarkdown>
-                  </div>
-                ) : (
-                  <p className="text-xs text-[#5f6368] italic py-6 text-center">No active study planner generated by instructor.</p>
                 )}
               </div>
             </div>
@@ -899,15 +963,21 @@ ${student.aiImprovementPlan || "No plan generated."}
               const isMe = user?.role === "student" ? msg.sender === "student" : msg.sender === "mentor";
               const isAI = msg.sender === "ai";
               return (
-                <div key={index} className={`flex flex-col ${isMe ? "items-end" : "items-start"}`}>
+                <div key={msg._id || index} className={`flex flex-col ${isMe ? "items-end" : "items-start"}`}>
                   {isAI && (
-                    <span className="text-[9px] text-purple-700 font-semibold mb-0.5 ml-1">AI Agent Fallback</span>
+                    <span className="text-[9px] text-purple-700 font-semibold mb-0.5 ml-1">
+                      {msg.streaming ? "AI Agent responding..." : "AI Agent Fallback"}
+                    </span>
                   )}
                   <div className={`max-w-md px-3.5 py-2 rounded-xl text-xs font-medium ${
                     isMe ? "bg-primary text-white" : isAI ? "bg-purple-100 border border-purple-200 text-purple-900" : "bg-white border border-[#dadce0] text-[#202124]"
                   }`}>
                     {msg.text}
+                    {msg.streaming && <span className="ml-0.5 animate-pulse">|</span>}
                   </div>
+                  {msg.pending && (
+                    <span className="mt-0.5 text-[9px] font-medium text-slate-400">Sending...</span>
+                  )}
                 </div>
               );
             })}

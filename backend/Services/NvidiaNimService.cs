@@ -27,9 +27,9 @@ namespace EduGuard.Services
         private readonly HttpClient _httpClient;
         private readonly ILogger<NvidiaNimService> _logger;
         private readonly string _nvidiaApiKey;
+        private readonly string _modelId;
         private readonly bool _isMock;
         private const string BaseUrl = "https://integrate.api.nvidia.com/v1/chat/completions";
-        private const string AiModel = "minimaxai/minimax-m3";
 
         public NvidiaNimService(IConfiguration configuration, ILogger<NvidiaNimService> logger)
         {
@@ -37,6 +37,7 @@ namespace EduGuard.Services
             _httpClient = new HttpClient();
             
             _nvidiaApiKey = configuration.GetValue<string>("NVIDIA_API_KEY") ?? string.Empty;
+            _modelId = configuration.GetValue<string>("NVIDIA_MODEL_ID") ?? "minimaxai/minimax-m3";
             _isMock = string.IsNullOrEmpty(_nvidiaApiKey) || _nvidiaApiKey == "your_nvidia_nim_api_key";
 
             if (_isMock)
@@ -54,7 +55,7 @@ namespace EduGuard.Services
 
                 var payload = new
                 {
-                    model = AiModel,
+                    model = _modelId,
                     messages = new[]
                     {
                         new { role = "system", content = systemPrompt },

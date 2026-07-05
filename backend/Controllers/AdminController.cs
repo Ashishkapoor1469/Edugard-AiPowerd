@@ -49,6 +49,48 @@ namespace EduGuard.Controllers
 
         // --- MENTOR VERIFICATION SYSTEM ---
 
+        [HttpGet("mentors")]
+        public async Task<IActionResult> GetCollegeMentors()
+        {
+            if (IsSuperAdmin()) return Forbid();
+            var collegeId = GetCollegeId();
+            if (string.IsNullOrEmpty(collegeId))
+            {
+                return BadRequest(new { success = false, message = "College admin is not linked to a college" });
+            }
+
+            var mentors = await _mongoService.Mentors
+                .Find(m => m.CollegeId == collegeId)
+                .SortBy(m => m.Name)
+                .ToListAsync();
+
+            var resultList = new List<object>();
+            foreach (var mentor in mentors)
+            {
+                var assignedCount = await _mongoService.Students.CountDocumentsAsync(s => s.MentorId == mentor.Id);
+
+                resultList.Add(new
+                {
+                    _id = mentor.Id,
+                    id = mentor.Id,
+                    name = mentor.Name,
+                    email = mentor.Email,
+                    department = mentor.Department,
+                    batch = mentor.Batch,
+                    semester = mentor.Semester,
+                    status = mentor.Status,
+                    maxStudents = mentor.MaxStudents,
+                    assignedClasses = mentor.AssignedClasses,
+                    assignedCount,
+                    studentCount = assignedCount,
+                    createdAt = mentor.CreatedAt,
+                    updatedAt = mentor.UpdatedAt
+                });
+            }
+
+            return Ok(new { success = true, data = resultList });
+        }
+
         [HttpGet("mentors/pending")]
         public async Task<IActionResult> GetPendingMentors()
         {

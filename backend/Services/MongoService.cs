@@ -54,6 +54,7 @@ namespace EduGuard.Services
         public IMongoCollection<Admin> Admins => _database.GetCollection<Admin>("admins");
         public IMongoCollection<ReportCardJob> ReportCardJobs => _database.GetCollection<ReportCardJob>("report_card_jobs");
         public IMongoCollection<Syllabus> Syllabi => _database.GetCollection<Syllabus>("syllabi");
+        public IMongoCollection<ClassSummaryCache> ClassSummaryCaches => _database.GetCollection<ClassSummaryCache>("class_summary_cache");
 
         private void CreateIndexesSafe()
         {
@@ -89,6 +90,14 @@ namespace EduGuard.Services
                 // Notification compound index
                 var notificationKey = Builders<Notification>.IndexKeys.Ascending(n => n.MentorId).Ascending(n => n.IsRead);
                 Notifications.Indexes.CreateOne(new CreateIndexModel<Notification>(notificationKey));
+
+                var classSummaryKey = Builders<ClassSummaryCache>.IndexKeys.Ascending(c => c.CacheKey);
+                var classSummaryOptions = new CreateIndexOptions { Unique = true };
+                ClassSummaryCaches.Indexes.CreateOne(new CreateIndexModel<ClassSummaryCache>(classSummaryKey, classSummaryOptions));
+
+                var classSummaryExpiryKey = Builders<ClassSummaryCache>.IndexKeys.Ascending(c => c.ExpiresAt);
+                var classSummaryExpiryOptions = new CreateIndexOptions { ExpireAfter = TimeSpan.Zero };
+                ClassSummaryCaches.Indexes.CreateOne(new CreateIndexModel<ClassSummaryCache>(classSummaryExpiryKey, classSummaryExpiryOptions));
 
                 _logger.LogInformation("[MONGO] Indexes created successfully.");
             }

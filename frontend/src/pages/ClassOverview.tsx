@@ -15,6 +15,24 @@ interface Student {
   riskScore: number;
   riskLevel: "low" | "medium" | "high" | "critical";
   behavior: string | null;
+  marks?: SubjectMarks[];
+}
+
+interface ClassTest {
+  marks: number;
+  maxMarks: number;
+}
+
+interface ExamMarks {
+  marks: number | null;
+  maxMarks: number;
+}
+
+interface SubjectMarks {
+  subjectName: string;
+  classTests?: ClassTest[];
+  midTerm?: ExamMarks;
+  houseExam?: ExamMarks;
 }
 
 const ClassOverview: React.FC = () => {
@@ -33,6 +51,79 @@ const ClassOverview: React.FC = () => {
 
   const [loading, setLoading] = useState(true);
   const [generatingSummary, setGeneratingSummary] = useState(false);
+  const [loadingMessageIndex, setLoadingMessageIndex] = useState(0);
+
+  const loadingMessages = [
+    `Analyzing ${activeClass} class performance...`,
+    "Building class detailed report...",
+    "Calculating subject averages...",
+    "Reviewing student risk distribution...",
+    "Preparing cohort roster...",
+  ];
+
+  const calculateSubjectAverage = (subject: SubjectMarks) => {
+    let obtained = 0;
+    let maximum = 0;
+
+    for (const test of subject.classTests || []) {
+      obtained += Number(test.marks || 0);
+      maximum += Number(test.maxMarks || 0);
+    }
+
+    if (subject.midTerm?.marks !== null && subject.midTerm?.marks !== undefined) {
+      obtained += Number(subject.midTerm.marks || 0);
+      maximum += Number(subject.midTerm.maxMarks || 0);
+    }
+
+    if (subject.houseExam?.marks !== null && subject.houseExam?.marks !== undefined) {
+      obtained += Number(subject.houseExam.marks || 0);
+      maximum += Number(subject.houseExam.maxMarks || 0);
+    }
+
+    return maximum > 0 ? (obtained / maximum) * 100 : null;
+  };
+
+  const buildClassAnalytics = (classStudents: Student[], analyticsClass = activeClass) => {
+    const attendanceValues = classStudents
+      .map((student) => student.attendance)
+      .filter((attendance): attendance is number => attendance !== null && attendance !== undefined);
+
+    const subjectSums: Record<string, number> = {};
+    const subjectCounts: Record<string, number> = {};
+
+    for (const student of classStudents) {
+      for (const subject of student.marks || []) {
+        const average = calculateSubjectAverage(subject);
+        if (average === null) continue;
+
+        subjectSums[subject.subjectName] = (subjectSums[subject.subjectName] || 0) + average;
+        subjectCounts[subject.subjectName] = (subjectCounts[subject.subjectName] || 0) + 1;
+      }
+    }
+
+    const nextSubjectAverages: Record<string, number> = {};
+    for (const subjectName of Object.keys(subjectSums)) {
+      nextSubjectAverages[subjectName] = subjectSums[subjectName] / subjectCounts[subjectName];
+    }
+
+    const subjectAverageValues = Object.values(nextSubjectAverages);
+
+    return {
+      stats: {
+        className: analyticsClass,
+        totalStudents: classStudents.length,
+        avgAttendance: attendanceValues.length
+          ? attendanceValues.reduce((sum, attendance) => sum + attendance, 0) / attendanceValues.length
+          : 0,
+        avgMarks: subjectAverageValues.length
+          ? subjectAverageValues.reduce((sum, average) => sum + average, 0) / subjectAverageValues.length
+          : 0,
+        atRiskCount: classStudents.filter((student) => student.riskLevel === "high" || student.riskLevel === "critical").length,
+        failingSubjects: Object.keys(nextSubjectAverages).filter((subjectName) => nextSubjectAverages[subjectName] < 50),
+      },
+      subjectAverages: nextSubjectAverages,
+    };
+  };
 
   // Class list options (authorized classes if mentor, or all if admin)
   const classTabs = user?.role === "admin" 
@@ -40,71 +131,103 @@ const ClassOverview: React.FC = () => {
     : user?.assignedClasses?.length ? user.assignedClasses : ["BCA-A"];
 
   const fetchClassDetails = async () => {
-    const cacheKey = `class_data_${activeClass}`;
+    const requestedClass = activeClass;
+    const cacheKey = `class_data_${requestedClass}`;
     const cachedDataStr = sessionStorage.getItem(cacheKey);
     if (cachedDataStr) {
       try {
         const cached = JSON.parse(cachedDataStr);
         setClassStats(cached.stats);
         setSubjectAverages(cached.subjectAverages);
-        setAiSummary(cached.aiSummary);
+        setAiSummary(cached.aiSummary || "");
         setStudents(cached.students);
         setLoading(false);
-        return;
+
+        if (cached.aiSummary) {
+          setGeneratingSummary(false);
+          return;
+        }
       } catch (e) {
         console.error("Failed to parse cached class data", e);
       }
+    } else {
+      setLoading(true);
+      setClassStats(null); // clear old stats
+      setSubjectAverages({}); // clear old averages
+      setStudents([]); // clear old students roster
+      setAiSummary(""); // clear old AI summary
+      try {
+        const studentsRes = await axios.get("/api/students", {
+          params: { class: requestedClass, limit: 50 },
+        });
+
+        if (studentsRes.data.success) {
+          const fetchedStudents: Student[] = studentsRes.data.data;
+          const analytics = buildClassAnalytics(fetchedStudents, requestedClass);
+          setStudents(fetchedStudents);
+          setClassStats(analytics.stats);
+          setSubjectAverages(analytics.subjectAverages);
+
+          sessionStorage.setItem(cacheKey, JSON.stringify({
+            stats: analytics.stats,
+            subjectAverages: analytics.subjectAverages,
+            aiSummary: "",
+            students: fetchedStudents,
+          }));
+        }
+      } catch (err: any) {
+        console.error(err);
+        toast.error(err.response?.data?.message || "Failed to load class analytics");
+        setGeneratingSummary(false);
+        return;
+      } finally {
+        setLoading(false);
+      }
     }
 
-    setLoading(true);
-    setClassStats(null); // clear old stats
-    setSubjectAverages({}); // clear old averages
-    setStudents([]); // clear old students roster
-    setAiSummary(""); // clear old AI summary
+    setGeneratingSummary(true);
     try {
-      const res = await axios.get(`/api/students/class/${activeClass}/summary`);
-      let stats = null;
-      let subAvgs = {};
-      let summary = "";
+      const res = await axios.get(`/api/students/class/${requestedClass}/summary`);
       if (res.data.success) {
-        stats = res.data.data.stats;
-        subAvgs = res.data.data.subjectAverages;
-        summary = res.data.data.summary;
+        const stats = res.data.data.stats;
+        const subAvgs = res.data.data.subjectAverages;
+        const summary = res.data.data.summary;
+        const cachedStudents = JSON.parse(sessionStorage.getItem(cacheKey) || "{}").students || [];
+
         setClassStats(stats);
         setSubjectAverages(subAvgs);
         setAiSummary(summary);
-      }
-      
-      // Fetch students in this class
-      const studentsRes = await axios.get("/api/students", {
-        params: { class: activeClass, limit: 50 },
-      });
-      let fetchedStudents = [];
-      if (studentsRes.data.success) {
-        fetchedStudents = studentsRes.data.data;
-        setStudents(fetchedStudents);
-      }
 
-      // Save to cache
-      const dataToCache = {
-        stats,
-        subjectAverages: subAvgs,
-        aiSummary: summary,
-        students: fetchedStudents
-      };
-      sessionStorage.setItem(cacheKey, JSON.stringify(dataToCache));
-
-    } catch (err: any) {
-      console.error(err);
-      toast.error(err.response?.data?.message || "Failed to load class analytics");
+        sessionStorage.setItem(cacheKey, JSON.stringify({
+          stats,
+          subjectAverages: subAvgs,
+          aiSummary: summary,
+          students: cachedStudents,
+        }));
+      }
+    } catch (err) {
+      console.error("Failed to load AI class summary", err);
     } finally {
-      setLoading(false);
+      setGeneratingSummary(false);
     }
   };
 
   useEffect(() => {
     fetchClassDetails();
   }, [activeClass]);
+
+  useEffect(() => {
+    if (!loading) {
+      setLoadingMessageIndex(0);
+      return;
+    }
+
+    const timer = window.setInterval(() => {
+      setLoadingMessageIndex((current) => (current + 1) % loadingMessages.length);
+    }, 1800);
+
+    return () => window.clearInterval(timer);
+  }, [loading, loadingMessages.length]);
 
   // Sync activeClass state with URL param when URL changes
   useEffect(() => {
@@ -174,7 +297,20 @@ const ClassOverview: React.FC = () => {
   if (loading && !classStats) {
     return (
       <div className="flex-1 space-y-6 bg-bg-base p-6">
-        <div className="h-6 w-44 animate-pulse rounded-md bg-slate-200" />
+        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-xs">
+          <div className="flex items-center gap-3">
+            <div className="relative flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-50 text-primary">
+              <svg className="h-5 w-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-20" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-80" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+            </div>
+            <div className="min-w-0">
+              <h1 className="text-sm font-bold text-text-primary">{loadingMessages[loadingMessageIndex]}</h1>
+              <p className="mt-1 text-xs font-medium text-secondary">This may take a moment while EduGuard prepares class analytics.</p>
+            </div>
+          </div>
+        </div>
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-4">
           {[1, 2, 3, 4].map(n => <div key={n} className="h-28 animate-pulse rounded-xl bg-slate-200" />)}
         </div>

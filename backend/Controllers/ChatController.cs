@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -24,6 +25,52 @@ namespace EduGuard.Controllers
             _mongoService = mongoService;
             _hubContext = hubContext;
             _nvidiaNimService = nvidiaNimService;
+        }
+
+        private async Task StreamAiMessageAsync(string roomId, Message message)
+        {
+            var streamId = $"ai-stream-{Guid.NewGuid():N}";
+
+            await _hubContext.Clients.Group(roomId).SendAsync("typing", new { sender = "ai", isTyping = false });
+            await _hubContext.Clients.Group(roomId).SendAsync("aiMessageStart", new
+            {
+                messageId = streamId,
+                studentId = message.StudentId,
+                mentorId = message.MentorId
+            });
+
+            foreach (var chunk in BuildAiChunks(message.Text))
+            {
+                await _hubContext.Clients.Group(roomId).SendAsync("aiMessageChunk", new
+                {
+                    messageId = streamId,
+                    studentId = message.StudentId,
+                    chunk
+                });
+                await Task.Delay(35);
+            }
+
+            await _hubContext.Clients.Group(roomId).SendAsync("aiMessageEnd", new
+            {
+                messageId = streamId,
+                studentId = message.StudentId
+            });
+
+            await _hubContext.Clients.Group(roomId).SendAsync("newMessage", message);
+        }
+
+        private static IEnumerable<string> BuildAiChunks(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                yield break;
+            }
+
+            var words = text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            foreach (var word in words)
+            {
+                yield return $"{word} ";
+            }
         }
 
         // GET /api/chat/{studentId} — Fetch chat history
@@ -206,9 +253,8 @@ namespace EduGuard.Controllers
 
                         await _mongoService.Messages.InsertOneAsync(aiMessage);
 
-                        // Turn off typing indicator and broadcast AI message
-                        await _hubContext.Clients.Group(roomId).SendAsync("typing", new { sender = "ai", isTyping = false });
-                        await _hubContext.Clients.Group(roomId).SendAsync("newMessage", aiMessage);
+                        // Stream AI text into the chat, then replace it with the saved DB message.
+                        await StreamAiMessageAsync(roomId, aiMessage);
                     }
                 }
 

@@ -19,6 +19,7 @@ interface Mentor {
   name: string;
   assignedCount?: number;
   capacity?: number;
+  maxStudents?: number;
 }
 
 const Login: React.FC = () => {
@@ -53,15 +54,14 @@ const Login: React.FC = () => {
 
   const [mentors, setMentors] = useState<Mentor[]>([]);
   const [selectedMentor, setSelectedMentor] = useState("");
+  const [mentorsLoading, setMentorsLoading] = useState(false);
+  const [mentorLookupMessage, setMentorLookupMessage] = useState("");
 
   // Fetch signup lists
   useEffect(() => {
-    if (isRegisterMode && roleMode === "student") {
+    if (isRegisterMode && (roleMode === "student" || roleMode === "mentor")) {
       axios.get("/api/admin/colleges").then((res) => {
         if (res.data.success) setColleges(res.data.data);
-      });
-      axios.get("/api/mentors/list").then((res) => {
-        if (res.data.success) setMentors(res.data.data);
       });
     }
   }, [isRegisterMode, roleMode]);
@@ -69,13 +69,59 @@ const Login: React.FC = () => {
   // Fetch degrees when college changes
   useEffect(() => {
     if (selectedCollege) {
+      setSelectedDegree("");
+      setSelectedMentor("");
+      setMentors([]);
+      setMentorLookupMessage("");
       axios.get("/api/admin/degrees", { params: { collegeId: selectedCollege } }).then((res) => {
         if (res.data.success) setDegrees(res.data.data);
       });
     } else {
       setDegrees([]);
+      setSelectedDegree("");
+      setSelectedMentor("");
+      setMentors([]);
+      setMentorLookupMessage("");
     }
   }, [selectedCollege]);
+
+  useEffect(() => {
+    if (!isRegisterMode || roleMode !== "student") return;
+
+    setSelectedMentor("");
+    setMentors([]);
+    setMentorLookupMessage("");
+
+    if (!selectedCollege || !selectedDegree) return;
+
+    const controller = new AbortController();
+    setMentorsLoading(true);
+
+    axios
+      .get("/api/mentors/list", {
+        params: { collegeId: selectedCollege, courseId: selectedDegree },
+        signal: controller.signal,
+      })
+      .then((res) => {
+        const availableMentors = res.data.success ? res.data.data || [] : [];
+        setMentors(availableMentors);
+        if (availableMentors.length === 0) {
+          const message = "No mentor is available for the selected college and degree. Please contact your college admin.";
+          setMentorLookupMessage(message);
+          toast.error(message);
+        }
+      })
+      .catch((err) => {
+        if (axios.isCancel(err)) return;
+        setMentorLookupMessage("Failed to load mentors for this degree. Please try again.");
+        toast.error("Failed to load mentors for this degree");
+      })
+      .finally(() => {
+        setMentorsLoading(false);
+      });
+
+    return () => controller.abort();
+  }, [isRegisterMode, roleMode, selectedCollege, selectedDegree]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -88,6 +134,12 @@ const Login: React.FC = () => {
     try {
       if (isRegisterMode) {
         if (roleMode === "mentor") {
+          if (!selectedCollege || !selectedDegree) {
+            toast.error("Please select college and degree");
+            setIsSubmitting(false);
+            return;
+          }
+
           // Register mentor
           const assignedClasses = assignedClassesInput
             .split(",")
@@ -101,13 +153,22 @@ const Login: React.FC = () => {
             role: "mentor",
             assignedClasses,
             department,
+            collegeId: selectedCollege,
+            assignedCourseId: selectedDegree,
           });
           toast.success("Mentor account registered successfully! Pending administrator approval.");
           setIsRegisterMode(false);
         } else if (roleMode === "student") {
+          if (!selectedCollege || !selectedDegree || !selectedMentor) {
+            toast.error("Please select college, degree, and mentor");
+            setIsSubmitting(false);
+            return;
+          }
+
           // Check mentor capacity first
           const mentor = mentors.find((m) => m._id === selectedMentor);
-          if (mentor && mentor.assignedCount && mentor.capacity && mentor.assignedCount >= mentor.capacity) {
+          const mentorCapacity = mentor?.capacity || mentor?.maxStudents;
+          if (mentor && mentor.assignedCount && mentorCapacity && mentor.assignedCount >= mentorCapacity) {
             toast.error("Mentor unavailable. Please select another mentor.");
             setIsSubmitting(false);
             return;
@@ -338,19 +399,62 @@ const Login: React.FC = () => {
                         required
                         value={selectedMentor}
                         onChange={(e) => setSelectedMentor(e.target.value)}
+                        disabled={!selectedCollege || !selectedDegree || mentorsLoading || mentors.length === 0}
                         className="w-full rounded-lg border border-[#dadce0] px-3.5 py-2 text-sm focus:border-primary focus:outline-none bg-white"
                       >
-                        <option value="">Choose Mentor...</option>
+                        <option value="">
+                          {!selectedCollege || !selectedDegree
+                            ? "Choose college and degree first..."
+                            : mentorsLoading
+                              ? "Loading mentors..."
+                              : mentors.length === 0
+                                ? "No mentor available"
+                                : "Choose Mentor..."}
+                        </option>
                         {mentors.map((m) => (
-                          <option key={m._id} value={m._id}>{m.name}</option>
+                          <option key={m._id} value={m._id}>
+                            {m.name} ({m.assignedCount ?? 0}/{m.capacity || m.maxStudents || 50})
+                          </option>
                         ))}
                       </select>
+                      {mentorLookupMessage && (
+                        <p className="mt-1 text-[11px] font-medium text-red-600">{mentorLookupMessage}</p>
+                      )}
                     </div>
                   </>
                 )}
 
                 {isRegisterMode && roleMode === "mentor" && (
                   <>
+                    <div>
+                      <label className="block text-xs font-bold text-[#5f6368] uppercase tracking-wider mb-1">Select College</label>
+                      <select
+                        required
+                        value={selectedCollege}
+                        onChange={(e) => setSelectedCollege(e.target.value)}
+                        className="w-full rounded-lg border border-[#dadce0] px-3.5 py-2 text-sm focus:border-primary focus:outline-none bg-white"
+                      >
+                        <option value="">Choose College...</option>
+                        {colleges.map((c) => (
+                          <option key={c._id} value={c._id}>{c.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-[#5f6368] uppercase tracking-wider mb-1">Select Degree Program</label>
+                      <select
+                        required
+                        value={selectedDegree}
+                        onChange={(e) => setSelectedDegree(e.target.value)}
+                        disabled={!selectedCollege}
+                        className="w-full rounded-lg border border-[#dadce0] px-3.5 py-2 text-sm focus:border-primary focus:outline-none bg-white disabled:bg-slate-50"
+                      >
+                        <option value="">{selectedCollege ? "Choose Degree..." : "Choose college first..."}</option>
+                        {degrees.map((d) => (
+                          <option key={d._id} value={d._id}>{d.name}</option>
+                        ))}
+                      </select>
+                    </div>
                     <div>
                       <label className="block text-xs font-bold text-[#5f6368] uppercase tracking-wider mb-1">Assigned Classes</label>
                       <input

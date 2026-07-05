@@ -74,18 +74,39 @@ namespace EduGuard.Controllers
         [HttpPost("register")]
         public async Task<IActionResult> Register([FromBody] Mentor model)
         {
-            if (model == null || string.IsNullOrEmpty(model.Name) || string.IsNullOrEmpty(model.Email) || string.IsNullOrEmpty(model.Password))
+            if (model == null || string.IsNullOrEmpty(model.Name) || string.IsNullOrEmpty(model.Email) ||
+                string.IsNullOrEmpty(model.Password) || string.IsNullOrEmpty(model.CollegeId) ||
+                string.IsNullOrEmpty(model.AssignedCourseId))
             {
-                return BadRequest(new { success = false, message = "Please provide name, email, and password" });
+                return BadRequest(new { success = false, message = "Please provide name, email, password, college, and degree" });
             }
 
             model.Email = model.Email.Trim().ToLower();
+            model.CollegeId = model.CollegeId.Trim();
+            model.AssignedCourseId = model.AssignedCourseId.Trim();
 
             // Check if mentor already exists
             var existing = await _mongoService.Mentors.Find(m => m.Email == model.Email).FirstOrDefaultAsync();
             if (existing != null)
             {
                 return BadRequest(new { success = false, message = "Email is already registered" });
+            }
+
+            var college = await _mongoService.Colleges.Find(c => c.Id == model.CollegeId).FirstOrDefaultAsync();
+            if (college == null)
+            {
+                return BadRequest(new { success = false, message = "Selected college does not exist" });
+            }
+
+            if (college.IsBlocked)
+            {
+                return BadRequest(new { success = false, message = "Selected college is currently blocked" });
+            }
+
+            var degree = await _mongoService.Degrees.Find(d => d.Id == model.AssignedCourseId && d.CollegeId == model.CollegeId).FirstOrDefaultAsync();
+            if (degree == null)
+            {
+                return BadRequest(new { success = false, message = "Selected degree does not belong to the selected college" });
             }
 
             // Hash password and set initial pending status
@@ -164,6 +185,16 @@ namespace EduGuard.Controllers
             if (mentor == null)
             {
                 return NotFound(new { success = false, message = "Selected mentor not found" });
+            }
+
+            if (mentor.Status != "approved")
+            {
+                return BadRequest(new { success = false, message = "Selected mentor is not available for student signup" });
+            }
+
+            if (mentor.CollegeId != model.CollegeId || mentor.AssignedCourseId != model.CourseId)
+            {
+                return BadRequest(new { success = false, message = "Selected mentor does not belong to the selected college and degree" });
             }
 
             var currentStudentsCount = await _mongoService.Students.CountDocumentsAsync(s => s.MentorId == model.MentorId);

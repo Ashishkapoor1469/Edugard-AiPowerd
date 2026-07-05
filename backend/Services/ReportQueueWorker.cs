@@ -196,15 +196,6 @@ namespace EduGuard.Services
                                 htmlBuilder.AppendLine("      </tbody>");
                                 htmlBuilder.AppendLine("    </table>");
 
-                                // Mentor Feedback & Plans
-                                htmlBuilder.AppendLine("    <div class=\"section-title\">AI Assessed Development Plans</div>");
-                                htmlBuilder.AppendLine("    <div class=\"summary-box\">");
-                                htmlBuilder.AppendLine("      <div class=\"info-label\" style=\"margin-bottom: 6px;\">Risk Factor Diagnostics:</div>");
-                                htmlBuilder.AppendLine($"      <p style=\"font-size: 12px; color: #4A5568; margin-top: 0; margin-bottom: 16px;\">{(string.IsNullOrEmpty(student.RiskExplanation) ? "No detailed risk diagnosis is generated yet." : student.RiskExplanation)}</p>");
-                                htmlBuilder.AppendLine("      <div class=\"info-label\" style=\"margin-bottom: 6px;\">Academic Remedial Study Plan:</div>");
-                                htmlBuilder.AppendLine($"      <p style=\"font-size: 12px; color: #4A5568; margin: 0;\">{(string.IsNullOrEmpty(student.AiImprovementPlan) ? "No study improvement plan generated yet." : student.AiImprovementPlan)}</p>");
-                                htmlBuilder.AppendLine("    </div>");
-
                                 // Grading Scale
                                 htmlBuilder.AppendLine("    <div class=\"section-title\">Grading Scale</div>");
                                 htmlBuilder.AppendLine("    <table style=\"max-width: 400px;\">");

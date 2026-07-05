@@ -1,11 +1,13 @@
 import React, { createContext, useState, useEffect, useContext } from "react";
 import axios from "axios";
+import socket from "../utils/socket.js";
 
 export interface User {
   id: string;
   name: string;
   email?: string;
   role: "mentor" | "admin" | "student" | "college-admin";
+  status?: "pending_verification" | "approved" | "rejected" | "disabled" | string;
   assignedClasses?: string[];
   rollNo?: string;
   course?: string;
@@ -28,14 +30,15 @@ interface AuthContextType {
     assignedClasses?: string[];
     department?: string;
     collegeId?: string;
+    assignedCourseId?: string;
   }) => Promise<void>;
   logout: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Set default API base URL
-axios.defaults.baseURL = "http://localhost:5000";
+const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:5000";
+axios.defaults.baseURL = apiUrl;
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
@@ -96,6 +99,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     assignedClasses?: string[];
     department?: string;
     collegeId?: string;
+    assignedCourseId?: string;
   }) => {
     try {
       const res = await axios.post("/api/auth/register", data);
@@ -112,7 +116,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logout = () => {
-    localStorage.removeItem("token");
+    localStorage.clear();
+    sessionStorage.clear();
+    socket.disconnect();
     setToken(null);
     setUser(null);
     setAuthHeader(null);

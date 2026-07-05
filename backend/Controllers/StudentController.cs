@@ -2,6 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Net;
+using System.Text;
+using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
@@ -525,6 +529,9 @@ namespace EduGuard.Controllers
         {
             var userRole = User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value;
             var userId = User.FindFirst("id")?.Value;
+            var cacheUserId = userRole == "mentor" ? userId : "all";
+            var cacheKey = $"{userRole ?? "unknown"}:{cacheUserId}:{className}".ToLowerInvariant();
+            var now = DateTime.UtcNow;
 
             var filters = new List<FilterDefinition<Student>>
             {
@@ -601,7 +608,58 @@ namespace EduGuard.Controllers
                 FailingSubjects = failingSubjects
             };
 
+            var cachedSummary = await _mongoService.ClassSummaryCaches
+                .Find(c => c.CacheKey == cacheKey && c.ExpiresAt > now)
+                .FirstOrDefaultAsync();
+
+            if (cachedSummary != null && !string.IsNullOrWhiteSpace(cachedSummary.Summary))
+            {
+                return Ok(new
+                {
+                    success = true,
+                    data = new
+                    {
+                        stats = cachedSummary.Stats,
+                        subjectAverages = cachedSummary.SubjectAverages,
+                        summary = cachedSummary.Summary,
+                        aiSummary = cachedSummary.Summary,
+                        generatedAt = cachedSummary.GeneratedAt,
+                        expiresAt = cachedSummary.ExpiresAt,
+                        cached = true
+                    }
+                });
+            }
+
             var aiSummary = await _nvidiaNimService.GenerateClassSummaryAsync(stats);
+            var generatedAt = DateTime.UtcNow;
+            var expiresAt = generatedAt.AddHours(4);
+
+            var statsCache = new ClassSummaryStats
+            {
+                TotalStudents = totalStudents,
+                AvgAttendance = avgAttendance,
+                AvgMarks = avgMarks,
+                AtRiskCount = atRiskCount,
+                FailingSubjects = failingSubjects
+            };
+
+            var cacheEntry = new ClassSummaryCache
+            {
+                CacheKey = cacheKey,
+                ClassName = className,
+                UserRole = userRole,
+                UserId = cacheUserId,
+                Stats = statsCache,
+                SubjectAverages = subjectAverages,
+                Summary = aiSummary,
+                GeneratedAt = generatedAt,
+                ExpiresAt = expiresAt
+            };
+
+            await _mongoService.ClassSummaryCaches.ReplaceOneAsync(
+                c => c.CacheKey == cacheKey,
+                cacheEntry,
+                new ReplaceOptions { IsUpsert = true });
 
             return Ok(new
             {
@@ -618,7 +676,10 @@ namespace EduGuard.Controllers
                     },
                     subjectAverages,
                     summary = aiSummary,
-                    aiSummary
+                    aiSummary,
+                    generatedAt,
+                    expiresAt,
+                    cached = false
                 }
             });
         }
@@ -1062,6 +1123,816 @@ namespace EduGuard.Controllers
             }
 
             return NotFound("Report card file not found in database or local storage.");
+        }
+
+        [HttpGet("report-card/download/{jobId}/pdf")]
+        public async Task<IActionResult> DownloadReportCardPdf(string jobId)
+        {
+            var job = await _mongoService.ReportCardJobs.Find(j => j.Id == jobId).FirstOrDefaultAsync();
+            if (job == null)
+            {
+                return NotFound("Report card job not found.");
+            }
+
+            var student = await _mongoService.Students.Find(s => s.Id == job.StudentId).FirstOrDefaultAsync();
+            if (student == null)
+            {
+                return NotFound("Student not found for this report card.");
+            }
+
+            var collegeName = "EduGuard Affiliated Institution";
+            if (!string.IsNullOrEmpty(student.CollegeId))
+            {
+                var college = await _mongoService.Colleges.Find(c => c.Id == student.CollegeId).FirstOrDefaultAsync();
+                if (college != null) collegeName = college.Name;
+            }
+
+            var pdfBytes = BuildStyledReportCardPdf(student, collegeName, job.Id ?? string.Empty);
+            var fileName = $"Report-Card-{student.Name.Replace(" ", "-")}-{DateTime.UtcNow:yyyy-MM-dd}.pdf";
+
+            return File(pdfBytes, "application/pdf", fileName);
+        }
+
+        private enum PdfBlockKind { Heading, Paragraph, BulletList, NumberedList, Table, Rule }
+
+        private class PdfContentBlock
+        {
+            public PdfBlockKind Kind { get; set; }
+            public string Text { get; set; } = string.Empty;
+            public int Level { get; set; } = 1;
+            public List<string> Items { get; set; } = new();
+            public List<string> Headers { get; set; } = new();
+            public List<List<string>> Rows { get; set; } = new();
+        }
+
+        private static byte[] BuildStyledReportCardPdf(Student student, string collegeName, string reportId)
+        {
+            const int pageWidth = 595;
+            const int pageHeight = 842;
+            const int margin = 34;
+            const int contentWidth = pageWidth - (margin * 2);
+            const int footerTop = 34;
+            const int bodyBottom = 54;
+            var pages = new List<StringBuilder>();
+            var page = new StringBuilder();
+            var y = 0;
+
+            void NewPage()
+            {
+                page = new StringBuilder();
+                pages.Add(page);
+                y = 812;
+                AddText(collegeName.ToUpperInvariant(), margin, y, 13, true, "1A365D");
+                y -= 17;
+                AddText("Academic Progress & Performance Report Card", margin, y, 10, false, "4A5568");
+                y -= 10;
+                AddLine(margin, y, pageWidth - margin, y, "CBD5E0");
+                y -= 16;
+            }
+
+            void EnsureSpace(int height)
+            {
+                if (y - height < bodyBottom)
+                {
+                    NewPage();
+                }
+            }
+
+            void AddText(string text, int x, int textY, int size = 10, bool bold = false, string color = "2D3748")
+            {
+                var safe = EscapePdfText(NormalizePdfText(text));
+                var (r, g, b) = HexToRgb(color);
+                page.AppendLine($"{r} {g} {b} rg");
+                page.AppendLine($"BT /{(bold ? "F2" : "F1")} {size} Tf {x} {textY} Td ({safe}) Tj ET");
+            }
+
+            void AddRect(int x, int rectY, int width, int height, string stroke = "E2E8F0", string fill = "")
+            {
+                if (!string.IsNullOrEmpty(fill))
+                {
+                    var (fr, fg, fb) = HexToRgb(fill);
+                    page.AppendLine($"{fr} {fg} {fb} rg");
+                    page.AppendLine($"{x} {rectY} {width} {height} re f");
+                }
+                var (sr, sg, sb) = HexToRgb(stroke);
+                page.AppendLine($"{sr} {sg} {sb} RG");
+                page.AppendLine($"{x} {rectY} {width} {height} re S");
+            }
+
+            void AddLine(int x1, int y1, int x2, int y2, string color = "E2E8F0")
+            {
+                var (r, g, b) = HexToRgb(color);
+                page.AppendLine($"{r} {g} {b} RG");
+                page.AppendLine($"{x1} {y1} m {x2} {y2} l S");
+            }
+
+            void AddSectionTitle(string title)
+            {
+                EnsureSpace(24);
+                AddText(title, margin, y, 11, true, "1A365D");
+                y -= 7;
+                AddLine(margin, y, pageWidth - margin, y, "CBD5E0");
+                y -= 13;
+            }
+
+            NewPage();
+
+            AddRect(margin, y - 82, contentWidth, 88, "E2E8F0", "F8FAFC");
+            var leftX = margin + 12;
+            var rightX = margin + 272;
+            var infoY = y - 15;
+            AddInfo("Student Name", student.Name, leftX, infoY);
+            AddInfo("Roll Number", $"#{student.RollNo}", rightX, infoY);
+            AddInfo("Course & Semester", $"{student.Course} (Semester {student.Semester})", leftX, infoY - 29);
+            AddInfo("Assigned Class", student.Class, rightX, infoY - 29);
+            AddInfo("Attendance Rate", student.Attendance.HasValue ? $"{student.Attendance}%" : "N/A", leftX, infoY - 58);
+            AddInfo("Risk Evaluation Status", $"{student.RiskLevel} Risk", rightX, infoY - 58);
+            y -= 104;
+
+            void AddInfo(string label, string value, int x, int infoTextY)
+            {
+                AddText(label.ToUpperInvariant(), x, infoTextY, 7, true, "718096");
+                AddText(value, x, infoTextY - 11, 9, true, "2D3748");
+            }
+
+            AddSectionTitle("Subject-wise Performance Record");
+            AddSubjectTable();
+
+            AddSectionTitle("Grading Scale");
+            RenderTable(
+                new List<string> { "Marks Range", "Grade", "Remark" },
+                new List<List<string>>
+                {
+                    new() { "91 - 100", "A1", "Outstanding" },
+                    new() { "81 - 90", "A2", "Excellent" },
+                    new() { "71 - 80", "B1", "Very Good" },
+                    new() { "61 - 70", "B2", "Good" },
+                    new() { "51 - 60", "C1", "Average" },
+                    new() { "41 - 50", "C2", "Below Average" },
+                    new() { "33 - 40", "D", "Pass" },
+                    new() { "Below 33", "E", "Needs Improvement" },
+                },
+                new[] { 150, 70, 230 });
+
+            AddSignatures();
+            AddPageFooters();
+            return BuildPdfDocument(pages, pageWidth, pageHeight);
+
+            void AddPageFooters()
+            {
+                for (var i = 0; i < pages.Count; i++)
+                {
+                    var current = pages[i];
+                    page = current;
+                    AddLine(margin, footerTop, pageWidth - margin, footerTop, "E2E8F0");
+                    AddText("Generated by EduGuard", margin, 20, 7, false, "718096");
+                    AddText($"Report ID: {reportId}", margin + 135, 20, 7, false, "718096");
+                    AddText($"Generation Date: {DateTime.UtcNow:yyyy-MM-dd}", margin + 270, 20, 7, false, "718096");
+                    AddText($"Page {i + 1} of {pages.Count}", pageWidth - margin - 54, 20, 7, false, "718096");
+                }
+            }
+
+            void AddSubjectTable()
+            {
+                var colWidths = new[] { 124, 108, 78, 82, 74, 54 };
+                var headers = new[] { "Subject", "Class Tests", "Mid Term", "House Exam", "Total", "Grade" };
+
+                EnsureSpace(42);
+                if (student.Marks == null || student.Marks.Count == 0)
+                {
+                    RenderTable(headers.ToList(), new List<List<string>> { new() { "No academic marks recorded for this semester yet.", "", "", "", "", "" } }, colWidths);
+                    return;
+                }
+
+                var rows = new List<List<string>>();
+                foreach (var mark in student.Marks)
+                {
+                    var midTermMarks = mark.MidTerm?.Marks;
+                    var midTermMax = mark.MidTerm?.MaxMarks ?? 100;
+                    var houseExamMarks = mark.HouseExam?.Marks;
+                    var houseExamMax = mark.HouseExam?.MaxMarks ?? 100;
+                    var midTermStr = midTermMarks.HasValue ? $"{midTermMarks}/{midTermMax}" : "N/A";
+                    var houseExamStr = houseExamMarks.HasValue ? $"{houseExamMarks}/{houseExamMax}" : "N/A";
+                    var testsStr = "No Tests";
+                    double totalMarks = 0;
+                    double totalMax = 0;
+
+                    if (mark.ClassTests != null && mark.ClassTests.Count > 0)
+                    {
+                        testsStr = string.Join(", ", mark.ClassTests.Select(t => $"{t.Marks}/{t.MaxMarks}"));
+                        totalMarks += mark.ClassTests.Sum(t => t.Marks);
+                        totalMax += mark.ClassTests.Sum(t => t.MaxMarks);
+                    }
+
+                    if (midTermMarks.HasValue)
+                    {
+                        totalMarks += midTermMarks.Value;
+                        totalMax += midTermMax;
+                    }
+
+                    if (houseExamMarks.HasValue)
+                    {
+                        totalMarks += houseExamMarks.Value;
+                        totalMax += houseExamMax;
+                    }
+
+                    var percentage = totalMax > 0 ? (totalMarks / totalMax) * 100 : 0;
+                    var grade = percentage >= 91 ? "A1" : percentage >= 81 ? "A2" : percentage >= 71 ? "B1" : percentage >= 61 ? "B2" : percentage >= 51 ? "C1" : percentage >= 41 ? "C2" : percentage >= 33 ? "D" : "E";
+                    rows.Add(new List<string> { mark.SubjectName, testsStr, midTermStr, houseExamStr, $"{totalMarks}/{totalMax}", grade });
+                }
+
+                RenderTable(headers.ToList(), rows, colWidths);
+                y -= 8;
+            }
+
+            void RenderTable(List<string> headers, List<List<string>> rows, int[] colWidths)
+            {
+                if (headers.Count == 0) return;
+                var tableWidth = colWidths.Sum();
+                var normalizedRows = rows.Select(row => headers.Select((_, index) => index < row.Count ? row[index] : "").ToList()).ToList();
+
+                void RenderHeader()
+                {
+                    EnsureSpace(23);
+                    AddRect(margin, y - 19, tableWidth, 21, "CBD5E0", "EDF2F7");
+                    var x = margin;
+                    for (var i = 0; i < headers.Count; i++)
+                    {
+                        AddText(TruncatePdfText(headers[i], Math.Max(8, colWidths[i] / 6)), x + 5, y - 13, 7, true, "2D3748");
+                        x += colWidths[i];
+                    }
+                    y -= 21;
+                }
+
+                RenderHeader();
+                for (var rowIndex = 0; rowIndex < normalizedRows.Count; rowIndex++)
+                {
+                    var row = normalizedRows[rowIndex];
+                    var cellLines = row.Select((cell, index) => WrapPdfLine(StripMarkdownInline(cell), Math.Max(8, (colWidths[index] - 12) / 5)).ToList()).ToList();
+                    var lineCount = Math.Max(1, cellLines.Max(lines => lines.Count()));
+                    var rowHeight = Math.Max(22, 9 + (lineCount * 10));
+
+                    if (y - rowHeight < bodyBottom)
+                    {
+                        NewPage();
+                        RenderHeader();
+                    }
+
+                    AddRect(margin, y - rowHeight + 2, tableWidth, rowHeight, "E2E8F0", rowIndex % 2 == 0 ? "FFFFFF" : "F8FAFC");
+                    var x = margin;
+                    for (var cellIndex = 0; cellIndex < row.Count; cellIndex++)
+                    {
+                        var lineY = y - 12;
+                        foreach (var line in cellLines[cellIndex])
+                        {
+                            AddText(line, x + 5, lineY, 7, cellIndex == 0, "2D3748");
+                            lineY -= 9;
+                        }
+                        x += colWidths[cellIndex];
+                    }
+                    y -= rowHeight;
+                }
+            }
+
+            void AddSignatures()
+            {
+                EnsureSpace(48);
+                y -= 16;
+                var signatureY = y;
+                AddLine(margin + 20, signatureY, margin + 190, signatureY, "CBD5E0");
+                AddLine(pageWidth - margin - 190, signatureY, pageWidth - margin - 20, signatureY, "CBD5E0");
+                AddText("Class Teacher", margin + 64, signatureY - 13, 8, false, "718096");
+                AddText("Principal / HOD", pageWidth - margin - 150, signatureY - 13, 8, false, "718096");
+                y -= 30;
+            }
+        }
+
+        private static byte[] BuildPdfDocument(List<StringBuilder> pageContents, int pageWidth, int pageHeight)
+        {
+            var objects = new List<string>
+            {
+                "<< /Type /Catalog /Pages 2 0 R >>"
+            };
+
+            var pageObjectNumbers = new List<int>();
+            var contentObjectNumbers = new List<int>();
+            var fontRegularObjectNumber = 3 + (pageContents.Count * 2);
+            var fontBoldObjectNumber = fontRegularObjectNumber + 1;
+            var nextObjectNumber = 3;
+
+            foreach (var _ in pageContents)
+            {
+                pageObjectNumbers.Add(nextObjectNumber++);
+                contentObjectNumbers.Add(nextObjectNumber++);
+            }
+
+            objects.Add($"<< /Type /Pages /Kids [{string.Join(" ", pageObjectNumbers.Select(n => $"{n} 0 R"))}] /Count {pageContents.Count} >>");
+
+            for (var pageIndex = 0; pageIndex < pageContents.Count; pageIndex++)
+            {
+                objects.Add($"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {pageWidth} {pageHeight}] /Resources << /Font << /F1 {fontRegularObjectNumber} 0 R /F2 {fontBoldObjectNumber} 0 R >> >> /Contents {contentObjectNumbers[pageIndex]} 0 R >>");
+                var contentText = pageContents[pageIndex].ToString();
+                objects.Add($"<< /Length {Encoding.ASCII.GetByteCount(contentText)} >>\nstream\n{contentText}endstream");
+            }
+
+            objects.Add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
+            objects.Add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>");
+
+            var pdf = new StringBuilder();
+            var offsets = new List<int> { 0 };
+            pdf.Append("%PDF-1.4\n");
+
+            for (var i = 0; i < objects.Count; i++)
+            {
+                offsets.Add(Encoding.ASCII.GetByteCount(pdf.ToString()));
+                pdf.Append($"{i + 1} 0 obj\n{objects[i]}\nendobj\n");
+            }
+
+            var xrefOffset = Encoding.ASCII.GetByteCount(pdf.ToString());
+            pdf.Append($"xref\n0 {objects.Count + 1}\n");
+            pdf.Append("0000000000 65535 f \n");
+            for (var i = 1; i < offsets.Count; i++)
+            {
+                pdf.Append($"{offsets[i]:D10} 00000 n \n");
+            }
+
+            pdf.Append($"trailer\n<< /Size {objects.Count + 1} /Root 1 0 R >>\nstartxref\n{xrefOffset}\n%%EOF");
+            return Encoding.ASCII.GetBytes(pdf.ToString());
+        }
+
+        private static (string R, string G, string B) HexToRgb(string hex)
+        {
+            hex = hex.TrimStart('#');
+            if (hex.Length != 6)
+            {
+                hex = "2D3748";
+            }
+
+            var r = Convert.ToInt32(hex[..2], 16) / 255.0;
+            var g = Convert.ToInt32(hex.Substring(2, 2), 16) / 255.0;
+            var b = Convert.ToInt32(hex.Substring(4, 2), 16) / 255.0;
+            return (r.ToString("0.###"), g.ToString("0.###"), b.ToString("0.###"));
+        }
+
+        private static string NormalizePdfText(string text)
+        {
+            return WebUtility.HtmlDecode(text ?? string.Empty)
+                .Replace("\r", " ")
+                .Replace("\n", " ")
+                .Replace("•", "-")
+                .Replace("–", "-")
+                .Replace("—", "-")
+                .Replace("“", "\"")
+                .Replace("”", "\"")
+                .Replace("’", "'");
+        }
+
+        private static string TruncatePdfText(string text, int maxLength)
+        {
+            text = NormalizePdfText(text);
+            if (text.Length <= maxLength) return text;
+            return text[..Math.Max(0, maxLength - 3)].TrimEnd() + "...";
+        }
+
+        private static List<PdfContentBlock> ParseAiBlocks(string rawContent)
+        {
+            var content = NormalizeAiContent(rawContent);
+            if (string.IsNullOrWhiteSpace(content))
+            {
+                return new List<PdfContentBlock>();
+            }
+
+            var jsonBlocks = TryParseJsonBlocks(content);
+            if (jsonBlocks.Count > 0)
+            {
+                return jsonBlocks;
+            }
+
+            content = ConvertBasicHtmlToMarkdown(content);
+            var lines = content.Replace("\r\n", "\n").Split('\n');
+            var blocks = new List<PdfContentBlock>();
+            var paragraph = new List<string>();
+
+            void FlushParagraph()
+            {
+                var text = StripMarkdownInline(string.Join(" ", paragraph).Trim());
+                if (!string.IsNullOrWhiteSpace(text))
+                {
+                    blocks.Add(new PdfContentBlock { Kind = PdfBlockKind.Paragraph, Text = text });
+                }
+                paragraph.Clear();
+            }
+
+            for (var i = 0; i < lines.Length; i++)
+            {
+                var line = lines[i].Trim();
+                if (string.IsNullOrWhiteSpace(line))
+                {
+                    FlushParagraph();
+                    continue;
+                }
+
+                if (IsMarkdownTableStart(lines, i))
+                {
+                    FlushParagraph();
+                    var headers = ParseMarkdownTableRow(lines[i]);
+                    i += 2;
+                    var rows = new List<List<string>>();
+                    while (i < lines.Length && lines[i].Contains('|') && !string.IsNullOrWhiteSpace(lines[i]))
+                    {
+                        rows.Add(ParseMarkdownTableRow(lines[i]).Select(StripMarkdownInline).ToList());
+                        i++;
+                    }
+                    i--;
+                    blocks.Add(new PdfContentBlock
+                    {
+                        Kind = PdfBlockKind.Table,
+                        Headers = headers.Select(StripMarkdownInline).ToList(),
+                        Rows = rows
+                    });
+                    continue;
+                }
+
+                if (Regex.IsMatch(line, @"^#{1,6}\s+"))
+                {
+                    FlushParagraph();
+                    var level = line.TakeWhile(c => c == '#').Count();
+                    blocks.Add(new PdfContentBlock
+                    {
+                        Kind = PdfBlockKind.Heading,
+                        Level = level,
+                        Text = StripMarkdownInline(Regex.Replace(line, @"^#{1,6}\s+", ""))
+                    });
+                    continue;
+                }
+
+                if (Regex.IsMatch(line, @"^(-{3,}|\*{3,}|_{3,})$"))
+                {
+                    FlushParagraph();
+                    blocks.Add(new PdfContentBlock { Kind = PdfBlockKind.Rule });
+                    continue;
+                }
+
+                if (Regex.IsMatch(line, @"^[-*+]\s+"))
+                {
+                    FlushParagraph();
+                    var items = new List<string>();
+                    while (i < lines.Length && Regex.IsMatch(lines[i].Trim(), @"^[-*+]\s+"))
+                    {
+                        items.Add(StripMarkdownInline(Regex.Replace(lines[i].Trim(), @"^[-*+]\s+", "")));
+                        i++;
+                    }
+                    i--;
+                    blocks.Add(new PdfContentBlock { Kind = PdfBlockKind.BulletList, Items = items });
+                    continue;
+                }
+
+                if (Regex.IsMatch(line, @"^\d+[\.)]\s+"))
+                {
+                    FlushParagraph();
+                    var items = new List<string>();
+                    while (i < lines.Length && Regex.IsMatch(lines[i].Trim(), @"^\d+[\.)]\s+"))
+                    {
+                        items.Add(StripMarkdownInline(Regex.Replace(lines[i].Trim(), @"^\d+[\.)]\s+", "")));
+                        i++;
+                    }
+                    i--;
+                    blocks.Add(new PdfContentBlock { Kind = PdfBlockKind.NumberedList, Items = items });
+                    continue;
+                }
+
+                paragraph.Add(line);
+            }
+
+            FlushParagraph();
+            return blocks.Count > 0
+                ? blocks
+                : new List<PdfContentBlock> { new() { Kind = PdfBlockKind.Paragraph, Text = StripMarkdownInline(content) } };
+        }
+
+        private static List<PdfContentBlock> TryParseJsonBlocks(string content)
+        {
+            var blocks = new List<PdfContentBlock>();
+            var trimmed = content.Trim();
+            if (!trimmed.StartsWith("{") && !trimmed.StartsWith("["))
+            {
+                return blocks;
+            }
+
+            try
+            {
+                using var doc = JsonDocument.Parse(trimmed);
+                FlattenJsonElement(doc.RootElement, "AI Study Plan", blocks);
+            }
+            catch
+            {
+                blocks.Clear();
+            }
+
+            return blocks;
+        }
+
+        private static void FlattenJsonElement(JsonElement element, string title, List<PdfContentBlock> blocks)
+        {
+            switch (element.ValueKind)
+            {
+                case JsonValueKind.Object:
+                    blocks.Add(new PdfContentBlock { Kind = PdfBlockKind.Heading, Level = 2, Text = HumanizeKey(title) });
+                    foreach (var property in element.EnumerateObject())
+                    {
+                        FlattenJsonElement(property.Value, property.Name, blocks);
+                    }
+                    break;
+                case JsonValueKind.Array:
+                    var scalarItems = element.EnumerateArray()
+                        .Where(item => item.ValueKind is JsonValueKind.String or JsonValueKind.Number or JsonValueKind.True or JsonValueKind.False)
+                        .Select(item => StripMarkdownInline(item.ToString()))
+                        .Where(item => !string.IsNullOrWhiteSpace(item))
+                        .ToList();
+                    if (scalarItems.Count > 0)
+                    {
+                        blocks.Add(new PdfContentBlock { Kind = PdfBlockKind.Heading, Level = 3, Text = HumanizeKey(title) });
+                        blocks.Add(new PdfContentBlock { Kind = PdfBlockKind.BulletList, Items = scalarItems });
+                    }
+                    else
+                    {
+                        blocks.Add(new PdfContentBlock { Kind = PdfBlockKind.Heading, Level = 3, Text = HumanizeKey(title) });
+                        foreach (var item in element.EnumerateArray())
+                        {
+                            FlattenJsonElement(item, title, blocks);
+                        }
+                    }
+                    break;
+                default:
+                    var value = StripMarkdownInline(element.ToString());
+                    if (!string.IsNullOrWhiteSpace(value))
+                    {
+                        blocks.Add(new PdfContentBlock { Kind = PdfBlockKind.Paragraph, Text = $"{HumanizeKey(title)}: {value}" });
+                    }
+                    break;
+            }
+        }
+
+        private static string HumanizeKey(string key)
+        {
+            key = Regex.Replace(key ?? string.Empty, "([a-z])([A-Z])", "$1 $2");
+            key = key.Replace("_", " ").Replace("-", " ").Trim();
+            return string.IsNullOrWhiteSpace(key)
+                ? "Section"
+                : char.ToUpperInvariant(key[0]) + key[1..];
+        }
+
+        private static string NormalizeAiContent(string content)
+        {
+            return WebUtility.HtmlDecode(content ?? string.Empty)
+                .Replace("\r\n", "\n")
+                .Replace("\r", "\n")
+                .Replace("â€¢", "-")
+                .Replace("â€“", "-")
+                .Replace("â€”", "-")
+                .Replace("â€œ", "\"")
+                .Replace("â€", "\"")
+                .Replace("â€™", "'");
+        }
+
+        private static string ConvertBasicHtmlToMarkdown(string content)
+        {
+            if (!Regex.IsMatch(content, "<[a-zA-Z][^>]*>"))
+            {
+                return content;
+            }
+
+            content = Regex.Replace(content, @"<\s*h1[^>]*>(.*?)<\s*/\s*h1\s*>", "\n# $1\n", RegexOptions.IgnoreCase | RegexOptions.Singleline);
+            content = Regex.Replace(content, @"<\s*h2[^>]*>(.*?)<\s*/\s*h2\s*>", "\n## $1\n", RegexOptions.IgnoreCase | RegexOptions.Singleline);
+            content = Regex.Replace(content, @"<\s*h3[^>]*>(.*?)<\s*/\s*h3\s*>", "\n### $1\n", RegexOptions.IgnoreCase | RegexOptions.Singleline);
+            content = Regex.Replace(content, @"<\s*li[^>]*>(.*?)<\s*/\s*li\s*>", "\n- $1", RegexOptions.IgnoreCase | RegexOptions.Singleline);
+            content = Regex.Replace(content, @"<\s*br\s*/?\s*>", "\n", RegexOptions.IgnoreCase);
+            content = Regex.Replace(content, @"<\s*/\s*p\s*>", "\n\n", RegexOptions.IgnoreCase);
+            content = Regex.Replace(content, @"<[^>]+>", " ", RegexOptions.Singleline);
+            return WebUtility.HtmlDecode(content);
+        }
+
+        private static bool IsMarkdownTableStart(string[] lines, int index)
+        {
+            if (index + 1 >= lines.Length) return false;
+            return lines[index].Contains('|') && Regex.IsMatch(lines[index + 1].Trim(), @"^\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$");
+        }
+
+        private static List<string> ParseMarkdownTableRow(string line)
+        {
+            var trimmed = line.Trim().Trim('|');
+            return trimmed.Split('|').Select(cell => cell.Trim()).ToList();
+        }
+
+        private static string StripMarkdownInline(string text)
+        {
+            text = NormalizeAiContent(text);
+            text = Regex.Replace(text, @"`([^`]*)`", "$1");
+            text = Regex.Replace(text, @"\*\*([^*]+)\*\*", "$1");
+            text = Regex.Replace(text, @"__([^_]+)__", "$1");
+            text = Regex.Replace(text, @"\*([^*]+)\*", "$1");
+            text = Regex.Replace(text, @"_([^_]+)_", "$1");
+            text = Regex.Replace(text, @"!\[([^\]]*)\]\([^)]+\)", "$1");
+            text = Regex.Replace(text, @"\[([^\]]+)\]\([^)]+\)", "$1");
+            text = Regex.Replace(text, @"^\s*#{1,6}\s*", "");
+            text = Regex.Replace(text, @"^\s*[-*+]\s+", "");
+            text = Regex.Replace(text, @"^\s*\d+[\.)]\s+", "");
+            text = text.Replace("|", " ");
+            return Regex.Replace(text, @"\s+", " ").Trim();
+        }
+
+        private static List<string> BuildReportCardPdfLines(Student student, string collegeName, string reportId)
+        {
+            var lines = new List<string>
+            {
+                collegeName.ToUpperInvariant(),
+                "Academic Progress & Performance Report Card",
+                "",
+                $"Student Name: {student.Name}",
+                $"Roll Number: #{student.RollNo}",
+                $"Course & Semester: {student.Course} (Semester {student.Semester})",
+                $"Assigned Class: {student.Class}",
+                $"Attendance Rate: {(student.Attendance.HasValue ? $"{student.Attendance}%" : "N/A")}",
+                $"Risk Evaluation Status: {student.RiskLevel} Risk",
+                "",
+                "Subject-wise Performance Record",
+                "Subject | Class Tests | Mid Term | House Exam | Total | Grade"
+            };
+
+            if (student.Marks != null && student.Marks.Count > 0)
+            {
+                foreach (var mark in student.Marks)
+                {
+                    var midTermMarks = mark.MidTerm?.Marks;
+                    var midTermMax = mark.MidTerm?.MaxMarks ?? 100;
+                    var houseExamMarks = mark.HouseExam?.Marks;
+                    var houseExamMax = mark.HouseExam?.MaxMarks ?? 100;
+                    var midTermStr = midTermMarks.HasValue ? $"{midTermMarks}/{midTermMax}" : "N/A";
+                    var houseExamStr = houseExamMarks.HasValue ? $"{houseExamMarks}/{houseExamMax}" : "N/A";
+                    var testsStr = "No Tests";
+                    double totalMarks = 0;
+                    double totalMax = 0;
+
+                    if (mark.ClassTests != null && mark.ClassTests.Count > 0)
+                    {
+                        testsStr = string.Join(", ", mark.ClassTests.Select(t => $"{t.Marks}/{t.MaxMarks}"));
+                        totalMarks += mark.ClassTests.Sum(t => t.Marks);
+                        totalMax += mark.ClassTests.Sum(t => t.MaxMarks);
+                    }
+
+                    if (midTermMarks.HasValue)
+                    {
+                        totalMarks += midTermMarks.Value;
+                        totalMax += midTermMax;
+                    }
+
+                    if (houseExamMarks.HasValue)
+                    {
+                        totalMarks += houseExamMarks.Value;
+                        totalMax += houseExamMax;
+                    }
+
+                    var percentage = totalMax > 0 ? (totalMarks / totalMax) * 100 : 0;
+                    var grade = percentage >= 91 ? "A1" : percentage >= 81 ? "A2" : percentage >= 71 ? "B1" : percentage >= 61 ? "B2" : percentage >= 51 ? "C1" : percentage >= 41 ? "C2" : percentage >= 33 ? "D" : "E";
+                    lines.Add($"{mark.SubjectName} | {testsStr} | {midTermStr} | {houseExamStr} | {totalMarks}/{totalMax} | {grade}");
+                }
+            }
+            else
+            {
+                lines.Add("No academic marks recorded for this semester yet.");
+            }
+
+            lines.Add("");
+            lines.Add("Risk Factor Diagnostics");
+            lines.Add(string.IsNullOrWhiteSpace(student.RiskExplanation) ? "No detailed risk diagnosis is generated yet." : student.RiskExplanation);
+            lines.Add("");
+            lines.Add("Academic Remedial Study Plan");
+            lines.Add(string.IsNullOrWhiteSpace(student.AiImprovementPlan) ? "No study improvement plan generated yet." : student.AiImprovementPlan);
+            lines.Add("");
+            lines.Add("Grading Scale: 91-100 A1, 81-90 A2, 71-80 B1, 61-70 B2, 51-60 C1, 41-50 C2, 33-40 D, Below 33 E");
+            lines.Add("");
+            lines.Add($"Generated automatically by EduGuard | Report Card ID: {reportId} | Date: {DateTime.UtcNow:yyyy-MM-dd}");
+
+            return lines;
+        }
+
+        private static byte[] BuildSimplePdf(List<string> sourceLines)
+        {
+            const int pageWidth = 595;
+            const int pageHeight = 842;
+            const int left = 42;
+            const int top = 800;
+            const int bottom = 48;
+            const int lineHeight = 15;
+            const int maxChars = 92;
+
+            var wrappedLines = sourceLines
+                .SelectMany(line => WrapPdfLine(WebUtility.HtmlDecode(line), maxChars))
+                .ToList();
+
+            var linesPerPage = Math.Max(1, (top - bottom) / lineHeight);
+            var pages = wrappedLines
+                .Select((line, index) => new { line, index })
+                .GroupBy(item => item.index / linesPerPage)
+                .Select(group => group.Select(item => item.line).ToList())
+                .ToList();
+
+            if (pages.Count == 0)
+            {
+                pages.Add(new List<string> { "Report card is empty." });
+            }
+
+            var objects = new List<string>();
+            objects.Add("<< /Type /Catalog /Pages 2 0 R >>");
+
+            var pageObjectNumbers = new List<int>();
+            var contentObjectNumbers = new List<int>();
+            var nextObjectNumber = 3;
+
+            foreach (var _ in pages)
+            {
+                pageObjectNumbers.Add(nextObjectNumber++);
+                contentObjectNumbers.Add(nextObjectNumber++);
+            }
+
+            objects.Add($"<< /Type /Pages /Kids [{string.Join(" ", pageObjectNumbers.Select(n => $"{n} 0 R"))}] /Count {pages.Count} >>");
+
+            for (var pageIndex = 0; pageIndex < pages.Count; pageIndex++)
+            {
+                var pageObject = $"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {pageWidth} {pageHeight}] /Resources << /Font << /F1 {nextObjectNumber} 0 R >> >> /Contents {contentObjectNumbers[pageIndex]} 0 R >>";
+                objects.Add(pageObject);
+
+                var content = new StringBuilder();
+                var y = top;
+                foreach (var line in pages[pageIndex])
+                {
+                    var fontSize = line == line.ToUpperInvariant() && line.Length > 8 ? 13 : 10;
+                    content.AppendLine($"BT /F1 {fontSize} Tf {left} {y} Td ({EscapePdfText(line)}) Tj ET");
+                    y -= lineHeight;
+                }
+
+                var contentText = content.ToString();
+                objects.Add($"<< /Length {Encoding.ASCII.GetByteCount(contentText)} >>\nstream\n{contentText}endstream");
+            }
+
+            objects.Add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
+
+            var pdf = new StringBuilder();
+            var offsets = new List<int> { 0 };
+            pdf.Append("%PDF-1.4\n");
+
+            for (var i = 0; i < objects.Count; i++)
+            {
+                offsets.Add(Encoding.ASCII.GetByteCount(pdf.ToString()));
+                pdf.Append($"{i + 1} 0 obj\n{objects[i]}\nendobj\n");
+            }
+
+            var xrefOffset = Encoding.ASCII.GetByteCount(pdf.ToString());
+            pdf.Append($"xref\n0 {objects.Count + 1}\n");
+            pdf.Append("0000000000 65535 f \n");
+            for (var i = 1; i < offsets.Count; i++)
+            {
+                pdf.Append($"{offsets[i]:D10} 00000 n \n");
+            }
+
+            pdf.Append($"trailer\n<< /Size {objects.Count + 1} /Root 1 0 R >>\nstartxref\n{xrefOffset}\n%%EOF");
+            return Encoding.ASCII.GetBytes(pdf.ToString());
+        }
+
+        private static IEnumerable<string> WrapPdfLine(string line, int maxChars)
+        {
+            line = (line ?? string.Empty)
+                .Replace("\r", " ")
+                .Replace("\n", " ")
+                .Trim();
+
+            if (line.Length <= maxChars)
+            {
+                yield return line;
+                yield break;
+            }
+
+            while (line.Length > maxChars)
+            {
+                var splitAt = line.LastIndexOf(' ', maxChars);
+                if (splitAt <= 0) splitAt = maxChars;
+                yield return line[..splitAt].Trim();
+                line = line[splitAt..].Trim();
+            }
+
+            if (line.Length > 0)
+            {
+                yield return line;
+            }
+        }
+
+        private static string EscapePdfText(string text)
+        {
+            return text
+                .Replace("\\", "\\\\")
+                .Replace("(", "\\(")
+                .Replace(")", "\\)")
+                .Replace("\t", "    ");
         }
     }
 

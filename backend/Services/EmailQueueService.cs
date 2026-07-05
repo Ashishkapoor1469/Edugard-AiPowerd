@@ -25,6 +25,7 @@ namespace EduGuard.Services
         private readonly HttpClient _httpClient;
         private readonly ILogger<EmailQueueService> _logger;
         private readonly string _resendApiKey;
+        private readonly string _frontendUrl;
         private readonly bool _hasKey;
         private const int MaxRetries = 3;
         private const int DelayBetweenEmailsMs = 500;
@@ -36,6 +37,7 @@ namespace EduGuard.Services
             _httpClient = new HttpClient();
             
             _resendApiKey = configuration.GetValue<string>("RESEND_API_KEY") ?? string.Empty;
+            _frontendUrl = (configuration.GetValue<string>("FRONTEND_URL") ?? "http://localhost:5173").TrimEnd('/');
             _hasKey = !string.IsNullOrEmpty(_resendApiKey) && _resendApiKey != "your_resend_api_key";
 
             if (!_hasKey)
@@ -95,7 +97,7 @@ namespace EduGuard.Services
 
         private async Task SendEmailInternalAsync(string email, string token)
         {
-            var verificationLink = $"http://localhost:5173/verify?token={token}&email={Uri.EscapeDataString(email)}";
+            var verificationLink = $"{_frontendUrl}/verify?token={token}&email={Uri.EscapeDataString(email)}";
 
             if (_hasKey)
             {

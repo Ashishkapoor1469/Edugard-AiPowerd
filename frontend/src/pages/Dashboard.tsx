@@ -54,6 +54,7 @@ const Dashboard: React.FC = () => {
   const [pendingStudents, setPendingStudents] = useState<Student[]>([]);
   const [stats, setStats] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const studentsRequestId = useRef(0);
   
   // Table Filters
   const [riskFilter, setRiskFilter] = useState("");
@@ -120,6 +121,8 @@ const Dashboard: React.FC = () => {
   };
 
   const fetchStudents = async (signal?: AbortSignal) => {
+    const requestId = studentsRequestId.current + 1;
+    studentsRequestId.current = requestId;
     setLoading(true);
     try {
       const params: any = {
@@ -132,7 +135,7 @@ const Dashboard: React.FC = () => {
       if (riskFilter) params.riskLevel = riskFilter;
 
       const res = await axios.get("/api/students", { params, signal });
-      if (res.data.success) {
+      if (res.data.success && requestId === studentsRequestId.current) {
         setStudents(res.data.data);
         setTotalPages(res.data.pages);
       }
@@ -141,7 +144,9 @@ const Dashboard: React.FC = () => {
       console.error(err);
       toast.error("Failed to fetch students list");
     } finally {
-      setLoading(false);
+      if (!signal?.aborted && requestId === studentsRequestId.current) {
+        setLoading(false);
+      }
     }
   };
 
@@ -508,7 +513,44 @@ const Dashboard: React.FC = () => {
             </div>
 
             {loading ? (
-              <p className="text-sm text-center py-10">Loading class data...</p>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse text-sm">
+                  <thead>
+                    <tr className="border-b border-[#dadce0] text-[#5f6368] font-medium">
+                      <th className="py-3 px-4">Roll No</th>
+                      <th className="py-3 px-4">Name</th>
+                      <th className="py-3 px-4">Class</th>
+                      <th className="py-3 px-4">Attendance</th>
+                      <th className="py-3 px-4">Risk Status</th>
+                      <th className="py-3 px-4 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[1, 2, 3, 4, 5, 6].map((row) => (
+                      <tr key={row} className="border-b border-slate-50">
+                        <td className="py-3 px-4">
+                          <div className="h-4 w-16 animate-pulse rounded bg-slate-100" />
+                        </td>
+                        <td className="py-3 px-4">
+                          <div className="h-4 w-36 animate-pulse rounded bg-slate-100" />
+                        </td>
+                        <td className="py-3 px-4">
+                          <div className="h-4 w-20 animate-pulse rounded bg-slate-100" />
+                        </td>
+                        <td className="py-3 px-4">
+                          <div className="h-4 w-14 animate-pulse rounded bg-slate-100" />
+                        </td>
+                        <td className="py-3 px-4">
+                          <div className="h-5 w-20 animate-pulse rounded-full bg-slate-100" />
+                        </td>
+                        <td className="py-3 px-4">
+                          <div className="ml-auto h-4 w-24 animate-pulse rounded bg-slate-100" />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             ) : students.length === 0 ? (
               <p className="text-sm text-center py-10 text-[#5f6368] italic">No matching student records found.</p>
             ) : (
@@ -998,28 +1040,52 @@ const Dashboard: React.FC = () => {
                           </div>
                         </div>
                         {job.status === "completed" && job.outputFile && (
-                          <button
-                            onClick={async () => {
-                              try {
-                                const res = await axios.get(job.outputFile, { responseType: "blob" });
-                                const url = window.URL.createObjectURL(new Blob([res.data], { type: "text/html" }));
-                                const a = document.createElement("a");
-                                a.href = url;
-                                a.download = `Report-Card-${job.studentName.replace(/\s+/g, "-")}-${new Date(job.createdAt).toISOString().slice(0,10)}.html`;
-                                document.body.appendChild(a);
-                                a.click();
-                                a.remove();
-                                window.URL.revokeObjectURL(url);
-                                toast.success("Report card downloaded!");
-                              } catch {
-                                toast.error("Failed to download report card.");
-                              }
-                            }}
-                            className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-emerald-200 rounded-lg text-[10px] font-bold text-emerald-700 hover:bg-emerald-50 transition-colors shadow-sm cursor-pointer"
-                          >
-                            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                            Download
-                          </button>
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={async () => {
+                                try {
+                                  const pdfUrl = `/api/students/report-card/download/${job._id}/pdf`;
+                                  const res = await axios.get(pdfUrl, { responseType: "blob" });
+                                  const url = window.URL.createObjectURL(new Blob([res.data], { type: "application/pdf" }));
+                                  const a = document.createElement("a");
+                                  a.href = url;
+                                  a.download = `Report-Card-${job.studentName.replace(/\s+/g, "-")}-${new Date(job.createdAt).toISOString().slice(0,10)}.pdf`;
+                                  document.body.appendChild(a);
+                                  a.click();
+                                  a.remove();
+                                  window.URL.revokeObjectURL(url);
+                                  toast.success("PDF report card downloaded!");
+                                } catch {
+                                  toast.error("Failed to download PDF report card.");
+                                }
+                              }}
+                              className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 border border-emerald-600 rounded-lg text-[10px] font-bold text-white hover:bg-emerald-700 transition-colors shadow-sm cursor-pointer"
+                            >
+                              <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                              PDF
+                            </button>
+                            <button
+                              onClick={async () => {
+                                try {
+                                  const res = await axios.get(job.outputFile, { responseType: "blob" });
+                                  const url = window.URL.createObjectURL(new Blob([res.data], { type: "text/html" }));
+                                  const a = document.createElement("a");
+                                  a.href = url;
+                                  a.download = `Report-Card-${job.studentName.replace(/\s+/g, "-")}-${new Date(job.createdAt).toISOString().slice(0,10)}.html`;
+                                  document.body.appendChild(a);
+                                  a.click();
+                                  a.remove();
+                                  window.URL.revokeObjectURL(url);
+                                  toast.success("HTML report card downloaded!");
+                                } catch {
+                                  toast.error("Failed to download HTML report card.");
+                                }
+                              }}
+                              className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-emerald-200 rounded-lg text-[10px] font-bold text-emerald-700 hover:bg-emerald-50 transition-colors shadow-sm cursor-pointer"
+                            >
+                              HTML
+                            </button>
+                          </div>
                         )}
                       </div>
                     ))}

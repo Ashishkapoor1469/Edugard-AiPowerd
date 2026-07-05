@@ -1,5 +1,8 @@
 import { HubConnectionBuilder, HubConnection, HttpTransportType } from "@microsoft/signalr";
 
+const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:5000";
+const hubUrl = `${apiUrl.replace(/\/$/, "")}/eduguardHub`;
+
 class SignalRWrapper {
   private connection: HubConnection | null = null;
   private eventListeners: Map<string, Array<(...args: any[]) => void>> = new Map();
@@ -11,7 +14,7 @@ class SignalRWrapper {
 
   private initConnection() {
     this.connection = new HubConnectionBuilder()
-      .withUrl("http://localhost:5000/eduguardHub", {
+      .withUrl(hubUrl, {
         accessTokenFactory: () => localStorage.getItem("token") || "",
         skipNegotiation: true,
         transport: HttpTransportType.WebSockets
@@ -50,13 +53,6 @@ class SignalRWrapper {
         try {
           await this.connection!.start();
           console.log("[SignalR] Connected successfully.");
-
-          // Re-attach any listeners that were registered before connection
-          this.eventListeners.forEach((callbacks, eventName) => {
-            callbacks.forEach(callback => {
-              this.connection?.on(eventName, callback);
-            });
-          });
         } catch (err) {
           console.error("[SignalR] Connection error:", err);
           this.connectPromise = null;

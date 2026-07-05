@@ -21,15 +21,31 @@ namespace EduGuard.Controllers
             _mongoService = mongoService;
         }
 
+        [AllowAnonymous]
         [HttpGet("list")]
-        public async Task<IActionResult> GetMentorsList()
+        public async Task<IActionResult> GetMentorsList([FromQuery] string? collegeId = null, [FromQuery] string? courseId = null)
         {
-            var mentors = await _mongoService.Mentors.Find(_ => true).ToListAsync();
+            var filters = new List<FilterDefinition<Mentor>>
+            {
+                Builders<Mentor>.Filter.Eq(m => m.Status, "approved")
+            };
+
+            if (!string.IsNullOrWhiteSpace(collegeId))
+            {
+                filters.Add(Builders<Mentor>.Filter.Eq(m => m.CollegeId, collegeId));
+            }
+
+            if (!string.IsNullOrWhiteSpace(courseId))
+            {
+                filters.Add(Builders<Mentor>.Filter.Eq(m => m.AssignedCourseId, courseId));
+            }
+
+            var filter = Builders<Mentor>.Filter.And(filters);
+            var mentors = await _mongoService.Mentors.Find(filter).SortBy(m => m.Name).ToListAsync();
             var resultList = new List<object>();
 
             foreach (var mentor in mentors)
             {
-                // Count current students assigned to this mentor
                 var assignedCount = await _mongoService.Students.CountDocumentsAsync(s => s.MentorId == mentor.Id);
 
                 resultList.Add(new
@@ -40,10 +56,15 @@ namespace EduGuard.Controllers
                     email = mentor.Email,
                     role = mentor.Role,
                     isOnline = mentor.IsOnline,
+                    collegeId = mentor.CollegeId,
+                    assignedCourseId = mentor.AssignedCourseId,
+                    department = mentor.Department,
+                    status = mentor.Status,
                     assignedClasses = mentor.AssignedClasses,
                     assignedCount,
                     studentCount = assignedCount,
-                    capacity = 30
+                    maxStudents = mentor.MaxStudents,
+                    capacity = mentor.MaxStudents
                 });
             }
 

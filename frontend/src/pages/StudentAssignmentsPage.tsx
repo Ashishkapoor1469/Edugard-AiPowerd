@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import axios from "axios";
-import { useAuth } from "../context/AuthContext";
 import toast from "react-hot-toast";
+import ReactMarkdown from "react-markdown";
 
 interface Assignment {
   _id: string;
@@ -20,8 +20,61 @@ interface Submission {
   submittedAt?: string;
 }
 
+type StudyPlanSegment =
+  | { type: "markdown"; content: string }
+  | { type: "table"; headers: string[]; rows: string[][] };
+
+const isMarkdownTableSeparator = (line: string) =>
+  /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(line);
+
+const parseMarkdownTableRow = (line: string) => {
+  const trimmed = line.trim();
+  const withoutEdges = trimmed.replace(/^\|/, "").replace(/\|$/, "");
+  return withoutEdges.split("|").map((cell) => cell.trim());
+};
+
+const splitStudyPlanMarkdown = (content: string): StudyPlanSegment[] => {
+  const lines = content.split(/\r?\n/);
+  const segments: StudyPlanSegment[] = [];
+  let markdownBuffer: string[] = [];
+
+  const flushMarkdown = () => {
+    const markdown = markdownBuffer.join("\n").trim();
+    if (markdown) {
+      segments.push({ type: "markdown", content: markdown });
+    }
+    markdownBuffer = [];
+  };
+
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index];
+    const nextLine = lines[index + 1] || "";
+
+    if (line.includes("|") && isMarkdownTableSeparator(nextLine)) {
+      flushMarkdown();
+
+      const headers = parseMarkdownTableRow(line);
+      const rows: string[][] = [];
+      index += 2;
+
+      while (index < lines.length && lines[index].includes("|") && lines[index].trim()) {
+        const cells = parseMarkdownTableRow(lines[index]);
+        rows.push(headers.map((_, cellIndex) => cells[cellIndex] || ""));
+        index += 1;
+      }
+
+      index -= 1;
+      segments.push({ type: "table", headers, rows });
+    } else {
+      markdownBuffer.push(line);
+    }
+  }
+
+  flushMarkdown();
+  return segments;
+};
+
 const StudentAssignmentsPage: React.FC = () => {
-  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<"assignments" | "studyplan">("assignments");
   
   // Student Profile Data (contains AI study plans)
@@ -270,31 +323,7 @@ const StudentAssignmentsPage: React.FC = () => {
                   </svg>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  {/* Performance Risk Factors */}
-                  <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs flex flex-col justify-between">
-                    <div>
-                      <div className="flex items-center gap-2 mb-4">
-                        <div className="h-8 w-8 rounded-lg bg-orange-50 border border-orange-100 flex items-center justify-center text-orange-600">
-                          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                          </svg>
-                        </div>
-                        <h2 className="text-sm font-bold text-slate-800">Learning Risk Factors</h2>
-                      </div>
-                      
-                      {studentProfile.riskExplanation ? (
-                        <div className="bg-slate-50 border border-slate-100 rounded-xl p-4 text-xs text-slate-600 leading-relaxed whitespace-pre-line">
-                          {studentProfile.riskExplanation}
-                        </div>
-                      ) : (
-                        <p className="text-xs text-slate-500 py-10 text-center italic border border-dashed border-slate-100 rounded-xl">
-                          No performance risk factors have been recorded for your profile.
-                        </p>
-                      )}
-                    </div>
-                  </div>
-
+                <div className="grid grid-cols-1 gap-6">
                   {/* Weekly Learning Study Plan */}
                   <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs flex flex-col justify-between">
                     <div>
@@ -308,8 +337,65 @@ const StudentAssignmentsPage: React.FC = () => {
                       </div>
                       
                       {studentProfile.aiImprovementPlan ? (
-                        <div className="bg-slate-50 border border-slate-100 rounded-xl p-4 text-xs text-slate-600 leading-relaxed whitespace-pre-line">
-                          {studentProfile.aiImprovementPlan}
+                        <div className="rounded-xl border border-indigo-100 bg-indigo-50/30 p-4">
+                          <div className="space-y-4">
+                            {splitStudyPlanMarkdown(studentProfile.aiImprovementPlan).map((segment, index) => (
+                              segment.type === "table" ? (
+                                <div key={`table-${index}`} className="overflow-x-auto rounded-xl border border-indigo-100 bg-white shadow-xs">
+                                  <table className="w-full min-w-[560px] border-collapse text-left text-xs">
+                                    <thead className="bg-indigo-50 text-[10px] font-bold uppercase tracking-wide text-primary">
+                                      <tr>
+                                        {segment.headers.map((header, headerIndex) => (
+                                          <th key={`${header}-${headerIndex}`} className="border-b border-indigo-100 px-3 py-2">
+                                            {header}
+                                          </th>
+                                        ))}
+                                      </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100 bg-white text-slate-700">
+                                      {segment.rows.map((row, rowIndex) => (
+                                        <tr key={rowIndex} className="align-top odd:bg-white even:bg-slate-50/60">
+                                          {row.map((cell, cellIndex) => (
+                                            <td key={cellIndex} className="px-3 py-2 leading-relaxed">
+                                              <ReactMarkdown
+                                                components={{
+                                                  p: ({ children }) => <span>{children}</span>,
+                                                  strong: ({ children }) => <strong className="font-bold text-slate-900">{children}</strong>,
+                                                }}
+                                              >
+                                                {cell}
+                                              </ReactMarkdown>
+                                            </td>
+                                          ))}
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              ) : (
+                                <div key={`markdown-${index}`} className="prose prose-sm max-w-none text-slate-700 prose-headings:mt-3 prose-headings:mb-2 prose-headings:text-slate-900 prose-headings:font-bold prose-p:my-2 prose-p:text-xs prose-p:leading-relaxed prose-strong:text-slate-900 prose-li:my-1 prose-li:text-xs prose-ul:my-2 prose-ol:my-2 prose-code:rounded prose-code:bg-white prose-code:px-1 prose-code:py-0.5 prose-code:text-[11px] prose-code:text-primary">
+                                  <ReactMarkdown
+                                    components={{
+                                      h1: ({ children }) => <h3 className="text-sm font-bold text-slate-900">{children}</h3>,
+                                      h2: ({ children }) => <h3 className="mt-4 border-t border-indigo-100 pt-3 text-sm font-bold text-slate-900">{children}</h3>,
+                                      h3: ({ children }) => <h4 className="mt-3 text-xs font-bold uppercase tracking-wide text-primary">{children}</h4>,
+                                      ul: ({ children }) => <ul className="ml-4 list-disc space-y-1">{children}</ul>,
+                                      ol: ({ children }) => <ol className="ml-4 list-decimal space-y-1">{children}</ol>,
+                                      li: ({ children }) => <li className="pl-1 leading-relaxed text-slate-700">{children}</li>,
+                                      p: ({ children }) => <p className="text-xs leading-relaxed text-slate-700">{children}</p>,
+                                      blockquote: ({ children }) => (
+                                        <blockquote className="my-3 border-l-4 border-primary bg-white/70 py-2 pl-3 text-xs font-medium text-slate-700">
+                                          {children}
+                                        </blockquote>
+                                      ),
+                                    }}
+                                  >
+                                    {segment.content}
+                                  </ReactMarkdown>
+                                </div>
+                              )
+                            ))}
+                          </div>
                         </div>
                       ) : (
                         <p className="text-xs text-slate-500 py-10 text-center italic border border-dashed border-slate-100 rounded-xl">

@@ -5,11 +5,17 @@ import { useAuth } from "../context/AuthContext.js";
 
 interface Mentor {
   _id: string;
+  id?: string;
   name: string;
   email: string;
   status: string;
   department: string;
+  batch?: string;
+  semester?: number;
   maxStudents: number;
+  assignedClasses?: string[];
+  assignedCount?: number;
+  studentCount?: number;
 }
 
 const CollegeAdminDashboard: React.FC = () => {
@@ -17,7 +23,7 @@ const CollegeAdminDashboard: React.FC = () => {
   const [activeTab, setActiveTab] = useState<"mentors" | "announcements" | "syllabus">("mentors");
 
   // State
-  const [pendingMentors, setPendingMentors] = useState<Mentor[]>([]);
+  const [mentors, setMentors] = useState<Mentor[]>([]);
   const [loading, setLoading] = useState(false);
 
   // Announcement Form State
@@ -39,16 +45,16 @@ const CollegeAdminDashboard: React.FC = () => {
   const [uploadingSyllabus, setUploadingSyllabus] = useState(false);
   const [showSyllabusHelp, setShowSyllabusHelp] = useState(false);
 
-  const fetchPendingMentors = async () => {
+  const fetchMentors = async () => {
     setLoading(true);
     try {
-      const res = await axios.get("/api/admin/mentors/pending");
+      const res = await axios.get("/api/admin/mentors");
       if (res.data.success) {
-        setPendingMentors(res.data.data);
+        setMentors(res.data.data || []);
       }
     } catch (err) {
       console.error(err);
-      toast.error("Failed to load pending mentors");
+      toast.error("Failed to load mentors");
     } finally {
       setLoading(false);
     }
@@ -56,20 +62,41 @@ const CollegeAdminDashboard: React.FC = () => {
 
   useEffect(() => {
     if (activeTab === "mentors") {
-      fetchPendingMentors();
+      fetchMentors();
     }
   }, [activeTab]);
 
-  const handleUpdateStatus = async (id: string, status: "approved" | "rejected") => {
+  const handleUpdateStatus = async (id: string, status: "approved" | "rejected" | "disabled", successLabel?: string) => {
     try {
       const res = await axios.post(`/api/admin/mentors/${id}/status`, { status });
       if (res.data.success) {
-        toast.success(`Mentor successfully ${status}!`);
-        fetchPendingMentors();
+        const label = successLabel || (status === "disabled" ? "blocked" : status);
+        toast.success(`Mentor successfully ${label}!`);
+        fetchMentors();
       }
     } catch (err) {
       toast.error("Action failed");
     }
+  };
+
+  const getStatusBadge = (status: string) => {
+    const normalized = status?.toLowerCase();
+    if (normalized === "approved") {
+      return "bg-emerald-50 text-emerald-700 border-emerald-100";
+    }
+    if (normalized === "pending_verification") {
+      return "bg-amber-50 text-amber-700 border-amber-100";
+    }
+    if (normalized === "disabled") {
+      return "bg-slate-100 text-slate-700 border-slate-200";
+    }
+    return "bg-red-50 text-red-700 border-red-100";
+  };
+
+  const formatStatus = (status: string) => {
+    if (status === "pending_verification") return "Pending";
+    if (status === "disabled") return "Blocked";
+    return status ? status.charAt(0).toUpperCase() + status.slice(1) : "Unknown";
   };
 
   const handleCreateAnnouncement = async (e: React.FormEvent) => {
@@ -172,7 +199,7 @@ const CollegeAdminDashboard: React.FC = () => {
       {/* Navigation Tabs */}
       <div className="mb-6 border-b border-slate-200 flex gap-2 overflow-x-auto pb-px">
         {[
-          { id: "mentors", label: "Mentor Approvals" },
+          { id: "mentors", label: "Mentor Management" },
           { id: "announcements", label: "Announcements & Events" },
           { id: "syllabus", label: "University Syllabus" },
         ].map((tab) => (
@@ -192,10 +219,18 @@ const CollegeAdminDashboard: React.FC = () => {
 
       {/* Tab Contents */}
       <div className="grid grid-cols-1 gap-6">
-        {/* TAB 1: MENTOR APPROVALS */}
+        {/* TAB 1: MENTOR MANAGEMENT */}
         {activeTab === "mentors" && (
           <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs">
-            <h2 className="text-sm font-bold text-slate-800 mb-4">Pending Verification Requests</h2>
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 mb-4">
+              <div>
+                <h2 className="text-sm font-bold text-slate-800">Mentor Management</h2>
+                <p className="text-[10px] text-slate-500 mt-1">Review registrations and control mentor access for your college.</p>
+              </div>
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider bg-slate-50 border border-slate-100 rounded-lg px-3 py-1">
+                {mentors.length} Mentors
+              </span>
+            </div>
             {loading ? (
               <div className="flex justify-center py-8">
                 <svg className="h-6 w-6 animate-spin text-primary" fill="none" viewBox="0 0 24 24">
@@ -203,9 +238,9 @@ const CollegeAdminDashboard: React.FC = () => {
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                 </svg>
               </div>
-            ) : pendingMentors.length === 0 ? (
+            ) : mentors.length === 0 ? (
               <p className="text-xs text-slate-500 py-10 text-center italic border border-dashed border-slate-200 rounded-xl bg-slate-50/50">
-                No pending registrations found for your college.
+                No mentors found for your college.
               </p>
             ) : (
               <div className="overflow-x-auto border border-slate-100 rounded-xl">
@@ -215,30 +250,62 @@ const CollegeAdminDashboard: React.FC = () => {
                       <th className="px-4 py-3">Mentor Name</th>
                       <th className="px-4 py-3">Email Address</th>
                       <th className="px-4 py-3">Department</th>
-                      <th className="px-4 py-3 text-center">Max Capacity</th>
+                      <th className="px-4 py-3 text-center">Students</th>
+                      <th className="px-4 py-3 text-center">Status</th>
                       <th className="px-4 py-3 text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50 text-xs">
-                    {pendingMentors.map((m) => (
+                    {mentors.map((m) => (
                       <tr key={m._id} className="hover:bg-slate-50/50">
-                        <td className="px-4 py-3 font-semibold text-slate-800">{m.name}</td>
+                        <td className="px-4 py-3">
+                          <div className="font-semibold text-slate-800">{m.name}</div>
+                          <div className="text-[10px] text-slate-400">{m.assignedClasses?.length ? m.assignedClasses.join(", ") : m.batch || "No class assigned"}</div>
+                        </td>
                         <td className="px-4 py-3 text-slate-500">{m.email}</td>
                         <td className="px-4 py-3 text-slate-500">{m.department || "N/A"}</td>
-                        <td className="px-4 py-3 text-center text-slate-700">{m.maxStudents}</td>
-                        <td className="px-4 py-3 text-right space-x-1.5">
-                          <button
-                            onClick={() => handleUpdateStatus(m._id, "approved")}
-                            className="bg-emerald-50 text-emerald-700 border border-emerald-100 px-3 py-1 rounded-lg font-bold text-[10px] hover:bg-emerald-100 transition-colors"
-                          >
-                            Approve
-                          </button>
-                          <button
-                            onClick={() => handleUpdateStatus(m._id, "rejected")}
-                            className="bg-red-50 text-red-700 border border-red-100 px-3 py-1 rounded-lg font-bold text-[10px] hover:bg-red-100 transition-colors"
-                          >
-                            Reject
-                          </button>
+                        <td className="px-4 py-3 text-center text-slate-700">
+                          {m.assignedCount ?? m.studentCount ?? 0}/{m.maxStudents || 50}
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          <span className={`inline-flex items-center justify-center min-w-20 rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider ${getStatusBadge(m.status)}`}>
+                            {formatStatus(m.status)}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <div className="flex flex-wrap justify-end gap-1.5">
+                            {m.status === "pending_verification" && (
+                              <>
+                                <button
+                                  onClick={() => handleUpdateStatus(m._id, "approved", "approved")}
+                                  className="bg-emerald-50 text-emerald-700 border border-emerald-100 px-3 py-1 rounded-lg font-bold text-[10px] hover:bg-emerald-100 transition-colors"
+                                >
+                                  Approve
+                                </button>
+                                <button
+                                  onClick={() => handleUpdateStatus(m._id, "rejected", "rejected")}
+                                  className="bg-red-50 text-red-700 border border-red-100 px-3 py-1 rounded-lg font-bold text-[10px] hover:bg-red-100 transition-colors"
+                                >
+                                  Reject
+                                </button>
+                              </>
+                            )}
+                            {m.status === "disabled" ? (
+                              <button
+                                onClick={() => handleUpdateStatus(m._id, "approved", "unblocked")}
+                                className="bg-emerald-50 text-emerald-700 border border-emerald-100 px-3 py-1 rounded-lg font-bold text-[10px] hover:bg-emerald-100 transition-colors"
+                              >
+                                Unblock
+                              </button>
+                            ) : m.status !== "pending_verification" && (
+                              <button
+                                onClick={() => handleUpdateStatus(m._id, "disabled", "blocked")}
+                                className="bg-slate-100 text-slate-700 border border-slate-200 px-3 py-1 rounded-lg font-bold text-[10px] hover:bg-slate-200 transition-colors"
+                              >
+                                Block
+                              </button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     ))}
