@@ -75,8 +75,11 @@ namespace EduGuard.Controllers
 
         // GET /api/chat/{studentId} — Fetch chat history
         [HttpGet("{studentId}")]
-        public async Task<IActionResult> GetMessages(string studentId)
+        public async Task<IActionResult> GetMessages(string studentId, [FromQuery] int page = 1, [FromQuery] int limit = 20)
         {
+            page = Math.Max(1, page);
+            limit = Math.Clamp(limit, 1, 50);
+
             var userId = User.FindFirst("id")?.Value;
             if (string.IsNullOrEmpty(userId))
             {
@@ -101,15 +104,21 @@ namespace EduGuard.Controllers
                 );
             }
 
+            var total = await _mongoService.Messages.CountDocumentsAsync(filter);
             var messages = await _mongoService.Messages
                 .Find(filter)
-                .SortBy(m => m.CreatedAt)
+                .SortByDescending(m => m.CreatedAt)
+                .Skip((page - 1) * limit)
+                .Limit(limit)
                 .ToListAsync();
+            messages.Reverse();
 
             return Ok(new
             {
                 success = true,
                 count = messages.Count,
+                total,
+                pages = (int)Math.Ceiling(total / (double)limit),
                 data = messages
             });
         }

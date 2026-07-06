@@ -62,6 +62,13 @@
   animation: fade-in 0.15s ease-out;
 }
 
+@keyframes shimmer {
+  100% { transform: translateX(100%); }
+}
+.animate-shimmer {
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+
 /* Custom scrollbars */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }

@@ -134,6 +134,15 @@ namespace EduGuard.Controllers
             {
                 filters.Add(Builders<Student>.Filter.Eq(s => s.MentorId, userId));
             }
+            if (userRole == "college-admin" && !string.IsNullOrEmpty(userId))
+            {
+                var admin = await _mongoService.Admins.Find(a => a.Id == userId).FirstOrDefaultAsync();
+                if (string.IsNullOrEmpty(admin?.CollegeId))
+                    return Forbid();
+
+                filters.Add(Builders<Student>.Filter.Eq(s => s.CollegeId, admin.CollegeId));
+                collegeId = null;
+            }
 
             if (!string.IsNullOrWhiteSpace(course))
             {

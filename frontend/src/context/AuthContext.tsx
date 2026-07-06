@@ -1,6 +1,7 @@
 import React, { createContext, useState, useEffect, useContext } from "react";
 import axios from "axios";
 import socket from "../utils/socket.js";
+import { installHttpCache } from "../utils/httpCache.js";
 
 export interface User {
   id: string;
@@ -39,6 +40,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:5000";
 axios.defaults.baseURL = apiUrl;
+installHttpCache();
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);

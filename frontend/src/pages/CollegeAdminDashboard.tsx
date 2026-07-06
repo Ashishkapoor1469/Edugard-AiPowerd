@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import toast from "react-hot-toast";
 import { useAuth } from "../context/AuthContext.js";
@@ -18,13 +19,27 @@ interface Mentor {
   studentCount?: number;
 }
 
+interface RiskStudent {
+  _id: string;
+  rollNo: string;
+  name: string;
+  course: string;
+  class: string;
+  attendance: number | null;
+  riskScore: number;
+  riskLevel: "high" | "critical";
+}
+
 const CollegeAdminDashboard: React.FC = () => {
   const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState<"mentors" | "announcements" | "syllabus">("mentors");
+  const navigate = useNavigate();
+  const [activeTab, setActiveTab] = useState<"mentors" | "risk-students" | "announcements" | "syllabus">("mentors");
 
   // State
   const [mentors, setMentors] = useState<Mentor[]>([]);
+  const [riskStudents, setRiskStudents] = useState<RiskStudent[]>([]);
   const [loading, setLoading] = useState(false);
+  const [riskLoading, setRiskLoading] = useState(false);
 
   // Announcement Form State
   const [annTitle, setAnnTitle] = useState("");
@@ -60,9 +75,35 @@ const CollegeAdminDashboard: React.FC = () => {
     }
   };
 
+  const fetchRiskStudents = async () => {
+    setRiskLoading(true);
+    try {
+      const loadRisk = async (riskLevel: RiskStudent["riskLevel"]) => {
+        const first = await axios.get("/api/students", { params: { riskLevel, limit: 100, collegeId: user?.collegeId } });
+        if (!first.data.success) return [];
+        const rest = await Promise.all(
+          Array.from({ length: Math.max(0, first.data.pages - 1) }, (_, i) =>
+            axios.get("/api/students", { params: { riskLevel, limit: 100, page: i + 2, collegeId: user?.collegeId } })
+          )
+        );
+        return [first, ...rest].flatMap((res) => res.data.data || []);
+      };
+
+      setRiskStudents([...(await loadRisk("critical")), ...(await loadRisk("high"))]);
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to load risk students");
+    } finally {
+      setRiskLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (activeTab === "mentors") {
       fetchMentors();
+    }
+    if (activeTab === "risk-students") {
+      fetchRiskStudents();
     }
   }, [activeTab]);
 
@@ -98,6 +139,12 @@ const CollegeAdminDashboard: React.FC = () => {
     if (status === "disabled") return "Blocked";
     return status ? status.charAt(0).toUpperCase() + status.slice(1) : "Unknown";
   };
+
+  const riskGroups = riskStudents.reduce<Record<string, RiskStudent[]>>((groups, student) => {
+    const key = `${student.course || "Unknown Degree"}|${student.class || "Unassigned Class"}`;
+    (groups[key] ||= []).push(student);
+    return groups;
+  }, {});
 
   const handleCreateAnnouncement = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -200,6 +247,7 @@ const CollegeAdminDashboard: React.FC = () => {
       <div className="mb-6 border-b border-slate-200 flex gap-2 overflow-x-auto pb-px">
         {[
           { id: "mentors", label: "Mentor Management" },
+          { id: "risk-students", label: "Risk Students" },
           { id: "announcements", label: "Announcements & Events" },
           { id: "syllabus", label: "University Syllabus" },
         ].map((tab) => (
@@ -311,6 +359,90 @@ const CollegeAdminDashboard: React.FC = () => {
                     ))}
                   </tbody>
                 </table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* TAB 2: RISK STUDENTS */}
+        {activeTab === "risk-students" && (
+          <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 mb-4">
+              <div>
+                <h2 className="text-sm font-bold text-slate-800">Risk Students</h2>
+                <p className="text-[10px] text-slate-500 mt-1">High and critical risk students grouped degree wise and class wise.</p>
+              </div>
+              <span className="text-[10px] font-bold text-red-600 uppercase tracking-wider bg-red-50 border border-red-100 rounded-lg px-3 py-1">
+                {riskStudents.length} Students
+              </span>
+            </div>
+
+            {riskLoading ? (
+              <div className="flex justify-center py-8">
+                <svg className="h-6 w-6 animate-spin text-primary" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                </svg>
+              </div>
+            ) : riskStudents.length === 0 ? (
+              <p className="text-xs text-slate-500 py-10 text-center italic border border-dashed border-slate-200 rounded-xl bg-slate-50/50">
+                No high or critical risk students found for this college.
+              </p>
+            ) : (
+              <div className="space-y-4">
+                {Object.entries(riskGroups).map(([key, students]) => {
+                  const [degree, className] = key.split("|");
+                  return (
+                    <div key={key} className="overflow-hidden rounded-xl border border-slate-100">
+                      <div className="flex items-center justify-between bg-slate-50 px-4 py-3 border-b border-slate-100">
+                        <div>
+                          <h3 className="text-xs font-bold text-slate-800">{degree} · {className}</h3>
+                          <p className="text-[10px] text-slate-500">{students.length} risk student{students.length === 1 ? "" : "s"}</p>
+                        </div>
+                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                          Critical: {students.filter((s) => s.riskLevel === "critical").length}
+                        </span>
+                      </div>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left border-collapse">
+                          <thead>
+                            <tr className="bg-white border-b border-slate-100 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                              <th className="px-4 py-3">Student</th>
+                              <th className="px-4 py-3">Roll No</th>
+                              <th className="px-4 py-3 text-center">Attendance</th>
+                              <th className="px-4 py-3 text-center">Risk</th>
+                              <th className="px-4 py-3 text-right">Action</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-50 text-xs">
+                            {students.map((student) => (
+                              <tr key={student._id} className="hover:bg-slate-50/50">
+                                <td className="px-4 py-3 font-semibold text-slate-800">{student.name}</td>
+                                <td className="px-4 py-3 text-slate-500">{student.rollNo}</td>
+                                <td className="px-4 py-3 text-center text-slate-700">{student.attendance != null ? `${student.attendance}%` : "N/A"}</td>
+                                <td className="px-4 py-3 text-center">
+                                  <span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-bold uppercase ${
+                                    student.riskLevel === "critical" ? "bg-red-50 text-red-700" : "bg-orange-50 text-orange-700"
+                                  }`}>
+                                    {student.riskLevel} · {Math.round(student.riskScore)}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-3 text-right">
+                                  <button
+                                    onClick={() => navigate(`/students/${student._id}`)}
+                                    className="bg-white text-primary border border-indigo-100 px-3 py-1 rounded-lg font-bold text-[10px] hover:bg-indigo-50 transition-colors"
+                                  >
+                                    View Profile
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
