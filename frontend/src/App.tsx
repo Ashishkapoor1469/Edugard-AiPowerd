@@ -68,7 +68,7 @@ const MentorApprovalStatus: React.FC = () => {
   const isRejected = user?.status === "rejected" || user?.status === "disabled";
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[#f8f9fa] p-4 font-sans">
+    <div className="flex min-h-dvh items-center justify-center bg-[#f8f9fa] p-4 font-sans">
       <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 text-center shadow-sm">
         <div className={`mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full ${isRejected ? "bg-red-50 text-red-600" : "bg-amber-50 text-amber-600"}`}>
           {isRejected ? (
@@ -191,7 +191,7 @@ const BottomNav: React.FC = () => {
   };
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 flex md:hidden items-center justify-around border-t border-slate-200 bg-white/95 backdrop-blur-md px-2 py-1.5 shadow-[0_-2px_10px_rgba(0,0,0,0.06)]">
+    <nav className="mobile-bottom-nav fixed bottom-0 left-0 right-0 z-[9999] flex h-[calc(72px+env(safe-area-inset-bottom))] items-center justify-around border-t border-slate-200 bg-white px-2 pb-[env(safe-area-inset-bottom)] pt-1.5 shadow-[0_-2px_10px_rgba(0,0,0,0.06)] md:hidden">
       {items.map((item) => (
         <NavLink
           key={item.name}
@@ -253,7 +253,7 @@ const ProtectedLayout: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="flex h-screen flex-col items-center justify-center bg-[#f8f9fa] animate-pulse-slow">
+      <div className="flex min-h-dvh flex-col items-center justify-center bg-[#f8f9fa] animate-pulse-slow">
         <svg className="h-16 w-16 text-[#1a73e8] animate-pulse" fill="currentColor" viewBox="0 0 24 24">
           <path d="M12 3L1 9l11 6 9-4.91V17h2V9L12 3z" />
           <path d="M21 12.09c-.28-.05-.56-.09-.84-.13C19.26 12 18 13.5 18 15v2.24l-6 3.27-6-3.27V12h-2v6l8 4.36 8-4.36v-3.55c0-1.04-.57-1.92-1-2.36z" />
@@ -273,11 +273,11 @@ const ProtectedLayout: React.FC = () => {
   }
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden">
+    <div className="flex min-h-dvh flex-col overflow-hidden">
       <Navbar />
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex min-h-0 flex-1 overflow-hidden">
         <Sidebar />
-        <div className="mobile-route-space flex flex-1 overflow-hidden">
+        <div className="mobile-route-space flex min-w-0 flex-1 overflow-hidden">
           <RouteErrorBoundary>
             <Routes>
               <Route path="/" element={user?.role === "student" ? <StudentProfile /> : (user?.role === "college-admin" ? <CollegeAdminDashboard /> : (user?.role === "admin" ? <AdminDashboard /> : <Dashboard />))} />

@@ -32,7 +32,7 @@
   }
 
   #root {
-    height: 100%;
+    min-height: 100dvh;
     overflow: hidden;
   }
 }
@@ -82,10 +82,20 @@
   }
 }
 
+.main-content {
+  min-height: 100dvh;
+}
+
+.table-wrapper,
+.main-content .overflow-x-auto {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
 /* Responsive table on mobile */
 @media (max-width: 768px) {
   .main-content {
-    padding-bottom: calc(6rem + env(safe-area-inset-bottom)) !important;
+    padding-bottom: calc(96px + env(safe-area-inset-bottom)) !important;
   }
 
   table {

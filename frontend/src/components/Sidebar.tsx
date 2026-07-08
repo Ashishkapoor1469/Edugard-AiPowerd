@@ -110,7 +110,7 @@ const Sidebar: React.FC = () => {
   };
 
   return (
-    <aside className="hidden md:flex h-[calc(100vh-4rem)] w-60 flex-col justify-between border-r border-slate-200 bg-white p-4">
+    <aside className="hidden md:flex h-[calc(100dvh-4rem)] w-60 flex-col justify-between border-r border-slate-200 bg-white p-4">
       {/* Top Navigation Items */}
       <div className="flex flex-col gap-1">
         {navItems.map((item) => (

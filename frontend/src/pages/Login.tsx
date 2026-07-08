@@ -220,7 +220,7 @@ const Login: React.FC = () => {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[#f8f9fa] p-4 font-sans">
+    <div className="flex min-h-dvh items-center justify-center bg-[#f8f9fa] p-4 font-sans">
       <div className="flex w-full max-w-5xl overflow-hidden rounded-2xl border border-[#dadce0] bg-white shadow-lg h-[90vh] md:h-[650px]">
         {/* Left Side Panel (Minimal Google Style) */}
         <div className="relative hidden w-3/5 flex-col justify-between bg-primary p-12 text-white md:flex">

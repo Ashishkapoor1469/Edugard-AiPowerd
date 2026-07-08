@@ -63,7 +63,7 @@ const Verify: React.FC = () => {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-indigo-50 via-white to-indigo-50/30 p-4">
+    <div className="flex min-h-dvh items-center justify-center bg-gradient-to-br from-indigo-50 via-white to-indigo-50/30 p-4">
       <div className="flex w-full max-w-5xl overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-2xl md:h-[600px]">
         {/* Left Side: Graphic Panel (60% width) */}
         <div className="relative hidden w-3/5 flex-col justify-between bg-primary p-12 text-white md:flex">
