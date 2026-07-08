@@ -96,10 +96,22 @@ const StudentAssignmentsPage: React.FC = () => {
     try {
       const res = await axios.get("/api/auth/me");
       if (res.data.success) {
+        const cacheKey = `student_profile_${res.data.data.id}`;
+        const cachedDataStr = sessionStorage.getItem(cacheKey);
+        if (cachedDataStr) {
+          try {
+            setStudentProfile(JSON.parse(cachedDataStr));
+            setLoadingProfile(false);
+          } catch {
+            sessionStorage.removeItem(cacheKey);
+          }
+        }
+
         // Resolve student profile
         const studentRes = await axios.get(`/api/students/${res.data.data.id}`);
         if (studentRes.data.success) {
           setStudentProfile(studentRes.data.data);
+          sessionStorage.setItem(cacheKey, JSON.stringify(studentRes.data.data));
         }
       }
     } catch (err) {

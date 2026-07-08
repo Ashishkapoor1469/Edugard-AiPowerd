@@ -205,7 +205,7 @@ const Navbar: React.FC = () => {
   const classOptions = ["BCA-A", "BCA-B", "BBA-A", "BBA-B", "BTECH-A", "BTECH-B"];
 
   return (
-    <header className="sticky top-0 z-40 flex h-14 md:h-16 w-full items-center justify-between border-b border-slate-200 bg-white px-4 md:px-6 shadow-xs">
+    <header className="sticky top-0 z-40 hidden h-14 w-full items-center justify-between border-b border-slate-200 bg-white px-4 shadow-xs md:flex md:h-16 md:px-6">
     
       <div className="flex items-center gap-2 cursor-pointer shrink-0" onClick={() => navigate("/")}>
         <svg className="h-9 w-9 text-[#1a73e8]" fill="currentColor" viewBox="0 0 24 24">

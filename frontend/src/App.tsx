@@ -1,5 +1,5 @@
 import React from "react";
-import { BrowserRouter, Routes, Route, Navigate, NavLink, useLocation } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import Navbar from "./components/Navbar";
 import Sidebar from "./components/Sidebar";
@@ -108,8 +108,10 @@ const MentorApprovalStatus: React.FC = () => {
 
 // Bottom Navigation Bar for mobile devices
 const BottomNav: React.FC = () => {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
+  const [showProfileMenu, setShowProfileMenu] = React.useState(false);
 
   if (user?.role === "admin" || user?.role === "college-admin") return null;
 
@@ -118,12 +120,13 @@ const BottomNav: React.FC = () => {
   const items = user?.role === "student"
     ? [
         {
-          name: "Dashboard",
+          name: "Profile",
           path: "/",
           matchPath: "/",
           icon: (
             <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5.121 17.804A8.966 8.966 0 0112 15c2.21 0 4.232.8 5.793 2.126M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 21a9 9 0 100-18 9 9 0 000 18z" />
             </svg>
           ),
         },
@@ -146,16 +149,6 @@ const BottomNav: React.FC = () => {
           icon: (
             <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v4a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v4a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v4a2 2 0 01-2 2H6a2 2 0 01-2-2v-4zM14 16a2 2 0 012-2h2a2 2 0 012 2v4a2 2 0 01-2 2h-2a2 2 0 01-2-2v-4z" />
-            </svg>
-          ),
-        },
-        {
-          name: "Students",
-          path: "/students",
-          matchPath: "/students",
-          icon: (
-            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
             </svg>
           ),
         },
@@ -206,6 +199,40 @@ const BottomNav: React.FC = () => {
           {item.name}
         </NavLink>
       ))}
+      <div className="relative">
+        {showProfileMenu && (
+          <div className="absolute bottom-full right-0 mb-3 w-48 rounded-xl border border-slate-100 bg-white py-2 shadow-xl ring-1 ring-black/5">
+            <div className="border-b border-slate-100 px-4 py-2">
+              <p className="text-xs font-bold text-text-primary">{user?.name}</p>
+              <p className="truncate text-[10px] text-slate-400">{user?.email}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setShowProfileMenu(false);
+                logout();
+                navigate("/login");
+              }}
+              className="flex w-full items-center gap-2 px-4 py-2 text-left text-xs font-medium text-critical hover:bg-slate-50"
+            >
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+              </svg>
+              Sign Out
+            </button>
+          </div>
+        )}
+        <button
+          type="button"
+          onClick={() => setShowProfileMenu((show) => !show)}
+          className="flex flex-col items-center gap-0.5 rounded-lg px-3 py-1.5 text-[10px] font-semibold text-slate-400 transition-all hover:text-text-primary"
+        >
+          <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary text-[10px] font-semibold text-white">
+            {user?.name.substring(0, 2).toUpperCase() || "ME"}
+          </div>
+          Profile
+        </button>
+      </div>
     </nav>
   );
 };
