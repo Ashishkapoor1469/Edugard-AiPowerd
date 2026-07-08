@@ -84,7 +84,7 @@
 
 /* Responsive table on mobile */
 @media (max-width: 768px) {
-  .mobile-route-space > .overflow-y-auto {
+  .main-content {
     padding-bottom: calc(6rem + env(safe-area-inset-bottom)) !important;
   }
 

@@ -802,7 +802,7 @@ ${student.aiImprovementPlan || "No plan generated."}
   });
 
   return (
-    <div className="flex-1 overflow-y-auto bg-[#f8f9fa] p-4 md:p-6 font-sans">
+    <div className="main-content flex-1 overflow-y-auto bg-[#f8f9fa] p-4 md:p-6 font-sans">
       {/* Back to Dashboard (Instructor only) */}
       {user?.role !== "student" && (
         <button

@@ -323,7 +323,7 @@ const ClassOverview: React.FC = () => {
   }
 
   return (
-    <div className="flex-1 overflow-y-auto bg-bg-base p-4 md:p-6">
+    <div className="main-content flex-1 overflow-y-auto bg-bg-base p-4 md:p-6">
       {/* Page Header & Class Tabs */}
       <div className="mb-6 flex flex-col justify-between sm:flex-row sm:items-center">
         <div>

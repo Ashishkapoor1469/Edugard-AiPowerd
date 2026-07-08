@@ -327,7 +327,7 @@ const Dashboard: React.FC = () => {
   };
 
   return (
-    <div className="flex-1 overflow-y-auto bg-[#f8f9fa] p-4 md:p-6 font-sans">
+    <div className="main-content flex-1 overflow-y-auto bg-[#f8f9fa] p-4 md:p-6 font-sans">
       {/* Mentor Stream Header */}
       <div className="mb-6 rounded-2xl bg-white border border-[#dadce0] p-6 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
