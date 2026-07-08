@@ -495,12 +495,12 @@ const Dashboard: React.FC = () => {
               <h2 className="text-lg font-semibold text-[#202124]">Enrolled Roster</h2>
               
               {/* Risk Level Filter dropdown */}
-              <div className="flex gap-2">
+              <div className="flex gap-2 overflow-x-auto pb-1.5 w-full sm:w-auto max-w-full scrollbar-none shrink-0">
                 {["", "low", "medium", "high", "critical"].map((risk) => (
                   <button
                     key={risk}
                     onClick={() => setRiskFilter(risk)}
-                    className={`px-3 py-1.5 rounded-lg border text-xs font-semibold capitalize transition-all ${
+                    className={`px-3 py-1.5 rounded-lg border text-xs font-semibold capitalize transition-all shrink-0 ${
                       riskFilter === risk
                         ? "bg-[#1a73e8] border-[#1a73e8] text-white"
                         : "border-[#dadce0] bg-white text-[#5f6368] hover:bg-slate-50"
@@ -514,36 +514,36 @@ const Dashboard: React.FC = () => {
 
             {loading ? (
               <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse text-sm">
+                <table className="w-full text-left border-collapse text-sm min-w-[700px]">
                   <thead>
                     <tr className="border-b border-[#dadce0] text-[#5f6368] font-medium">
-                      <th className="py-3 px-4">Roll No</th>
-                      <th className="py-3 px-4">Name</th>
-                      <th className="py-3 px-4">Class</th>
-                      <th className="py-3 px-4">Attendance</th>
-                      <th className="py-3 px-4">Risk Status</th>
-                      <th className="py-3 px-4 text-right">Actions</th>
+                      <th className="py-3 px-4 whitespace-nowrap">Roll No</th>
+                      <th className="py-3 px-4 whitespace-nowrap">Name</th>
+                      <th className="py-3 px-4 whitespace-nowrap">Class</th>
+                      <th className="py-3 px-4 whitespace-nowrap">Attendance</th>
+                      <th className="py-3 px-4 whitespace-nowrap">Risk Status</th>
+                      <th className="py-3 px-4 text-right whitespace-nowrap">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {[1, 2, 3, 4, 5, 6].map((row) => (
                       <tr key={row} className="border-b border-slate-50">
-                        <td className="py-3 px-4">
+                        <td className="py-3 px-4 whitespace-nowrap">
                           <div className="h-4 w-16 animate-pulse rounded bg-slate-100" />
                         </td>
-                        <td className="py-3 px-4">
+                        <td className="py-3 px-4 whitespace-nowrap">
                           <div className="h-4 w-36 animate-pulse rounded bg-slate-100" />
                         </td>
-                        <td className="py-3 px-4">
+                        <td className="py-3 px-4 whitespace-nowrap">
                           <div className="h-4 w-20 animate-pulse rounded bg-slate-100" />
                         </td>
-                        <td className="py-3 px-4">
+                        <td className="py-3 px-4 whitespace-nowrap">
                           <div className="h-4 w-14 animate-pulse rounded bg-slate-100" />
                         </td>
-                        <td className="py-3 px-4">
+                        <td className="py-3 px-4 whitespace-nowrap">
                           <div className="h-5 w-20 animate-pulse rounded-full bg-slate-100" />
                         </td>
-                        <td className="py-3 px-4">
+                        <td className="py-3 px-4 whitespace-nowrap">
                           <div className="ml-auto h-4 w-24 animate-pulse rounded bg-slate-100" />
                         </td>
                       </tr>
@@ -555,25 +555,25 @@ const Dashboard: React.FC = () => {
               <p className="text-sm text-center py-10 text-[#5f6368] italic">No matching student records found.</p>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse text-sm">
+                <table className="w-full text-left border-collapse text-sm min-w-[700px]">
                   <thead>
                     <tr className="border-b border-[#dadce0] text-[#5f6368] font-medium">
-                      <th className="py-3 px-4">Roll No</th>
-                      <th className="py-3 px-4">Name</th>
-                      <th className="py-3 px-4">Class</th>
-                      <th className="py-3 px-4">Attendance</th>
-                      <th className="py-3 px-4">Risk Status</th>
-                      <th className="py-3 px-4 text-right">Actions</th>
+                      <th className="py-3 px-4 whitespace-nowrap">Roll No</th>
+                      <th className="py-3 px-4 whitespace-nowrap">Name</th>
+                      <th className="py-3 px-4 whitespace-nowrap">Class</th>
+                      <th className="py-3 px-4 whitespace-nowrap">Attendance</th>
+                      <th className="py-3 px-4 whitespace-nowrap">Risk Status</th>
+                      <th className="py-3 px-4 text-right whitespace-nowrap">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {students.map((s) => (
                       <tr key={s._id} className="border-b border-slate-50 hover:bg-slate-50/50">
-                        <td className="py-3 px-4 font-mono font-semibold">#{s.rollNo}</td>
-                        <td className="py-3 px-4 font-semibold text-[#202124]">{s.name}</td>
-                        <td className="py-3 px-4 text-[#5f6368]">{s.class}</td>
-                        <td className="py-3 px-4 text-[#5f6368]">{s.attendance != null ? `${s.attendance}%` : "N/A"}</td>
-                        <td className="py-3 px-4">
+                        <td className="py-3 px-4 font-mono font-semibold whitespace-nowrap">#{s.rollNo}</td>
+                        <td className="py-3 px-4 font-semibold text-[#202124] whitespace-nowrap">{s.name}</td>
+                        <td className="py-3 px-4 text-[#5f6368] whitespace-nowrap">{s.class}</td>
+                        <td className="py-3 px-4 text-[#5f6368] whitespace-nowrap">{s.attendance != null ? `${s.attendance}%` : "N/A"}</td>
+                        <td className="py-3 px-4 whitespace-nowrap">
                           <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold uppercase ${
                             s.riskLevel === "low" ? "bg-green-50 text-green-700" :
                             s.riskLevel === "medium" ? "bg-amber-50 text-amber-700" :
@@ -582,10 +582,10 @@ const Dashboard: React.FC = () => {
                             {s.riskLevel}
                           </span>
                         </td>
-                        <td className="py-3 px-4 text-right">
+                        <td className="py-3 px-4 text-right whitespace-nowrap">
                           <button
                             onClick={() => navigate(`/students/${s._id}`)}
-                            className="text-[#1a73e8] hover:underline font-semibold text-xs"
+                            className="text-[#1a73e8] hover:underline font-semibold text-xs whitespace-nowrap"
                           >
                             Manage Profile
                           </button>
@@ -596,7 +596,6 @@ const Dashboard: React.FC = () => {
                 </table>
               </div>
             )}
-
             {/* Pagination Controls */}
             <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-4 text-xs font-semibold text-[#5f6368]">
               <span>Page {page} of {totalPages}</span>

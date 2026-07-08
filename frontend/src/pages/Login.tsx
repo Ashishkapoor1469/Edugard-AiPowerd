@@ -221,7 +221,7 @@ const Login: React.FC = () => {
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-[#f8f9fa] p-4 font-sans">
-      <div className="flex w-full max-w-5xl overflow-hidden rounded-2xl border border-[#dadce0] bg-white shadow-lg md:h-[650px]">
+      <div className="flex w-full max-w-5xl overflow-hidden rounded-2xl border border-[#dadce0] bg-white shadow-lg h-[90vh] md:h-[650px]">
         {/* Left Side Panel (Minimal Google Style) */}
         <div className="relative hidden w-3/5 flex-col justify-between bg-primary p-12 text-white md:flex">
           <div className="flex items-center gap-2">
@@ -250,7 +250,8 @@ const Login: React.FC = () => {
         </div>
 
         {/* Right Side Form Panel */}
-        <div className="flex w-full flex-col justify-center px-8 py-10 md:w-2/5 md:px-12 overflow-y-auto">
+        <div className="flex w-full flex-col px-8 py-10 md:w-2/5 md:px-12 overflow-y-auto">
+          <div className="my-auto w-full">
           {/* Logo for mobile */}
           <div className="flex items-center gap-2 mb-6 md:hidden">
             <svg className="h-6 w-6 text-primary" fill="currentColor" viewBox="0 0 24 24">
@@ -313,7 +314,7 @@ const Login: React.FC = () => {
                 </p>
               </div>
 
-              <form onSubmit={handleSubmit} className="mt-6 flex flex-col gap-4">
+              <form onSubmit={handleSubmit} className="mt-6 flex flex-col gap-4 pb-8">
                 {isRegisterMode && (
                   <div>
                     <label className="block text-xs font-bold text-[#5f6368] uppercase tracking-wider mb-1">Full Name</label>
@@ -503,6 +504,7 @@ const Login: React.FC = () => {
               )}
             </>
           )}
+          </div>
         </div>
       </div>
     </div>

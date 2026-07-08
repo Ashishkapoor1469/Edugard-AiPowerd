@@ -85,6 +85,9 @@ const Navbar: React.FC = () => {
   };
 
   useEffect(() => {
+    // Skip notifications for roles that don't have access to the notification API
+    if (user?.role === "admin" || user?.role === "college-admin") return;
+
     fetchNotifications();
 
     if (user) {

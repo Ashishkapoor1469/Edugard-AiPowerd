@@ -754,7 +754,7 @@ ${student.aiImprovementPlan || "No plan generated."}
 
   if (loading || !student) {
     return (
-      <div className="flex h-screen w-full items-center justify-center bg-[#f8f9fa] animate-pulse">
+      <div className="flex h-full w-full items-center justify-center bg-[#f8f9fa] animate-pulse">
         <svg
           className="h-10 w-10 animate-spin text-[#1a73e8]"
           fill="none"

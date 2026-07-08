@@ -15,6 +15,53 @@ import { Toaster } from "react-hot-toast";
 import CollegeAdminDashboard from "./pages/CollegeAdminDashboard";
 import StudentAssignmentsPage from "./pages/StudentAssignmentsPage";
 
+// Error Boundary to catch page crashes without losing the navbar/sidebar
+class RouteErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { hasError: boolean; error: Error | null }
+> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error("RouteErrorBoundary caught:", error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="flex-1 flex flex-col items-center justify-center bg-[#f8f9fa] p-6 text-center">
+          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-red-50">
+            <svg className="h-7 w-7 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+            </svg>
+          </div>
+          <h2 className="text-lg font-semibold text-slate-800">Something went wrong</h2>
+          <p className="mt-1 text-xs text-slate-500 max-w-sm">
+            An unexpected error occurred while loading this page.
+          </p>
+          <button
+            onClick={() => {
+              this.setState({ hasError: false, error: null });
+              window.location.href = "/";
+            }}
+            className="mt-4 rounded-lg bg-primary px-5 py-2 text-sm font-semibold text-white hover:bg-primary-hover transition-colors"
+          >
+            Go to Dashboard
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 const MentorApprovalStatus: React.FC = () => {
   const { user, logout } = useAuth();
 
@@ -192,16 +239,18 @@ const ProtectedLayout: React.FC = () => {
       <Navbar />
       <div className="flex flex-1 overflow-hidden">
         <Sidebar />
-        <div className="flex flex-1 overflow-hidden pb-14 md:pb-0">
-          <Routes>
-            <Route path="/" element={user?.role === "student" ? <StudentProfile /> : (user?.role === "college-admin" ? <CollegeAdminDashboard /> : (user?.role === "admin" ? <AdminDashboard /> : <Dashboard />))} />
-            <Route path="/students" element={user?.role === "student" ? <Navigate to="/" replace /> : (user?.role === "college-admin" ? <Navigate to="/" replace /> : (user?.role === "admin" ? <AdminDashboard /> : <Dashboard />))} />
-            <Route path="/students/:id" element={<StudentProfile />} />
-            <Route path="/class/:className" element={user?.role === "student" ? <Navigate to="/" replace /> : (user?.role === "admin" || user?.role === "college-admin" ? <Navigate to="/" replace /> : <ClassOverview />)} />
-            <Route path="/notifications" element={user?.role === "student" ? <Navigate to="/" replace /> : (user?.role === "admin" || user?.role === "college-admin" ? <Navigate to="/" replace /> : <NotificationsPage />)} />
-            <Route path="/assignments" element={user?.role === "student" ? <StudentAssignmentsPage /> : <Navigate to="/" replace />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
+        <div className={`flex flex-1 overflow-hidden md:pb-0 ${user?.role === "admin" || user?.role === "college-admin" ? "pb-0" : "pb-20"}`}>
+          <RouteErrorBoundary>
+            <Routes>
+              <Route path="/" element={user?.role === "student" ? <StudentProfile /> : (user?.role === "college-admin" ? <CollegeAdminDashboard /> : (user?.role === "admin" ? <AdminDashboard /> : <Dashboard />))} />
+              <Route path="/students" element={user?.role === "student" ? <Navigate to="/" replace /> : (user?.role === "college-admin" ? <Navigate to="/" replace /> : (user?.role === "admin" ? <AdminDashboard /> : <Dashboard />))} />
+              <Route path="/students/:id" element={<StudentProfile />} />
+              <Route path="/class/:className" element={user?.role === "student" ? <Navigate to="/" replace /> : (user?.role === "admin" || user?.role === "college-admin" ? <Navigate to="/" replace /> : <ClassOverview />)} />
+              <Route path="/notifications" element={user?.role === "student" ? <Navigate to="/" replace /> : (user?.role === "admin" || user?.role === "college-admin" ? <Navigate to="/" replace /> : <NotificationsPage />)} />
+              <Route path="/assignments" element={user?.role === "student" ? <StudentAssignmentsPage /> : <Navigate to="/" replace />} />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </RouteErrorBoundary>
         </div>
       </div>
       <BottomNav />
