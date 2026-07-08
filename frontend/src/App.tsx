@@ -273,7 +273,7 @@ const ProtectedLayout: React.FC = () => {
   }
 
   return (
-    <div className="flex min-h-dvh flex-col overflow-hidden">
+    <div className="flex h-dvh flex-col overflow-hidden">
       <Navbar />
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <Sidebar />
