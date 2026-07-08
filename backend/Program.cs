@@ -17,6 +17,7 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.AspNetCore.RateLimiting;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Http;
+using StackExchange.Redis;
 using EduGuard.Hubs;
 using EduGuard.Services;
 
@@ -44,14 +45,16 @@ builder.Services.AddMemoryCache();
 var redisUrl = builder.Configuration.GetValue<string>("REDIS_URL");
 if (!string.IsNullOrWhiteSpace(redisUrl))
 {
+    Console.WriteLine("[CACHE] Redis distributed cache enabled");
     builder.Services.AddStackExchangeRedisCache(options =>
     {
-        options.Configuration = redisUrl;
+        options.ConfigurationOptions = CreateRedisOptions(redisUrl);
         options.InstanceName = "eduguard:";
     });
 }
 else
 {
+    Console.WriteLine("[CACHE] In-memory distributed cache enabled");
     builder.Services.AddDistributedMemoryCache();
 }
 
@@ -161,3 +164,32 @@ app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 app.MapHub<EduGuardHub>("/eduguardHub");
 
 app.Run();
+
+static ConfigurationOptions CreateRedisOptions(string redisUrl)
+{
+    if (!Uri.TryCreate(redisUrl, UriKind.Absolute, out var uri) || string.IsNullOrEmpty(uri.Host))
+    {
+        return ConfigurationOptions.Parse(redisUrl);
+    }
+
+    var options = new ConfigurationOptions
+    {
+        AbortOnConnectFail = false,
+        Ssl = uri.Scheme == "rediss"
+    };
+    options.EndPoints.Add(uri.Host, uri.Port > 0 ? uri.Port : 6379);
+
+    var userInfo = Uri.UnescapeDataString(uri.UserInfo ?? "");
+    var parts = userInfo.Split(':', 2);
+    if (parts.Length == 2)
+    {
+        options.User = parts[0];
+        options.Password = parts[1];
+    }
+    else if (parts.Length == 1 && !string.IsNullOrEmpty(parts[0]))
+    {
+        options.Password = parts[0];
+    }
+
+    return options;
+}

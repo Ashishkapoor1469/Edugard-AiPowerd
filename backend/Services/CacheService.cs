@@ -25,14 +25,19 @@ namespace EduGuard.Services
                 if (!string.IsNullOrEmpty(cached))
                 {
                     var value = JsonSerializer.Deserialize<T>(cached, JsonOptions);
-                    if (value is not null) return value;
+                    if (value is not null)
+                    {
+                        _logger.LogInformation("[CACHE] Hit {Key}", key);
+                        return value;
+                    }
                 }
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "[CACHE] Read failed for {Key}", key);
+                _logger.LogWarning("[CACHE] Read failed for {Key}: {Error}", key, ex.GetType().Name);
             }
 
+            _logger.LogInformation("[CACHE] Miss {Key}", key);
             var fresh = await factory();
 
             try
@@ -42,10 +47,11 @@ namespace EduGuard.Services
                     JsonSerializer.Serialize(fresh, JsonOptions),
                     new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = ttl }
                 );
+                _logger.LogInformation("[CACHE] Stored {Key}", key);
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "[CACHE] Write failed for {Key}", key);
+                _logger.LogWarning("[CACHE] Write failed for {Key}: {Error}", key, ex.GetType().Name);
             }
 
             return fresh;
@@ -61,7 +67,7 @@ namespace EduGuard.Services
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning(ex, "[CACHE] Remove failed for {Key}", key);
+                    _logger.LogWarning("[CACHE] Remove failed for {Key}: {Error}", key, ex.GetType().Name);
                 }
             }
         }
