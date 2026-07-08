@@ -277,7 +277,7 @@ const ProtectedLayout: React.FC = () => {
       <Navbar />
       <div className="flex flex-1 overflow-hidden">
         <Sidebar />
-        <div className="flex flex-1 overflow-hidden pb-20 md:pb-0">
+        <div className="mobile-route-space flex flex-1 overflow-hidden">
           <RouteErrorBoundary>
             <Routes>
               <Route path="/" element={user?.role === "student" ? <StudentProfile /> : (user?.role === "college-admin" ? <CollegeAdminDashboard /> : (user?.role === "admin" ? <AdminDashboard /> : <Dashboard />))} />

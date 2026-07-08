@@ -84,6 +84,10 @@
 
 /* Responsive table on mobile */
 @media (max-width: 768px) {
+  .mobile-route-space > .overflow-y-auto {
+    padding-bottom: calc(6rem + env(safe-area-inset-bottom)) !important;
+  }
+
   table {
     font-size: 11px;
   }
