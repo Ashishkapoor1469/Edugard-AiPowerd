@@ -30,6 +30,11 @@ interface RiskStudent {
   riskLevel: "high" | "critical";
 }
 
+interface Degree {
+  _id: string;
+  name: string;
+}
+
 const CollegeAdminDashboard: React.FC = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -55,7 +60,8 @@ const CollegeAdminDashboard: React.FC = () => {
   const [evtLink, setEvtLink] = useState("");
 
   // Syllabus State
-  const [syllabusCourse, setSyllabusCourse] = useState("BCA");
+  const [degrees, setDegrees] = useState<Degree[]>([]);
+  const [syllabusCourse, setSyllabusCourse] = useState("");
   const [syllabusFile, setSyllabusFile] = useState<File | null>(null);
   const [uploadingSyllabus, setUploadingSyllabus] = useState(false);
   const [showSyllabusHelp, setShowSyllabusHelp] = useState(false);
@@ -106,6 +112,16 @@ const CollegeAdminDashboard: React.FC = () => {
       fetchRiskStudents();
     }
   }, [activeTab]);
+
+  useEffect(() => {
+    if (activeTab !== "syllabus" || !user?.collegeId) return;
+
+    axios.get("/api/admin/degrees", { params: { collegeId: user.collegeId } }).then((res) => {
+      const list = res.data.success ? res.data.data || [] : [];
+      setDegrees(list);
+      setSyllabusCourse((current) => list.some((d: Degree) => d.name === current) ? current : list[0]?.name || "");
+    });
+  }, [activeTab, user?.collegeId]);
 
   const handleUpdateStatus = async (id: string, status: "approved" | "rejected" | "disabled", successLabel?: string) => {
     try {
@@ -682,14 +698,15 @@ const CollegeAdminDashboard: React.FC = () => {
               <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Degree Course</label>
                 <select
+                  required
                   value={syllabusCourse}
                   onChange={(e) => setSyllabusCourse(e.target.value)}
                   className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs focus:border-primary focus:outline-hidden bg-white font-medium"
                 >
-                  <option value="BCA">BCA (Bachelor of Computer Applications)</option>
-                  <option value="BBA">BBA (Bachelor of Business Administration)</option>
-                  <option value="BTECH">B.Tech (Bachelor of Technology)</option>
-                  <option value="BSC">B.Sc (Bachelor of Science)</option>
+                  <option value="" disabled>{degrees.length ? "Choose Degree..." : "No degrees configured"}</option>
+                  {degrees.map((degree) => (
+                    <option key={degree._id} value={degree.name}>{degree.name}</option>
+                  ))}
                 </select>
               </div>
 
