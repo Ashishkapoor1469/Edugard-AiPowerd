@@ -18,12 +18,14 @@ namespace EduGuard.Controllers
         private readonly MongoService _mongoService;
         private readonly NvidiaNimService _nvidiaNimService;
         private readonly NotificationService _notificationService;
+        private readonly CacheService _cacheService;
 
-        public AdminController(MongoService mongoService, NvidiaNimService nvidiaNimService, NotificationService notificationService)
+        public AdminController(MongoService mongoService, NvidiaNimService nvidiaNimService, NotificationService notificationService, CacheService cacheService)
         {
             _mongoService = mongoService;
             _nvidiaNimService = nvidiaNimService;
             _notificationService = notificationService;
+            _cacheService = cacheService;
         }
 
         private bool IsSuperAdmin()
@@ -171,7 +173,11 @@ namespace EduGuard.Controllers
         [HttpGet("colleges")]
         public async Task<IActionResult> ListColleges()
         {
-            var colleges = await _mongoService.Colleges.Find(_ => true).ToListAsync();
+            var colleges = await _cacheService.GetOrCreateAsync(
+                "admin:colleges:all",
+                TimeSpan.FromMinutes(10),
+                () => _mongoService.Colleges.Find(_ => true).ToListAsync()
+            );
             return Ok(new { success = true, data = colleges });
         }
 
@@ -184,6 +190,7 @@ namespace EduGuard.Controllers
             }
 
             await _mongoService.Colleges.InsertOneAsync(model);
+            await _cacheService.RemoveAsync("admin:colleges:all");
             return Ok(new { success = true, data = model });
         }
 
@@ -197,7 +204,12 @@ namespace EduGuard.Controllers
                 ? Builders<Degree>.Filter.Empty 
                 : Builders<Degree>.Filter.Eq(d => d.CollegeId, collegeId);
 
-            var degrees = await _mongoService.Degrees.Find(filter).ToListAsync();
+            var cacheKey = string.IsNullOrEmpty(collegeId) ? "admin:degrees:all" : $"admin:degrees:{collegeId}";
+            var degrees = await _cacheService.GetOrCreateAsync(
+                cacheKey,
+                TimeSpan.FromMinutes(10),
+                () => _mongoService.Degrees.Find(filter).ToListAsync()
+            );
             return Ok(new { success = true, data = degrees });
         }
 
@@ -210,6 +222,7 @@ namespace EduGuard.Controllers
             }
 
             await _mongoService.Degrees.InsertOneAsync(model);
+            await _cacheService.RemoveAsync("admin:degrees:all", $"admin:degrees:{model.CollegeId}");
             return Ok(new { success = true, data = model });
         }
 
@@ -371,6 +384,7 @@ namespace EduGuard.Controllers
             var update = Builders<College>.Update.Set(c => c.IsBlocked, block).Set(c => c.UpdatedAt, DateTime.UtcNow);
             var result = await _mongoService.Colleges.UpdateOneAsync(filter, update);
             if (result.MatchedCount == 0) return NotFound(new { success = false, message = "College not found" });
+            await _cacheService.RemoveAsync("admin:colleges:all");
             return Ok(new { success = true, message = $"College successfully {(block ? "blocked" : "unblocked")}" });
         }
 
@@ -390,6 +404,7 @@ namespace EduGuard.Controllers
             existing.UpdatedAt = DateTime.UtcNow;
 
             await _mongoService.Colleges.ReplaceOneAsync(c => c.Id == id, existing);
+            await _cacheService.RemoveAsync("admin:colleges:all");
             return Ok(new { success = true, message = "College details updated successfully" });
         }
 

@@ -18,11 +18,13 @@ namespace EduGuard.Controllers
     {
         private readonly MongoService _mongoService;
         private readonly ExcelParserService _excelParserService;
+        private readonly CacheService _cacheService;
 
-        public CollegeAdminController(MongoService mongoService, ExcelParserService excelParserService)
+        public CollegeAdminController(MongoService mongoService, ExcelParserService excelParserService, CacheService cacheService)
         {
             _mongoService = mongoService;
             _excelParserService = excelParserService;
+            _cacheService = cacheService;
         }
 
         private async Task<string?> GetCollegeIdAsync()
@@ -153,6 +155,7 @@ namespace EduGuard.Controllers
                         await _mongoService.Syllabi.InsertOneAsync(newSyllabus);
                     }
 
+                    await _cacheService.RemoveAsync($"college-admin:syllabus:{collegeId}:{course}");
                     return Ok(new { success = true, message = $"Syllabus for {course} successfully uploaded & processed!" });
                 }
             }
@@ -175,7 +178,11 @@ namespace EduGuard.Controllers
             var filter = Builders<Syllabus>.Filter.Eq(s => s.CollegeId, collegeId) &
                          Builders<Syllabus>.Filter.Eq(s => s.Course, course);
 
-            var syllabus = await _mongoService.Syllabi.Find(filter).FirstOrDefaultAsync();
+            var syllabus = await _cacheService.GetOrCreateAsync(
+                $"college-admin:syllabus:{collegeId}:{course}",
+                TimeSpan.FromMinutes(30),
+                () => _mongoService.Syllabi.Find(filter).FirstOrDefaultAsync()
+            );
             if (syllabus == null)
             {
                 return NotFound(new { success = false, message = $"No syllabus found for {course} in this college." });

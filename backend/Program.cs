@@ -39,8 +39,21 @@ builder.Services
     .PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(builder.Environment.ContentRootPath, "obj", "DataProtectionKeys")))
     .SetApplicationName("EduGuardBackend");
 
-// Configure In-Memory Cache
+// Configure cache
 builder.Services.AddMemoryCache();
+var redisUrl = builder.Configuration.GetValue<string>("REDIS_URL");
+if (!string.IsNullOrWhiteSpace(redisUrl))
+{
+    builder.Services.AddStackExchangeRedisCache(options =>
+    {
+        options.Configuration = redisUrl;
+        options.InstanceName = "eduguard:";
+    });
+}
+else
+{
+    builder.Services.AddDistributedMemoryCache();
+}
 
 // Configure Rate Limiting
 builder.Services.AddRateLimiter(options =>
@@ -77,6 +90,7 @@ builder.Services.AddSingleton<MongoService>();
 builder.Services.AddTransient<ExcelParserService>();
 builder.Services.AddTransient<NvidiaNimService>();
 builder.Services.AddTransient<NotificationService>();
+builder.Services.AddSingleton<CacheService>();
 
 // Configure Email Queue Service as a Hosted background service
 builder.Services.AddSingleton<EmailQueueService>();
