@@ -3,3 +3,48 @@ seed.ts
 eduguard-enhancement-prompt.md
 .agents
 review.md 
+EduGuard Project Analysis.md
+
+# Local agent and editor state
+.codex/
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+
+# Dependencies and build output
+**/node_modules/
+**/dist/
+**/bin/
+**/obj/
+**/publish/
+**/TestResults/
+**/coverage/
+
+# Local configuration and secrets
+**/.env
+**/.env.*
+!**/.env.example
+**/appsettings.json
+**/appsettings.Development.json
+!**/appsettings.example.json
+**/secrets.json
+*.pfx
+*.key
+
+# Logs and temporary files
+*.log
+*.tmp
+*.temp
+*.cache
+
+# Generated runtime files and exports
+backend/wwwroot/reports/*
+!backend/wwwroot/reports/.gitkeep
+*.pdf
+
+# Operating-system files
+.DS_Store
+Thumbs.db
+Desktop.ini
