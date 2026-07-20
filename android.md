@@ -3,7 +3,7 @@
 ## Download the Android app
 
 1. Open the [latest EduGuard Android release](https://github.com/Ashishkapoor1469/Edugard-AiPowerd/releases/latest) on your phone.
-2. Under **Assets**, download `EduGuard-debug.apk`.
+2. Under **Assets**, download `EduGuard.apk`.
 3. Open the downloaded file.
 4. If Android asks, allow your browser to **Install unknown apps**.
 5. Tap **Install**, then open EduGuard.

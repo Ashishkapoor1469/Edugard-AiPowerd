@@ -156,7 +156,7 @@ Review Android adaptive icons and iOS icons in their native projects before rele
 
 ## Automated APK download
 
-Every relevant push to `main` runs `.github/workflows/android-apk.yml`. It builds the production React bundle, synchronizes Capacitor, compiles `EduGuard-debug.apk`, uploads it as a workflow artifact, and publishes it under [GitHub Releases](https://github.com/Ashishkapoor1469/Edugard-AiPowerd/releases/latest).
+Every relevant push to `main` runs `.github/workflows/android-apk.yml`. It builds the production React bundle, synchronizes Capacitor, compiles `EduGuard.apk`, uploads it as a workflow artifact, and publishes it under [GitHub Releases](https://github.com/Ashishkapoor1469/Edugard-AiPowerd/releases/latest).
 
 ## What should be committed
 
