@@ -91,7 +91,7 @@ namespace EduGuard.Controllers
                     currentSession,
                     collegeTime = localNow,
                     timeZone = college?.TimeZone ?? "Asia/Kolkata",
-                    roster = roster.Select(s => new { s.Id, s.Name, s.RollNo, classId = s.Class })
+                    roster = roster.Select(s => new { _id = s.Id, s.Name, s.RollNo, classId = s.Class })
                 }
             });
         }
@@ -208,7 +208,7 @@ namespace EduGuard.Controllers
             var filter = Builders<Student>.Filter.Eq(s => s.CollegeId, collegeId) & Builders<Student>.Filter.Eq(s => s.VerificationStatus, "approved");
             if (!string.IsNullOrWhiteSpace(classId)) filter &= Builders<Student>.Filter.Eq(s => s.Class, classId);
             var students = await _mongo.Students.Find(filter).SortBy(s => s.Class).ThenBy(s => s.RollNo).ToListAsync();
-            return Ok(new { success = true, data = students.Select(s => new { s.Id, s.Name, s.RollNo, classId = s.Class }) });
+            return Ok(new { success = true, data = students.Select(s => new { _id = s.Id, s.Name, s.RollNo, classId = s.Class }) });
         }
 
         [HttpGet("admin/leaders")]
