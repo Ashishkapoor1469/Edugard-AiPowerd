@@ -95,9 +95,14 @@ export default function StudentAttendancePanel() {
       {context?.isCr && (
         <form onSubmit={submit} className="rounded-2xl border border-indigo-100 bg-white p-5 shadow-sm">
           <h2 className="text-sm font-bold text-slate-800">Class attendance</h2>
-          <p className="mb-4 mt-1 text-xs text-slate-500">
-            {context.canMark ? `${context.currentSession} session · ${new Date(context.collegeTime).toLocaleString()} (${context.timeZone})` : "Marking is closed. Windows: 10:00–12:00 and 12:00–15:00 college time."}
-          </p>
+          {context.canMark ? (
+            <p className="mb-4 mt-1 text-xs text-slate-500">{context.currentSession} session · {new Date(context.collegeTime).toLocaleString()} ({context.timeZone})</p>
+          ) : (
+            <div role="alert" className="mb-4 mt-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
+              <strong className="block font-bold">Attendance marking is currently closed</strong>
+              Present and Absent can only be selected from 10:00–12:00 or 12:00–15:00 college time.
+            </div>
+          )}
           <div className="overflow-x-auto rounded-xl border border-slate-100">
             <table className="w-full text-left text-xs">
               <thead className="bg-slate-50 text-[10px] uppercase tracking-wider text-slate-500"><tr><th className="px-4 py-3">Student</th><th className="px-4 py-3">Roll no.</th><th className="px-4 py-3">Status</th></tr></thead>
