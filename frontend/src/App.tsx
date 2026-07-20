@@ -13,6 +13,7 @@ import AdminDashboard from "./pages/AdminDashboard";
 import { Toaster } from "react-hot-toast";
 
 import CollegeAdminDashboard from "./pages/CollegeAdminDashboard";
+import eduGuardLogo from "./assets/e.png";
 import StudentAssignmentsPage from "./pages/StudentAssignmentsPage";
 
 // Error Boundary to catch page crashes without losing the navbar/sidebar
@@ -254,11 +255,7 @@ const ProtectedLayout: React.FC = () => {
   if (loading) {
     return (
       <div className="flex min-h-dvh flex-col items-center justify-center bg-[#f8f9fa] animate-pulse-slow">
-        <svg className="h-16 w-16 text-[#1a73e8] animate-pulse" fill="currentColor" viewBox="0 0 24 24">
-          <path d="M12 3L1 9l11 6 9-4.91V17h2V9L12 3z" />
-          <path d="M21 12.09c-.28-.05-.56-.09-.84-.13C19.26 12 18 13.5 18 15v2.24l-6 3.27-6-3.27V12h-2v6l8 4.36 8-4.36v-3.55c0-1.04-.57-1.92-1-2.36z" />
-        </svg>
-        <h2 className="mt-4 text-xl font-medium text-[#202124] tracking-tight">EduGuard</h2>
+        <img src={eduGuardLogo} alt="EduGuard" className="h-20 w-20 animate-pulse rounded-[22%] object-cover" />
         <p className="mt-1 text-xs text-[#5f6368] font-medium tracking-wide">Workspace loading...</p>
       </div>
     );

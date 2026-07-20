@@ -3,6 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.js";
 import axios from "axios";
 import toast from "react-hot-toast";
+import eduGuardLogo from "../assets/e.png";
+import eduGuardBrand from "../assets/e-witheduguardtext.png";
 
 interface College {
   _id: string;
@@ -224,21 +226,15 @@ const Login: React.FC = () => {
       <div className="flex w-full max-w-5xl overflow-hidden rounded-2xl border border-[#dadce0] bg-white shadow-lg h-[90vh] md:h-[650px]">
         {/* Left Side Panel (Minimal Google Style) */}
         <div className="relative hidden w-3/5 flex-col justify-between bg-primary p-12 text-white md:flex">
-          <div className="flex items-center gap-2">
-            <svg className="h-8 w-8 text-white" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm1-13h-2v6h2v-6zm0 8h-2v2h2v-2z" />
-            </svg>
-            <span className="text-xl font-bold tracking-tight">EduGuard</span>
+          <div className="h-10 w-44 overflow-hidden rounded-lg bg-white">
+            <img src={eduGuardBrand} alt="EduGuard" className="h-full w-full object-cover" />
           </div>
 
           <div className="my-auto flex flex-col items-center">
             <div className="relative mb-6 flex h-36 w-36 items-center justify-center rounded-full bg-white/10 ring-4 ring-white/5">
-              <svg className="h-16 w-16 text-white" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M12 3L1 9l11 6 9-4.91V17h2V9L12 3z" />
-                <path d="M21 12.09c-.28-.05-.56-.09-.84-.13C19.26 12 18 13.5 18 15v2.24l-6 3.27-6-3.27V12h-2v6l8 4.36 8-4.36v-3.55c0-1.04-.57-1.92-1-2.36z" />
-              </svg>
+              <img src={eduGuardLogo} alt="" className="h-24 w-24 rounded-[22%] object-cover" />
             </div>
-            <h2 className="text-center text-xl font-semibold tracking-wide">Multi-College SaaS Portal</h2>
+            <h1 className="text-center text-xl font-semibold tracking-wide">EduGuard: Multi-College Student Success Portal</h1>
             <p className="mt-2 text-center text-sm font-medium text-blue-100 max-w-sm">
               Scalable administration, AI Study Planners, and academic tracking directories built for modern educational environments.
             </p>
@@ -253,18 +249,15 @@ const Login: React.FC = () => {
         <div className="flex w-full flex-col px-8 py-10 md:w-2/5 md:px-12 overflow-y-auto">
           <div className="my-auto w-full">
           {/* Logo for mobile */}
-          <div className="flex items-center gap-2 mb-6 md:hidden">
-            <svg className="h-6 w-6 text-primary" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm1-13h-2v6h2v-6zm0 8h-2v2h2v-2z" />
-            </svg>
-            <span className="text-lg font-bold tracking-tight text-primary">EduGuard</span>
+          <div className="mb-6 h-10 w-44 overflow-hidden md:hidden">
+            <img src={eduGuardBrand} alt="EduGuard" className="h-full w-full object-cover" />
           </div>
 
           {/* OTP Screen */}
           {showOtpScreen ? (
             <form onSubmit={handleVerifyOtp} className="space-y-4">
               <div>
-                <h1 className="text-xl font-semibold text-[#202124]">Verify OTP Code</h1>
+                <h2 className="text-xl font-semibold text-[#202124]">Verify OTP Code</h2>
                 <p className="text-xs text-[#5f6368] mt-1">We have sent a 6-digit security code to {email}. Please verify to confirm registration.</p>
               </div>
               <div>
@@ -306,9 +299,9 @@ const Login: React.FC = () => {
               </div>
 
               <div>
-                <h1 className="text-xl font-semibold text-[#202124]">
+                <h2 className="text-xl font-semibold text-[#202124]">
                   {isRegisterMode ? `Sign Up as ${roleMode}` : `${roleMode} Sign In`}
-                </h1>
+                </h2>
                 <p className="text-xs text-[#5f6368] mt-0.5">
                   {isRegisterMode ? "Configure profile parameters" : "Sign in to access workspace"}
                 </p>

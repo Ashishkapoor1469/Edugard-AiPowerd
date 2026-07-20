@@ -168,7 +168,7 @@ namespace EduGuard.Controllers
                         // No mentor assigned, must chat with AI assistant
                         if (request.MentorId != "ai-assistant")
                         {
-                            return BadRequest(new { success = false, message = "No mentor assigned. You can only chat with EduGard AI Assistant." });
+                            return BadRequest(new { success = false, message = "No mentor assigned. You can only chat with EduGuard AI Assistant." });
                         }
                     }
                 }

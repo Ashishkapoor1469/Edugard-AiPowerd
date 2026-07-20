@@ -1,0 +1,9 @@
+User-agent: *
+Allow: /
+Disallow: /students
+Disallow: /class/
+Disallow: /notifications
+Disallow: /assignments
+Disallow: /verify
+
+Sitemap: https://edugard-ai-powerd.vercel.app/sitemap.xml

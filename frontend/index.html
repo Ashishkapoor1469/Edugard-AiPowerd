@@ -2,7 +2,9 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/png" sizes="96x96" href="/favicon/favicon-96x96.png" />
+    <link rel="shortcut icon" href="/favicon/favicon.ico" />
+    <link rel="manifest" href="/favicon/site.webmanifest" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="application-name" content="EduGuard" />
     <meta name="apple-mobile-web-app-title" content="EduGuard" />
@@ -16,24 +18,61 @@
       content="EduGuard, college student management, student progress tracking, mentor dashboard, academic alerts, AI academic advisor"
     />
     <meta name="robots" content="index, follow" />
+    <link rel="canonical" href="https://edugard-ai-powerd.vercel.app/" />
 
     <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://edugard-ai-powerd.vercel.app/" />
     <meta property="og:site_name" content="EduGuard" />
     <meta property="og:title" content="EduGuard | College Student Success Platform" />
     <meta
       property="og:description"
-      content="Monitor student progress, manage mentors, review academic alerts, and support learners from one secure college dashboard."
+      content="EduGuard helps colleges monitor student progress, manage mentors, review academic alerts, and support learners from one secure dashboard."
     />
-    <meta property="og:image" content="/favicon.svg" />
+    <meta property="og:image" content="https://edugard-ai-powerd.vercel.app/favicon/web-app-manifest-512x512.png" />
+    <meta property="og:image:alt" content="EduGuard shield logo" />
 
     <meta name="twitter:card" content="summary" />
     <meta name="twitter:title" content="EduGuard | College Student Success Platform" />
     <meta
       name="twitter:description"
-      content="A secure platform for college admins, mentors, and students to track progress and act on academic risk early."
+      content="EduGuard helps college admins, mentors, and students track progress and act on academic risk early."
     />
-    <meta name="twitter:image" content="/favicon.svg" />
+    <meta name="twitter:image" content="https://edugard-ai-powerd.vercel.app/favicon/web-app-manifest-512x512.png" />
+    <meta name="twitter:image:alt" content="EduGuard shield logo" />
     <title>EduGuard | College Student Success Platform</title>
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "Organization",
+            "@id": "https://edugard-ai-powerd.vercel.app/#organization",
+            "name": "EduGuard",
+            "url": "https://edugard-ai-powerd.vercel.app/",
+            "logo": "https://edugard-ai-powerd.vercel.app/favicon/web-app-manifest-512x512.png"
+          },
+          {
+            "@type": "WebSite",
+            "@id": "https://edugard-ai-powerd.vercel.app/#website",
+            "name": "EduGuard",
+            "url": "https://edugard-ai-powerd.vercel.app/",
+            "publisher": { "@id": "https://edugard-ai-powerd.vercel.app/#organization" }
+          },
+          {
+            "@type": "WebApplication",
+            "@id": "https://edugard-ai-powerd.vercel.app/#application",
+            "name": "EduGuard",
+            "url": "https://edugard-ai-powerd.vercel.app/",
+            "description": "EduGuard helps colleges monitor student progress, manage mentors, review academic alerts, and support students with AI-powered academic guidance.",
+            "applicationCategory": "EducationalApplication",
+            "operatingSystem": "Web",
+            "image": "https://edugard-ai-powerd.vercel.app/favicon/web-app-manifest-512x512.png",
+            "publisher": { "@id": "https://edugard-ai-powerd.vercel.app/#organization" },
+            "offers": { "@type": "Offer", "price": "0", "priceCurrency": "INR" }
+          }
+        ]
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>

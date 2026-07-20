@@ -718,11 +718,11 @@ namespace EduGuard.Controllers
 
             if (mentorInfo == null)
             {
-                // Fallback to EduGard AI Assistant details
+                // Fallback to EduGuard AI Assistant details
                 mentorInfo = new
                 {
                     _id = "ai-assistant",
-                    name = "EduGard AI Assistant",
+                    name = "EduGuard AI Assistant",
                     email = "ai@eduguard.com",
                     status = "approved",
                     isOnline = true

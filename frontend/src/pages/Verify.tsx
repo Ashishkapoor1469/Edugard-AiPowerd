@@ -2,6 +2,8 @@ import React, { useState, useEffect } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import axios from "axios";
 import toast from "react-hot-toast";
+import eduGuardLogo from "../assets/e.png";
+import eduGuardBrand from "../assets/e-witheduguardtext.png";
 
 const Verify: React.FC = () => {
   const [searchParams] = useSearchParams();
@@ -68,19 +70,14 @@ const Verify: React.FC = () => {
         {/* Left Side: Graphic Panel (60% width) */}
         <div className="relative hidden w-3/5 flex-col justify-between bg-primary p-12 text-white md:flex">
           {/* Logo element */}
-          <div className="flex items-center gap-2">
-            <svg className="h-8 w-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm1-13h-2v6h2v-6zm0 8h-2v2h2v-2z" />
-            </svg>
-            <span className="text-xl font-bold tracking-tight">EduGuard</span>
+          <div className="h-10 w-44 overflow-hidden rounded-lg bg-white">
+            <img src={eduGuardBrand} alt="EduGuard" className="h-full w-full object-cover" />
           </div>
 
           {/* Decorative graphic illustration */}
           <div className="my-auto flex flex-col items-center">
             <div className="relative mb-6 flex h-40 w-40 items-center justify-center rounded-full bg-white/10 ring-8 ring-white/5">
-              <svg className="h-20 w-20 text-white animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-              </svg>
+              <img src={eduGuardLogo} alt="" className="h-28 w-28 rounded-[22%] object-cover" />
               <span className="absolute left-4 top-4 h-4 w-4 rounded-full bg-emerald-400" />
               <span className="absolute right-4 bottom-4 h-4 w-4 rounded-full bg-indigo-300" />
             </div>
@@ -98,11 +95,8 @@ const Verify: React.FC = () => {
         {/* Right Side: Form Card (40% width) */}
         <div className="flex w-full flex-col justify-center px-8 py-10 md:w-2/5 md:px-12">
           {/* Logo for mobile */}
-          <div className="flex items-center gap-2 mb-6 md:hidden">
-            <svg className="h-6 w-6 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm1-13h-2v6h2v-6zm0 8h-2v2h2v-2z" />
-            </svg>
-            <span className="text-lg font-bold tracking-tight text-primary">EduGuard</span>
+          <div className="mb-6 h-10 w-44 overflow-hidden md:hidden">
+            <img src={eduGuardBrand} alt="EduGuard" className="h-full w-full object-cover" />
           </div>
 
           {errorMsg && !success ? (

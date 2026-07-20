@@ -4,6 +4,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import axios from "axios";
 import socket from "../utils/socket.js";
 import toast from "react-hot-toast";
+import eduGuardBrand from "../assets/e-witheduguardtext.png";
 
 interface SearchStudent {
   _id: string;
@@ -207,12 +208,8 @@ const Navbar: React.FC = () => {
   return (
     <header className="sticky top-0 z-40 hidden h-14 w-full items-center justify-between border-b border-slate-200 bg-white px-4 shadow-xs md:flex md:h-16 md:px-6">
     
-      <div className="flex items-center gap-2 cursor-pointer shrink-0" onClick={() => navigate("/")}>
-        <svg className="h-9 w-9 text-[#1a73e8]" fill="currentColor" viewBox="0 0 24 24">
-          <path d="M12 3L1 9l11 6 9-4.91V17h2V9L12 3z" />
-          <path d="M21 12.09c-.28-.05-.56-.09-.84-.13C19.26 12 18 13.5 18 15v2.24l-6 3.27-6-3.27V12h-2v6l8 4.36 8-4.36v-3.55c0-1.04-.57-1.92-1-2.36z" />
-        </svg>
-        <span className="font-bold text-lg md:text-xl tracking-tight text-primary">EduGuard</span>
+      <div className="h-10 w-44 shrink-0 cursor-pointer overflow-hidden" onClick={() => navigate("/")}>
+        <img src={eduGuardBrand} alt="EduGuard" className="h-full w-full object-cover" />
       </div>
 
       {/* Global Search Bar - hidden on mobile and for students */}
