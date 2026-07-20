@@ -71,7 +71,7 @@ The existing manual or semi-digital process has the following problems:
 
 EduGuard provides a React web interface connected to an ASP.NET Core API and MongoDB. Authenticated users receive role-specific routes and dashboards. The system stores student academic records, calculates risk scores, sends notifications, supports mentor-student chat through SignalR, and generates report-card files through a background worker.
 
-The current implementation supports the main academic risk and mentorship workflow. Version 2 is proposed as an upcoming extension for session-based attendance and student leadership roles such as Class Representative (CR) and Discipline Head.
+The current implementation supports the main academic risk and mentorship workflow together with Version 2 session-based attendance and scoped student leadership assignments such as Class Representative (CR).
 
 ## 6. Project Objectives
 
@@ -84,7 +84,7 @@ The current implementation supports the main academic risk and mentorship workfl
 7. Deliver announcements, events, assignments, and notifications.
 8. Generate downloadable student report cards.
 9. Enforce authenticated, role-based access to protected information.
-10. Extend the system in V2 with auditable, time-restricted attendance marking.
+10. Provide auditable, time-restricted V2 attendance marking.
 
 ## 7. Scope
 
@@ -103,13 +103,13 @@ The current implementation supports the main academic risk and mentorship workfl
 - Background report-card generation and download.
 - Docker configuration and a health endpoint for deployment.
 
-### 7.2 Upcoming V2 Scope
+### 7.2 Implemented V2 Scope
 
 - Daily morning and afternoon attendance sessions.
 - GitHub-style attendance history on the student profile.
 - Class Representative attendance permissions.
-- Student leadership badges on profiles and student lists.
-- Discipline Head and two additional student leadership roles.
+- A compact CR leadership badge on student profiles.
+- College-scoped student leadership assignment and revocation.
 - College-admin views for leaders and class attendance.
 - Present, absent, and total-student summary counts.
 - Time-window enforcement and attendance change history.
@@ -171,9 +171,9 @@ Student records contain identity, roll number, college, course, class, semester,
 
 Students can be added manually or imported from an Excel file. Mentors can be approved by a college administrator. The system supports mentor selection/assignment and class-based student views.
 
-### 10.4 Marks and Current Attendance Module
+### 10.4 Marks and Attendance Module
 
-The current version stores attendance as one percentage on the student record. Marks are stored per subject with class tests, mid-term marks, house-examination marks, and maximum marks. This current field is an aggregate and does not yet provide date-wise or session-wise attendance. That limitation is addressed by the proposed V2 module.
+Legacy student records retain the aggregate attendance percentage for compatibility. V2 stores date-wise morning and afternoon attendance records and derives `sessionAttendancePercentage` for the risk engine when finalized session data exists. Marks remain stored per subject with class tests, mid-term marks, house-examination marks, and maximum marks.
 
 ### 10.5 Student Risk Module
 
@@ -266,15 +266,15 @@ Example: a student with 70% attendance receives 20 points. If the marks average 
 
 <div class="page-break"></div>
 
-## 15. Upcoming Version 2: Attendance and Student Leadership
+## 15. Implemented Version 2: Attendance and Student Leadership
 
 ### 15.1 V2 Purpose
 
-V2 will replace the single attendance-percentage limitation with daily, session-wise attendance. It will also introduce controlled student leadership responsibilities. The central principle is least privilege: a CR may mark attendance for an assigned class and active session, but does not become a mentor or administrator.
+V2 adds daily, session-wise attendance while retaining legacy attendance compatibility. It also adds controlled student leadership responsibilities. The central principle is least privilege: a CR may mark attendance for an assigned class and active session, but does not become a mentor or administrator.
 
 ### 15.2 Leadership Roles
 
-V2 proposes four student leadership assignments:
+V2 supports college-scoped student leadership assignments. The CR assignment has the implemented attendance permission; other leadership labels can be assigned and displayed without automatically receiving privileged backend routes:
 
 1. **Class Representative (CR):** May open attendance routes for the assigned class and mark present/absent status during permitted windows.
 2. **Discipline Head:** May access approved discipline coordination routes and submit observations; sensitive action remains with staff.
@@ -285,7 +285,7 @@ A student may hold one or more assignments. Each assignment must contain a colle
 
 ### 15.3 CR Badge and Visibility
 
-When a student has an active CR assignment, the UI will show a visible **CR** badge beside the student's name on the profile, class list, attendance list, and relevant admin views. Equivalent badges will identify the other leadership assignments. Badges are display indicators only; backend authorization remains the source of permission.
+When a student has an active CR assignment, the UI shows a compact **CR** badge beside the student's name on the profile. Leadership assignments are also visible in the college-admin management view. Badges are display indicators only; backend authorization remains the source of permission.
 
 ### 15.4 Attendance Sessions and Time Rules
 
@@ -328,11 +328,11 @@ The student profile will include a contribution-calendar-style attendance histor
 - Red: absent in both required sessions.
 - Grey: no class, holiday, future date, or no finalized record.
 
-Hovering or focusing a cell will show the date, morning status, afternoon status, marker, and last update time. A text legend and accessible status label must accompany colors. Summary values will show attended sessions, required sessions, absent sessions, and percentage for the selected period.
+Hovering or focusing a cell shows the date, morning status, afternoon status, marker, and last update time. A text legend and accessible status label accompany colors. Summary values show attended sessions, required sessions, absent sessions, and percentage for the selected period.
 
 ### 15.7 College-Admin Attendance Tab
 
-The existing college-admin dashboard will receive an **Attendance** tab rather than a separate dashboard. It will provide:
+The existing college-admin dashboard includes an **Attendance** tab rather than a separate dashboard. It provides:
 
 - Date, course, class, semester, and session filters.
 - Total student count.
@@ -345,13 +345,13 @@ The existing college-admin dashboard will receive an **Attendance** tab rather t
 - Name of the CR or authorized user who marked the session.
 - Controlled correction of locked records with a required reason.
 
-The college administrator will also receive a **Student Leaders** view showing all CRs, Discipline Heads, Academic Heads, and Activity Heads in that college. The view will support class filters, active/inactive status, assignment dates, and assignment/revocation actions.
+The college administrator also receives a **Student Leaders** view showing leadership assignments in that college, including type, class, active/inactive status, assignment dates, and assignment/revocation actions.
 
-### 15.8 Proposed V2 Data Rules
+### 15.8 Implemented V2 Data Rules
 
-An attendance record should be unique by `studentId + date + session`. Required fields are college, course/class, student, date, session, status, marked by, created time, and updated time. Changes should append an audit entry containing old status, new status, actor, time, and reason when required.
+An attendance record is unique by `studentId + date + session`. Records contain college, class, student, date, session, status, marked by, created time, updated time, and audit history. Admin corrections append an audit entry containing old status, new status, actor, time, and the mandatory reason.
 
-V2 attendance percentages should be derived from finalized required sessions:
+V2 attendance percentages are derived from finalized required sessions:
 
 `Attendance Percentage = Present Required Sessions / Total Finalized Required Sessions x 100`
 
@@ -400,15 +400,11 @@ Holidays, cancelled sessions, future dates, and unfinalized sessions must not re
 
 ### Implemented
 
-Authentication, core roles, student/mentor/college data, risk calculation, profile pages, AI services, chat, notifications, announcements/events, assignments, reports, Docker, and health monitoring have corresponding source-code support.
+Authentication, core roles, student/mentor/college data, risk calculation, profile pages, AI services, chat, notifications, announcements/events, assignments, reports, Docker, health monitoring, V2 attendance records, CR routes, leadership assignments, leadership badges, time-window enforcement, audit history, student attendance history, and college-admin attendance summaries have corresponding source-code support.
 
 ### Partial or Operationally Limited
 
-Some large workflows, including assignments, AI output quality, report rendering, and authorization across every endpoint, require end-to-end deployment testing. Attendance currently remains a single percentage rather than a daily record.
-
-### Upcoming, Not Yet Implemented
-
-All V2 attendance records, CR routes, student leadership assignments, leadership badges, time-window enforcement, audit logs, GitHub-style attendance history, and college-admin attendance summaries are planned features. They must not be presented as working functionality in the current project demonstration.
+Some large workflows, including assignments, AI output quality, report rendering, and authorization across every endpoint, still require continued end-to-end deployment testing. Legacy students without V2 session records continue to use their aggregate attendance percentage by design.
 
 ## 18. Testing Strategy
 
@@ -428,4 +424,4 @@ Testing should cover login and role access, college isolation, student import va
 
 EduGuard combines student data, rule-based risk analysis, AI-assisted guidance, mentorship, communication, and institutional administration in one platform. Its existing implementation establishes the main student-risk and mentor workflow using React, ASP.NET Core, MongoDB, SignalR, and external AI/email services.
 
-The proposed V2 extends this foundation with session-based attendance and scoped student leadership. CR attendance access, strict server-side time windows, profile badges, audit history, calendar-style attendance visualization, and class-level college-admin totals provide a practical next phase without changing the platform's core architecture. V2 remains clearly identified as upcoming work until its backend, database, frontend, and tests are completed.
+The implemented V2 extends this foundation with session-based attendance and scoped student leadership. CR attendance access, strict server-side time windows, profile badges, audit history, calendar-style attendance visualization, and class-level college-admin totals expand the platform without changing its core architecture.
