@@ -122,6 +122,9 @@ namespace EduGuard.Models
         [BsonElement("attendance")]
         public double? Attendance { get; set; }
 
+        [BsonElement("sessionAttendancePercentage")]
+        public double? SessionAttendancePercentage { get; set; }
+
         [BsonElement("marks")]
         public List<SubjectMarks> Marks { get; set; } = new();
 

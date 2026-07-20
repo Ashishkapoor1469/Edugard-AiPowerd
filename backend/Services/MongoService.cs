@@ -55,6 +55,8 @@ namespace EduGuard.Services
         public IMongoCollection<ReportCardJob> ReportCardJobs => _database.GetCollection<ReportCardJob>("report_card_jobs");
         public IMongoCollection<Syllabus> Syllabi => _database.GetCollection<Syllabus>("syllabi");
         public IMongoCollection<ClassSummaryCache> ClassSummaryCaches => _database.GetCollection<ClassSummaryCache>("class_summary_cache");
+        public IMongoCollection<AttendanceRecord> AttendanceRecords => _database.GetCollection<AttendanceRecord>("attendance_records");
+        public IMongoCollection<LeadershipAssignment> LeadershipAssignments => _database.GetCollection<LeadershipAssignment>("leadership_assignments");
 
         private void CreateIndexesSafe()
         {
@@ -72,6 +74,10 @@ namespace EduGuard.Services
                 // Student collegeName index
                 var studentCollegeNameKey = Builders<Student>.IndexKeys.Ascending(s => s.CollegeName);
                 Students.Indexes.CreateOne(new CreateIndexModel<Student>(studentCollegeNameKey));
+
+                var studentRosterKey = Builders<Student>.IndexKeys
+                    .Ascending(s => s.CollegeId).Ascending(s => s.Class).Ascending(s => s.VerificationStatus);
+                Students.Indexes.CreateOne(new CreateIndexModel<Student>(studentRosterKey));
 
                 // Mentor email unique index
                 var mentorEmailKey = Builders<Mentor>.IndexKeys.Ascending(m => m.Email);
@@ -98,6 +104,18 @@ namespace EduGuard.Services
                 var classSummaryExpiryKey = Builders<ClassSummaryCache>.IndexKeys.Ascending(c => c.ExpiresAt);
                 var classSummaryExpiryOptions = new CreateIndexOptions { ExpireAfter = TimeSpan.Zero };
                 ClassSummaryCaches.Indexes.CreateOne(new CreateIndexModel<ClassSummaryCache>(classSummaryExpiryKey, classSummaryExpiryOptions));
+
+                var attendanceUniqueKey = Builders<AttendanceRecord>.IndexKeys
+                    .Ascending(a => a.StudentId).Ascending(a => a.Date).Ascending(a => a.Session);
+                AttendanceRecords.Indexes.CreateOne(new CreateIndexModel<AttendanceRecord>(attendanceUniqueKey, new CreateIndexOptions { Unique = true }));
+
+                var attendanceClassKey = Builders<AttendanceRecord>.IndexKeys
+                    .Ascending(a => a.CollegeId).Ascending(a => a.ClassId).Descending(a => a.Date).Ascending(a => a.Session);
+                AttendanceRecords.Indexes.CreateOne(new CreateIndexModel<AttendanceRecord>(attendanceClassKey));
+
+                var leadershipKey = Builders<LeadershipAssignment>.IndexKeys
+                    .Ascending(a => a.CollegeId).Ascending(a => a.ClassId).Ascending(a => a.IsActive).Ascending(a => a.LeadershipType);
+                LeadershipAssignments.Indexes.CreateOne(new CreateIndexModel<LeadershipAssignment>(leadershipKey));
 
                 _logger.LogInformation("[MONGO] Indexes created successfully.");
             }

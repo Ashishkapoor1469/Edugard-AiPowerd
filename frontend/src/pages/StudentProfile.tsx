@@ -14,6 +14,7 @@ import {
   Legend,
 } from "recharts";
 import ReactMarkdown from "react-markdown";
+import StudentAttendancePanel from "../components/StudentAttendancePanel.js";
 
 interface ClassTest {
   testNumber: number;
@@ -77,7 +78,7 @@ const StudentProfile: React.FC = () => {
 
   // Tabs for Student vs Mentor
   const [activeTab, setActiveTab] = useState<
-    "performance" | "chat" | "notifications" | "settings"
+    "performance" | "attendance" | "chat" | "notifications" | "settings"
   >("performance");
 
   // States
@@ -921,6 +922,7 @@ ${student.aiImprovementPlan || "No plan generated."}
             <div className="mb-6 border-b border-[#dadce0] flex gap-2 overflow-x-auto pb-px">
               {[
                 { id: "performance", label: "Academic Performance" },
+                { id: "attendance", label: "Attendance" },
                 {
                   id: "chat",
                   label: `Chat with Mentor ${student.mentorId?.isOnline ? "●" : ""}`,
@@ -1344,6 +1346,8 @@ ${student.aiImprovementPlan || "No plan generated."}
               )}
             </div>
           )}
+
+          {user?.role === "student" && activeTab === "attendance" && <StudentAttendancePanel />}
 
           {/* 2. CHAT TAB */}
           {(user?.role !== "student" || activeTab === "chat") && (

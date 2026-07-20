@@ -35,6 +35,9 @@ namespace EduGuard.Models
         [BsonElement("contactInfo")]
         public string ContactInfo { get; set; } = string.Empty;
 
+        [BsonElement("timeZone")]
+        public string TimeZone { get; set; } = "Asia/Kolkata";
+
         [BsonElement("createdAt")]
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 

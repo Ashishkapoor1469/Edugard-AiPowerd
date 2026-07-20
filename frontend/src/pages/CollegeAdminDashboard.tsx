@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import toast from "react-hot-toast";
 import { useAuth } from "../context/AuthContext.js";
+import AdminAttendancePanel from "../components/AdminAttendancePanel.js";
 
 interface Mentor {
   _id: string;
@@ -38,7 +39,7 @@ interface Degree {
 const CollegeAdminDashboard: React.FC = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<"mentors" | "risk-students" | "announcements" | "syllabus">("mentors");
+  const [activeTab, setActiveTab] = useState<"mentors" | "risk-students" | "attendance" | "leaders" | "announcements" | "syllabus">("mentors");
 
   // State
   const [mentors, setMentors] = useState<Mentor[]>([]);
@@ -264,6 +265,8 @@ const CollegeAdminDashboard: React.FC = () => {
         {[
           { id: "mentors", label: "Mentor Management" },
           { id: "risk-students", label: "Risk Students" },
+          { id: "attendance", label: "Attendance" },
+          { id: "leaders", label: "Student Leaders" },
           { id: "announcements", label: "Announcements & Events" },
           { id: "syllabus", label: "University Syllabus" },
         ].map((tab) => (
@@ -283,6 +286,8 @@ const CollegeAdminDashboard: React.FC = () => {
 
       {/* Tab Contents */}
       <div className="grid grid-cols-1 gap-6">
+        {activeTab === "attendance" && <AdminAttendancePanel view="attendance" />}
+        {activeTab === "leaders" && <AdminAttendancePanel view="leaders" />}
         {/* TAB 1: MENTOR MANAGEMENT */}
         {activeTab === "mentors" && (
           <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs">

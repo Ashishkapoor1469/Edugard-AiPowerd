@@ -30,7 +30,7 @@ img { max-width: 100%; height: auto; }
 **University:** Himachal Pradesh University (HPU)  
 **Academic Session:** 2024-2027  
 **Submitted To:** Department of BCA  
-**Project Guide:** Milya
+**Project Guide:** Miliya Mahajan
 
 </div>
 

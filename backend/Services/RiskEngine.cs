@@ -56,13 +56,14 @@ namespace EduGuard.Services
             double score = 0;
 
             // 1. Attendance Scoring
-            if (student.Attendance.HasValue)
+            var attendancePercentage = student.SessionAttendancePercentage ?? student.Attendance;
+            if (attendancePercentage.HasValue)
             {
-                if (student.Attendance.Value < 50)
+                if (attendancePercentage.Value < 50)
                 {
                     score += 40;
                 }
-                else if (student.Attendance.Value < 75)
+                else if (attendancePercentage.Value < 75)
                 {
                     score += 20;
                 }

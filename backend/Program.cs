@@ -68,6 +68,15 @@ builder.Services.AddRateLimiter(options =>
         opt.Window = TimeSpan.FromMinutes(1); // 1-minute window
         opt.QueueLimit = 0;
     });
+    options.AddPolicy("attendance-writes", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            context.User.FindFirst("id")?.Value ?? context.Connection.RemoteIpAddress?.ToString() ?? "anonymous",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 4,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0
+            }));
 });
 builder.Services.AddSignalR(options =>
 {
