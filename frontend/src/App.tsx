@@ -205,7 +205,7 @@ const BottomNav: React.FC = () => {
             }`
           }
         >
-          <div className={`p-1 rounded-lg transition-all ${isActive(item) ? "bg-indigo-50" : ""}`}>
+          <div className={`p-1 rounded-lg transition-all ${isActive(item) ? "bg-primary/5" : ""}`}>
             {item.icon}
           </div>
           {item.name}

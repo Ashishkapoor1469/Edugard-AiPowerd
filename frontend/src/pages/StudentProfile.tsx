@@ -759,7 +759,7 @@ ${student.aiImprovementPlan || "No plan generated."}
     return (
       <div className="flex h-full w-full items-center justify-center bg-[#f8f9fa] animate-pulse">
         <svg
-          className="h-10 w-10 animate-spin text-[#1a73e8]"
+          className="h-10 w-10 animate-spin text-[#12274E]"
           fill="none"
           viewBox="0 0 24 24"
         >
@@ -819,7 +819,7 @@ ${student.aiImprovementPlan || "No plan generated."}
       {/* Profile Header */}
       <div className="mb-6 rounded-2xl bg-white border border-[#dadce0] p-6 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div className="flex items-center gap-4">
-          <div className="h-16 w-16 rounded-full bg-blue-50 text-[#1a73e8] font-bold text-xl flex items-center justify-center border border-blue-100">
+          <div className="h-16 w-16 rounded-full bg-primary/5 text-[#12274E] font-bold text-xl flex items-center justify-center border border-primary/15">
             {student.name.substring(0, 2).toUpperCase()}
           </div>
           <div>
@@ -830,7 +830,7 @@ ${student.aiImprovementPlan || "No plan generated."}
             <p className="text-xs text-[#5f6368] mt-1 font-medium">
               Roll No: #{student.rollNo} · {student.course} · {student.class}
             </p>
-            <span className="inline-flex px-2 py-0.5 rounded-md bg-blue-50 text-[#1a73e8] text-[10px] font-semibold mt-2 border border-blue-100/50">
+            <span className="inline-flex px-2 py-0.5 rounded-md bg-primary/5 text-[#12274E] text-[10px] font-semibold mt-2 border border-primary/10">
               Mentor: {student.mentorId?.name || "Unassigned"}
             </span>
           </div>
@@ -937,7 +937,7 @@ ${student.aiImprovementPlan || "No plan generated."}
                   onClick={() => setActiveTab(tab.id as any)}
                   className={`px-4 py-2 text-sm font-semibold border-b-2 rounded-t-lg transition-all ${
                     activeTab === tab.id
-                      ? "border-[#1a73e8] text-[#1a73e8] bg-blue-50/30"
+                      ? "border-[#12274E] text-[#12274E] bg-primary/5"
                       : "border-transparent text-[#5f6368] hover:text-[#202124] hover:border-[#dadce0]"
                   }`}
                 >
@@ -953,9 +953,9 @@ ${student.aiImprovementPlan || "No plan generated."}
               {/* Join Group Alert */}
               {(!student.mentorId || student.mentorId._id === "ai-assistant") &&
                 user?.role === "student" && (
-                  <div className="p-5 bg-blue-50 border border-blue-100 rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                  <div className="p-5 bg-primary/5 border border-primary/15 rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                     <div>
-                      <h3 className="text-sm font-semibold text-[#1a73e8]">
+                      <h3 className="text-sm font-semibold text-[#12274E]">
                         Select Academic Mentor
                       </h3>
                       <p className="text-xs text-[#5f6368] mt-1 font-medium">
@@ -978,7 +978,7 @@ ${student.aiImprovementPlan || "No plan generated."}
                       </select>
                       <button
                         onClick={handleJoinGroup}
-                        className="bg-[#1a73e8] text-white px-4 py-1.5 rounded-lg text-xs font-semibold hover:bg-[#1557b0]"
+                        className="bg-[#12274E] text-white px-4 py-1.5 rounded-lg text-xs font-semibold hover:bg-[#0B1830]"
                       >
                         Join
                       </button>
@@ -1051,7 +1051,7 @@ ${student.aiImprovementPlan || "No plan generated."}
                       <Legend />
                       <Bar
                         dataKey="Class Tests (%)"
-                        fill="#1a73e8"
+                        fill="#12274E"
                         radius={[4, 4, 0, 0]}
                       />
                       <Bar
@@ -1084,7 +1084,7 @@ ${student.aiImprovementPlan || "No plan generated."}
                     </button>
                     <button
                       onClick={handleExportPDF}
-                      className="bg-[#1a73e8] text-white px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-[#1557b0] transition-colors"
+                      className="bg-[#12274E] text-white px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-[#0B1830] transition-colors"
                     >
                       Export Report PDF
                     </button>
@@ -1102,7 +1102,7 @@ ${student.aiImprovementPlan || "No plan generated."}
                         <button
                           onClick={handleGenerateRiskAnalysis}
                           disabled={generatingExplanation}
-                          className="text-xs text-[#1a73e8] font-bold hover:underline"
+                          className="text-xs text-[#12274E] font-bold hover:underline"
                         >
                           {generatingExplanation
                             ? "Analyzing..."
@@ -1128,7 +1128,7 @@ ${student.aiImprovementPlan || "No plan generated."}
                 <div className="flex justify-end">
                   <button
                     onClick={() => setShowOverrideForm(!showOverrideForm)}
-                    className="bg-[#1a73e8] text-white px-5 py-2.5 rounded-xl text-sm font-semibold hover:bg-[#1557b0] transition-all shadow-sm"
+                    className="bg-[#12274E] text-white px-5 py-2.5 rounded-xl text-sm font-semibold hover:bg-[#0B1830] transition-all shadow-sm"
                   >
                     Modify Records & Overrides
                   </button>
@@ -1339,7 +1339,7 @@ ${student.aiImprovementPlan || "No plan generated."}
                       </button>
                       <button
                         type="submit"
-                        className="bg-[#1a73e8] text-white px-4 py-2 rounded-lg text-xs font-semibold hover:bg-[#1557b0]"
+                        className="bg-[#12274E] text-white px-4 py-2 rounded-lg text-xs font-semibold hover:bg-[#0B1830]"
                       >
                         Save Modifications & Recalculate
                       </button>
@@ -1469,7 +1469,7 @@ ${student.aiImprovementPlan || "No plan generated."}
                 <button
                   type="submit"
                   disabled={!student.mentorId}
-                  className="bg-[#1a73e8] text-white px-5 py-2 rounded-lg text-xs font-semibold hover:bg-[#1557b0] disabled:opacity-50"
+                  className="bg-[#12274E] text-white px-5 py-2 rounded-lg text-xs font-semibold hover:bg-[#0B1830] disabled:opacity-50"
                 >
                   Send
                 </button>
@@ -1492,10 +1492,10 @@ ${student.aiImprovementPlan || "No plan generated."}
                   {alerts.map((n) => (
                     <div
                       key={n._id}
-                      className={`p-4 border rounded-xl flex gap-3 ${n.type === "event" ? "bg-purple-50/50 border-purple-100" : "bg-blue-50/50 border-blue-100"}`}
+                      className={`p-4 border rounded-xl flex gap-3 ${n.type === "event" ? "bg-purple-50/50 border-purple-100" : "bg-primary/5 border-primary/15"}`}
                     >
                       <div
-                        className={`h-8 w-8 rounded-lg flex items-center justify-center shrink-0 ${n.type === "event" ? "bg-purple-100" : "bg-blue-100"}`}
+                        className={`h-8 w-8 rounded-lg flex items-center justify-center shrink-0 ${n.type === "event" ? "bg-purple-100" : "bg-primary/10"}`}
                       >
                         {n.type === "event" ? (
                           <svg
@@ -1513,7 +1513,7 @@ ${student.aiImprovementPlan || "No plan generated."}
                           </svg>
                         ) : (
                           <svg
-                            className="h-4 w-4 text-blue-600"
+                            className="h-4 w-4 text-primary"
                             fill="none"
                             stroke="currentColor"
                             viewBox="0 0 24 24"
@@ -1530,7 +1530,7 @@ ${student.aiImprovementPlan || "No plan generated."}
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1">
                           <span
-                            className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded ${n.type === "event" ? "bg-purple-200 text-purple-800" : "bg-blue-200 text-blue-800"}`}
+                            className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded ${n.type === "event" ? "bg-purple-200 text-purple-800" : "bg-primary/15 text-primary"}`}
                           >
                             {n.type === "event" ? "Event" : "Announcement"}
                           </span>
@@ -1556,7 +1556,7 @@ ${student.aiImprovementPlan || "No plan generated."}
                             href={n.registrationLink}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="text-[10px] text-indigo-600 font-semibold hover:underline mt-1 inline-block"
+                            className="text-[10px] text-primary font-semibold hover:underline mt-1 inline-block"
                           >
                             Register →
                           </a>

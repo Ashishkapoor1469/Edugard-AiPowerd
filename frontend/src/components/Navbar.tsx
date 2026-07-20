@@ -252,7 +252,7 @@ const Navbar: React.FC = () => {
                     <div
                       key={student._id}
                       onClick={() => handleSearchResultClick(student._id)}
-                      className="flex items-center gap-3 px-3 py-2.5 hover:bg-indigo-50/50 cursor-pointer transition-colors border-b border-slate-50 last:border-b-0"
+                      className="flex items-center gap-3 px-3 py-2.5 hover:bg-primary/5 cursor-pointer transition-colors border-b border-slate-50 last:border-b-0"
                     >
                       <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[10px] font-bold text-primary">
                         {student.name.substring(0, 2).toUpperCase()}
@@ -341,7 +341,7 @@ const Navbar: React.FC = () => {
                     <div
                       key={n._id}
                       onClick={() => handleNotificationClick(n)}
-                      className={`flex cursor-pointer gap-2 border-b border-slate-50 px-4 py-3 hover:bg-slate-50 ${!n.isRead ? "bg-indigo-50/20" : ""}`}
+                      className={`flex cursor-pointer gap-2 border-b border-slate-50 px-4 py-3 hover:bg-slate-50 ${!n.isRead ? "bg-primary/5" : ""}`}
                     >
                       <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${n.priority === "urgent" ? "bg-critical" : n.priority === "high" ? "bg-high" : "bg-medium"}`} />
                       <div className="flex flex-col">

@@ -156,7 +156,7 @@ const NotificationsPage: React.FC = () => {
       case "urgent": return "bg-red-50 text-critical border-red-200";
       case "high": return "bg-orange-50 text-high border-orange-200";
       case "medium": return "bg-amber-50 text-medium border-amber-200";
-      case "low": return "bg-indigo-50 text-primary border-indigo-200";
+      case "low": return "bg-primary/5 text-primary border-primary/20";
       default: return "bg-slate-50 text-secondary border-slate-200";
     }
   };
@@ -222,17 +222,17 @@ const NotificationsPage: React.FC = () => {
             </div>
           ) : (
             collegeAlerts.map((n) => (
-              <div key={n._id} className={`rounded-xl border p-5 shadow-xs flex gap-4 ${n.type === "event" ? "bg-purple-50/50 border-purple-100" : "bg-blue-50/50 border-blue-100"}`}>
-                <div className={`h-10 w-10 rounded-xl flex items-center justify-center shrink-0 ${n.type === "event" ? "bg-purple-100" : "bg-blue-100"}`}>
+              <div key={n._id} className={`rounded-xl border p-5 shadow-xs flex gap-4 ${n.type === "event" ? "bg-purple-50/50 border-purple-100" : "bg-primary/5 border-primary/15"}`}>
+                <div className={`h-10 w-10 rounded-xl flex items-center justify-center shrink-0 ${n.type === "event" ? "bg-purple-100" : "bg-primary/10"}`}>
                   {n.type === "event" ? (
                     <svg className="h-5 w-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
                   ) : (
-                    <svg className="h-5 w-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" /></svg>
+                    <svg className="h-5 w-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" /></svg>
                   )}
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1">
-                    <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded ${n.type === "event" ? "bg-purple-200 text-purple-800" : "bg-blue-200 text-blue-800"}`}>
+                    <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded ${n.type === "event" ? "bg-purple-200 text-purple-800" : "bg-primary/15 text-primary"}`}>
                       {n.type === "event" ? "Event" : "Announcement"}
                     </span>
                     <span className="text-[10px] text-slate-400 font-bold">
@@ -245,7 +245,7 @@ const NotificationsPage: React.FC = () => {
                     <span className="text-[10px] text-purple-700 mt-1.5 block font-medium">📍 {n.location}{n.date ? ` · ${new Date(n.date).toLocaleDateString()}` : ""}</span>
                   )}
                   {n.type === "event" && n.registrationLink && (
-                    <a href={n.registrationLink} target="_blank" rel="noopener noreferrer" className="text-[10px] text-indigo-600 font-semibold hover:underline mt-1 inline-block">Register →</a>
+                    <a href={n.registrationLink} target="_blank" rel="noopener noreferrer" className="text-[10px] text-primary font-semibold hover:underline mt-1 inline-block">Register →</a>
                   )}
                 </div>
               </div>
@@ -268,7 +268,7 @@ const NotificationsPage: React.FC = () => {
               key={notif._id}
               className={`rounded-xl border border-slate-200 bg-white p-5 shadow-xs border-l-4 transition-all flex flex-col gap-3 justify-between sm:flex-row sm:items-center ${
                 getPriorityBorderColor(notif.priority)
-              } ${!notif.isRead ? "bg-indigo-50/10 ring-1 ring-indigo-500/5" : ""}`}
+              } ${!notif.isRead ? "bg-primary/5 ring-1 ring-primary/5" : ""}`}
             >
               {/* Message Content */}
               <div className="flex flex-col gap-1.5 min-w-0">

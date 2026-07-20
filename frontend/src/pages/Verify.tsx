@@ -65,7 +65,7 @@ const Verify: React.FC = () => {
   };
 
   return (
-    <div className="flex min-h-dvh items-center justify-center bg-gradient-to-br from-indigo-50 via-white to-indigo-50/30 p-4">
+    <div className="flex min-h-dvh items-center justify-center bg-gradient-to-br from-primary/10 via-white to-primary/5 p-4">
       <div className="flex w-full max-w-5xl overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-2xl md:h-[600px]">
         {/* Left Side: Graphic Panel (60% width) */}
         <div className="relative hidden w-3/5 flex-col justify-between bg-primary p-12 text-white md:flex">
@@ -79,15 +79,15 @@ const Verify: React.FC = () => {
             <div className="relative mb-6 flex h-40 w-40 items-center justify-center rounded-full bg-white/10 ring-8 ring-white/5">
               <img src={eduGuardLogo} alt="" className="h-28 w-28 rounded-[22%] object-cover" />
               <span className="absolute left-4 top-4 h-4 w-4 rounded-full bg-emerald-400" />
-              <span className="absolute right-4 bottom-4 h-4 w-4 rounded-full bg-indigo-300" />
+              <span className="absolute right-4 bottom-4 h-4 w-4 rounded-full bg-primary/20" />
             </div>
             <h2 className="text-center text-2xl font-bold tracking-wide">Account Activation</h2>
-            <p className="mt-2 text-center text-sm font-medium text-indigo-100 max-w-sm">
+            <p className="mt-2 text-center text-sm font-medium text-white/80 max-w-sm">
               Setup a password to activate your student portal. You will be able to access your attendance, marks, and chat with your mentor.
             </p>
           </div>
 
-          <div className="text-xs font-semibold text-indigo-200">
+          <div className="text-xs font-semibold text-white/80">
             &ldquo;Security and privacy is our priority.&rdquo;
           </div>
         </div>
@@ -128,7 +128,7 @@ const Verify: React.FC = () => {
               </p>
               <button
                 onClick={() => navigate("/login")}
-                className="mt-6 w-full rounded-lg bg-primary py-2.5 text-sm font-bold text-white hover:bg-primary-hover shadow-md shadow-indigo-100"
+                className="mt-6 w-full rounded-lg bg-primary py-2.5 text-sm font-bold text-white hover:bg-primary-hover shadow-md shadow-primary/10"
               >
                 Sign In
               </button>
@@ -150,7 +150,7 @@ const Verify: React.FC = () => {
                       placeholder="••••••••"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      className="w-full rounded-lg border border-slate-200 py-2.5 pl-10 pr-10 text-sm text-text-primary focus:border-primary focus:outline-hidden focus:ring-2 focus:ring-indigo-100"
+                      className="w-full rounded-lg border border-slate-200 py-2.5 pl-10 pr-10 text-sm text-text-primary focus:border-primary focus:outline-hidden focus:ring-2 focus:ring-primary/15"
                       required
                     />
                     <span className="absolute left-3 top-3 text-slate-400">
@@ -170,7 +170,7 @@ const Verify: React.FC = () => {
                       placeholder="••••••••"
                       value={confirmPassword}
                       onChange={(e) => setConfirmPassword(e.target.value)}
-                      className="w-full rounded-lg border border-slate-200 py-2.5 pl-10 pr-10 text-sm text-text-primary focus:border-primary focus:outline-hidden focus:ring-2 focus:ring-indigo-100"
+                      className="w-full rounded-lg border border-slate-200 py-2.5 pl-10 pr-10 text-sm text-text-primary focus:border-primary focus:outline-hidden focus:ring-2 focus:ring-primary/15"
                       required
                     />
                     <span className="absolute left-3 top-3 text-slate-400">
@@ -201,7 +201,7 @@ const Verify: React.FC = () => {
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="mt-6 flex w-full items-center justify-center rounded-lg bg-primary py-2.5 text-sm font-bold text-white hover:bg-primary-hover shadow-md shadow-indigo-100 disabled:opacity-50"
+                  className="mt-6 flex w-full items-center justify-center rounded-lg bg-primary py-2.5 text-sm font-bold text-white hover:bg-primary-hover shadow-md shadow-primary/10 disabled:opacity-50"
                 >
                   {isSubmitting ? (
                     <svg className="h-5 w-5 animate-spin text-white" fill="none" viewBox="0 0 24 24">

@@ -339,13 +339,13 @@ const Dashboard: React.FC = () => {
         <div className="flex items-center gap-2 max-w-xs w-full">
           <div {...getRootProps()} className="flex-1 border border-dashed border-[#dadce0] rounded-xl px-4 py-3 bg-slate-50/50 hover:bg-slate-50 cursor-pointer transition-colors text-center">
             <input {...getInputProps()} />
-            <span className="text-xs font-semibold text-[#1a73e8]">Upload Student Excel Roster</span>
+            <span className="text-xs font-semibold text-[#12274E]">Upload Student Excel Roster</span>
             <p className="text-[10px] text-[#5f6368] mt-0.5">Drag and drop .xlsx file to import / merge grades</p>
           </div>
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); setShowExcelHelp(true); }}
-            className="shrink-0 h-8 w-8 rounded-full border border-slate-200 bg-white flex items-center justify-center text-slate-400 hover:text-[#1a73e8] hover:border-[#1a73e8] hover:bg-blue-50 transition-all shadow-sm"
+            className="shrink-0 h-8 w-8 rounded-full border border-slate-200 bg-white flex items-center justify-center text-slate-400 hover:text-[#12274E] hover:border-[#12274E] hover:bg-primary/5 transition-all shadow-sm"
             title="Excel format help"
           >
             <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
@@ -386,7 +386,7 @@ const Dashboard: React.FC = () => {
               {/* Optional Fields */}
               <div>
                 <h4 className="text-xs font-bold text-slate-700 mb-2 flex items-center gap-1.5">
-                  <span className="h-5 w-5 rounded bg-blue-100 text-blue-600 flex items-center justify-center text-[9px] font-black">~</span>
+                  <span className="h-5 w-5 rounded bg-primary/10 text-primary flex items-center justify-center text-[9px] font-black">~</span>
                   Optional Columns
                 </h4>
                 <div className="grid grid-cols-2 gap-2">
@@ -397,9 +397,9 @@ const Dashboard: React.FC = () => {
                     {col: "Behavior", desc: "Conduct note", alt: "conduct"},
                     {col: "Contribution", desc: "Comma-separated activities", alt: "contributions, cocurricular"},
                   ].map(f => (
-                    <div key={f.col} className="rounded-lg border border-blue-100 bg-blue-50/30 px-3 py-2">
-                      <span className="text-[11px] font-bold text-blue-700 block">{f.col}</span>
-                      <span className="text-[9px] text-blue-600/70">{f.desc}</span>
+                    <div key={f.col} className="rounded-lg border border-primary/15 bg-primary/5 px-3 py-2">
+                      <span className="text-[11px] font-bold text-primary block">{f.col}</span>
+                      <span className="text-[9px] text-primary/70">{f.desc}</span>
                       <span className="text-[9px] text-slate-400 block mt-0.5">Aliases: {f.alt}</span>
                     </div>
                   ))}
@@ -477,7 +477,7 @@ const Dashboard: React.FC = () => {
             onClick={() => setActiveTab(tab.id as any)}
             className={`px-4 py-2 text-sm font-semibold border-b-2 rounded-t-lg transition-all ${
               activeTab === tab.id
-                ? "border-[#1a73e8] text-[#1a73e8] bg-blue-50/30"
+                ? "border-[#12274E] text-[#12274E] bg-primary/5"
                 : "border-transparent text-[#5f6368] hover:text-[#202124] hover:border-[#dadce0]"
             }`}
           >
@@ -502,7 +502,7 @@ const Dashboard: React.FC = () => {
                     onClick={() => setRiskFilter(risk)}
                     className={`px-3 py-1.5 rounded-lg border text-xs font-semibold capitalize transition-all shrink-0 ${
                       riskFilter === risk
-                        ? "bg-[#1a73e8] border-[#1a73e8] text-white"
+                        ? "bg-[#12274E] border-[#12274E] text-white"
                         : "border-[#dadce0] bg-white text-[#5f6368] hover:bg-slate-50"
                     }`}
                   >
@@ -585,7 +585,7 @@ const Dashboard: React.FC = () => {
                         <td className="py-3 px-4 text-right whitespace-nowrap">
                           <button
                             onClick={() => navigate(`/students/${s._id}`)}
-                            className="text-[#1a73e8] hover:underline font-semibold text-xs whitespace-nowrap"
+                            className="text-[#12274E] hover:underline font-semibold text-xs whitespace-nowrap"
                           >
                             Manage Profile
                           </button>
@@ -645,7 +645,7 @@ const Dashboard: React.FC = () => {
                         <td className="py-3.5 px-4 text-right flex justify-end gap-2">
                           <button
                             onClick={() => handleApproveStudent(s._id, true)}
-                            className="bg-[#1a73e8] text-white px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-[#1557b0] transition-colors"
+                            className="bg-[#12274E] text-white px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-[#0B1830] transition-colors"
                           >
                             Approve
                           </button>
@@ -726,7 +726,7 @@ const Dashboard: React.FC = () => {
                     className="w-full rounded-lg border border-[#dadce0] px-3.5 py-2 text-sm focus:border-primary focus:outline-none"
                   />
                 </div>
-                <button type="submit" className="w-full bg-[#1a73e8] text-white py-2.5 rounded-lg text-sm font-semibold hover:bg-[#1557b0] transition-colors">
+                <button type="submit" className="w-full bg-[#12274E] text-white py-2.5 rounded-lg text-sm font-semibold hover:bg-[#0B1830] transition-colors">
                   Publish Assignment Link
                 </button>
               </form>
@@ -746,7 +746,7 @@ const Dashboard: React.FC = () => {
                         onClick={() => fetchSubmissions(a._id!)}
                         className={`px-3 py-1.5 border rounded-lg text-xs font-semibold transition-all ${
                           selectedAsgnId === a._id
-                            ? "bg-indigo-50 border-[#1a73e8] text-[#1a73e8]"
+                            ? "bg-primary/5 border-[#12274E] text-[#12274E]"
                             : "bg-white border-[#dadce0] text-[#5f6368]"
                         }`}
                       >
@@ -772,7 +772,7 @@ const Dashboard: React.FC = () => {
                               href={sub.submittedPdfUrl}
                               target="_blank"
                               rel="noreferrer"
-                              className="text-blue-600 hover:underline font-bold"
+                              className="text-primary hover:underline font-bold"
                             >
                               Download PDF File
                             </a>
@@ -812,7 +812,7 @@ const Dashboard: React.FC = () => {
                                   className="col-span-2 border rounded-lg px-2.5 py-1 text-xs focus:outline-none"
                                 />
                               </div>
-                              <button type="submit" className="bg-[#1a73e8] text-white px-3 py-1 rounded-lg text-[10px] font-bold hover:bg-[#1557b0]">
+                              <button type="submit" className="bg-[#12274E] text-white px-3 py-1 rounded-lg text-[10px] font-bold hover:bg-[#0B1830]">
                                 Submit Score
                               </button>
                             </form>
@@ -886,7 +886,7 @@ const Dashboard: React.FC = () => {
                 <button
                   type="submit"
                   disabled={generatingPlan}
-                  className="w-full bg-[#1a73e8] text-white py-2.5 rounded-lg text-sm font-semibold hover:bg-[#1557b0] disabled:bg-slate-300 transition-colors"
+                  className="w-full bg-[#12274E] text-white py-2.5 rounded-lg text-sm font-semibold hover:bg-[#0B1830] disabled:bg-slate-300 transition-colors"
                 >
                   {generatingPlan ? "Constructing Plan..." : "Generate AI Planner"}
                 </button>
@@ -940,7 +940,7 @@ const Dashboard: React.FC = () => {
                       setRcJobs([]);
                     }
                   }}
-                  className="flex-1 rounded-lg border border-[#dadce0] px-3 py-2.5 text-xs focus:border-[#1a73e8] focus:outline-hidden bg-white font-medium"
+                  className="flex-1 rounded-lg border border-[#dadce0] px-3 py-2.5 text-xs focus:border-[#12274E] focus:outline-hidden bg-white font-medium"
                 >
                   <option value="">Select a student...</option>
                   {students.map(s => (
@@ -981,7 +981,7 @@ const Dashboard: React.FC = () => {
                       setRcGenerating(false);
                     }
                   }}
-                  className="px-5 py-2.5 bg-[#1a73e8] text-white rounded-lg text-xs font-bold hover:bg-[#1557b0] disabled:bg-slate-300 transition-colors flex items-center gap-2"
+                  className="px-5 py-2.5 bg-[#12274E] text-white rounded-lg text-xs font-bold hover:bg-[#0B1830] disabled:bg-slate-300 transition-colors flex items-center gap-2"
                 >
                   {rcGenerating ? (
                     <><svg className="h-3.5 w-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg> Generating...</>
@@ -1009,7 +1009,7 @@ const Dashboard: React.FC = () => {
                         job.status === "completed" ? "bg-emerald-50/50 border-emerald-100" :
                         job.status === "failed" ? "bg-red-50/50 border-red-100" :
                         job.status === "processing" ? "bg-amber-50/50 border-amber-100" :
-                        "bg-blue-50/50 border-blue-100"
+                        "bg-primary/5 border-primary/15"
                       }`}>
                         <div className="flex items-center gap-3">
                           <div className={`h-9 w-9 rounded-lg flex items-center justify-center ${
@@ -1109,8 +1109,8 @@ const Dashboard: React.FC = () => {
                     {[
                       { range: "91 – 100", grade: "A1", remark: "Outstanding", color: "text-emerald-700 bg-emerald-50" },
                       { range: "81 – 90", grade: "A2", remark: "Excellent", color: "text-emerald-600 bg-emerald-50/50" },
-                      { range: "71 – 80", grade: "B1", remark: "Very Good", color: "text-blue-700 bg-blue-50" },
-                      { range: "61 – 70", grade: "B2", remark: "Good", color: "text-blue-600 bg-blue-50/50" },
+                      { range: "71 – 80", grade: "B1", remark: "Very Good", color: "text-primary bg-primary/5" },
+                      { range: "61 – 70", grade: "B2", remark: "Good", color: "text-primary bg-primary/5" },
                       { range: "51 – 60", grade: "C1", remark: "Average", color: "text-amber-700 bg-amber-50" },
                       { range: "41 – 50", grade: "C2", remark: "Below Average", color: "text-amber-600 bg-amber-50/50" },
                       { range: "33 – 40", grade: "D", remark: "Pass", color: "text-orange-700 bg-orange-50" },

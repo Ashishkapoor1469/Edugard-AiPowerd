@@ -248,10 +248,10 @@ const CollegeAdminDashboard: React.FC = () => {
           <p className="text-xs text-slate-500 mt-1">Verify new instructors, broadcast announcements, and upload academic syllabi.</p>
           {user?.collegeName && (
             <div className="flex items-center gap-2 mt-2">
-              <svg className="h-4 w-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="h-4 w-4 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
               </svg>
-              <span className="text-sm font-semibold text-indigo-700">{user.collegeName}</span>
+              <span className="text-sm font-semibold text-primary">{user.collegeName}</span>
             </div>
           )}
         </div>
@@ -275,7 +275,7 @@ const CollegeAdminDashboard: React.FC = () => {
             onClick={() => setActiveTab(tab.id as any)}
             className={`px-4 py-2 text-xs font-bold border-b-2 rounded-t-lg transition-all ${
               activeTab === tab.id
-                ? "border-primary text-primary bg-indigo-50/20"
+                ? "border-primary text-primary bg-primary/5"
                 : "border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300"
             }`}
           >
@@ -451,7 +451,7 @@ const CollegeAdminDashboard: React.FC = () => {
                                 <td className="px-4 py-3 text-right">
                                   <button
                                     onClick={() => navigate(`/students/${student._id}`)}
-                                    className="bg-white text-primary border border-indigo-100 px-3 py-1 rounded-lg font-bold text-[10px] hover:bg-indigo-50 transition-colors"
+                                    className="bg-white text-primary border border-primary/15 px-3 py-1 rounded-lg font-bold text-[10px] hover:bg-primary/5 transition-colors"
                                   >
                                     View Profile
                                   </button>
@@ -612,7 +612,7 @@ const CollegeAdminDashboard: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setShowSyllabusHelp(true)}
-                className="shrink-0 h-7 w-7 rounded-full border border-slate-200 bg-white flex items-center justify-center text-slate-400 hover:text-primary hover:border-primary hover:bg-indigo-50 transition-all"
+                className="shrink-0 h-7 w-7 rounded-full border border-slate-200 bg-white flex items-center justify-center text-slate-400 hover:text-primary hover:border-primary hover:bg-primary/5 transition-all"
                 title="Excel format help"
               >
                 <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
@@ -645,9 +645,9 @@ const CollegeAdminDashboard: React.FC = () => {
                           {col: "Credits", desc: "Credit hours (e.g. 4)", alt: "credit"},
                           {col: "Description", desc: "Syllabus content/summary", alt: "syllabus, content"},
                         ].map(f => (
-                          <div key={f.col} className="rounded-lg border border-indigo-100 bg-indigo-50/30 px-3 py-2">
-                            <span className="text-[11px] font-bold text-indigo-700 block">{f.col}</span>
-                            <span className="text-[9px] text-indigo-600/70">{f.desc}</span>
+                          <div key={f.col} className="rounded-lg border border-primary/15 bg-primary/5 px-3 py-2">
+                            <span className="text-[11px] font-bold text-primary block">{f.col}</span>
+                            <span className="text-[9px] text-primary/70">{f.desc}</span>
                             <span className="text-[9px] text-slate-400 block mt-0.5">Aliases: {f.alt}</span>
                           </div>
                         ))}
@@ -740,7 +740,7 @@ const CollegeAdminDashboard: React.FC = () => {
                 </div>
               </div>
 
-              <div className="bg-indigo-50/50 border border-indigo-100 rounded-xl p-3 text-[10px] text-indigo-700 leading-normal">
+              <div className="bg-primary/5 border border-primary/15 rounded-xl p-3 text-[10px] text-primary leading-normal">
                 <span className="font-bold uppercase tracking-wider block mb-1">Expected Excel Headers:</span>
                 Your spreadsheet columns must include: <strong>Semester</strong>, <strong>SubjectCode</strong>, <strong>SubjectName</strong>, <strong>Credits</strong>, and <strong>Description</strong>.
               </div>

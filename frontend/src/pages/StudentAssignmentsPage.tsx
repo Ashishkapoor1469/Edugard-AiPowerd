@@ -292,10 +292,10 @@ const StudentAssignmentsPage: React.FC = () => {
                                 <a href={sub.submittedPdfUrl} target="_blank" rel="noreferrer" className="text-primary hover:underline font-bold">View submission &rarr;</a>
                               </div>
                               {sub.grade ? (
-                                <div className="mt-2 bg-indigo-50/50 border border-indigo-100 rounded-xl p-3">
+                                <div className="mt-2 bg-primary/5 border border-primary/15 rounded-xl p-3">
                                   <div className="flex justify-between items-center">
-                                    <span className="text-[10px] font-bold text-indigo-700 uppercase tracking-wider">Evaluation Grade:</span>
-                                    <span className="bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded-md text-xs font-bold">{sub.grade}</span>
+                                    <span className="text-[10px] font-bold text-primary uppercase tracking-wider">Evaluation Grade:</span>
+                                    <span className="bg-primary/10 text-primary px-2 py-0.5 rounded-md text-xs font-bold">{sub.grade}</span>
                                   </div>
                                   {sub.feedback && (
                                     <p className="text-[10px] text-slate-600 mt-1.5 leading-normal">
@@ -340,7 +340,7 @@ const StudentAssignmentsPage: React.FC = () => {
                   <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs flex flex-col justify-between">
                     <div>
                       <div className="flex items-center gap-2 mb-4">
-                        <div className="h-8 w-8 rounded-lg bg-indigo-50 border border-indigo-100 flex items-center justify-center text-primary">
+                        <div className="h-8 w-8 rounded-lg bg-primary/5 border border-primary/15 flex items-center justify-center text-primary">
                           <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 00-2 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
                           </svg>
@@ -349,16 +349,16 @@ const StudentAssignmentsPage: React.FC = () => {
                       </div>
                       
                       {studentProfile.aiImprovementPlan ? (
-                        <div className="rounded-xl border border-indigo-100 bg-indigo-50/30 p-4">
+                        <div className="rounded-xl border border-primary/15 bg-primary/5 p-4">
                           <div className="space-y-4">
                             {splitStudyPlanMarkdown(studentProfile.aiImprovementPlan).map((segment, index) => (
                               segment.type === "table" ? (
-                                <div key={`table-${index}`} className="overflow-x-auto rounded-xl border border-indigo-100 bg-white shadow-xs">
+                                <div key={`table-${index}`} className="overflow-x-auto rounded-xl border border-primary/15 bg-white shadow-xs">
                                   <table className="w-full min-w-[560px] border-collapse text-left text-xs">
-                                    <thead className="bg-indigo-50 text-[10px] font-bold uppercase tracking-wide text-primary">
+                                    <thead className="bg-primary/5 text-[10px] font-bold uppercase tracking-wide text-primary">
                                       <tr>
                                         {segment.headers.map((header, headerIndex) => (
-                                          <th key={`${header}-${headerIndex}`} className="border-b border-indigo-100 px-3 py-2">
+                                          <th key={`${header}-${headerIndex}`} className="border-b border-primary/15 px-3 py-2">
                                             {header}
                                           </th>
                                         ))}
@@ -389,7 +389,7 @@ const StudentAssignmentsPage: React.FC = () => {
                                   <ReactMarkdown
                                     components={{
                                       h1: ({ children }) => <h3 className="text-sm font-bold text-slate-900">{children}</h3>,
-                                      h2: ({ children }) => <h3 className="mt-4 border-t border-indigo-100 pt-3 text-sm font-bold text-slate-900">{children}</h3>,
+                                      h2: ({ children }) => <h3 className="mt-4 border-t border-primary/15 pt-3 text-sm font-bold text-slate-900">{children}</h3>,
                                       h3: ({ children }) => <h4 className="mt-3 text-xs font-bold uppercase tracking-wide text-primary">{children}</h4>,
                                       ul: ({ children }) => <ul className="ml-4 list-disc space-y-1">{children}</ul>,
                                       ol: ({ children }) => <ol className="ml-4 list-decimal space-y-1">{children}</ol>,

@@ -1,6 +1,18 @@
 # Install EduGuard on Android
 
-EduGuard can be installed from Chrome as a home-screen web app. No APK download is required.
+## Download the Android app
+
+1. Open the [latest EduGuard Android release](https://github.com/Ashishkapoor1469/Edugard-AiPowerd/releases/latest) on your phone.
+2. Under **Assets**, download `EduGuard-debug.apk`.
+3. Open the downloaded file.
+4. If Android asks, allow your browser to **Install unknown apps**.
+5. Tap **Install**, then open EduGuard.
+
+The APK is an automated testing build. It is not yet a signed Google Play release. Only download it from the official EduGuard GitHub repository.
+
+## Install from Chrome instead
+
+EduGuard can also be installed from Chrome as a home-screen web app without downloading an APK.
 
 1. Open Chrome on your Android phone.
 2. Visit [EduGuard](https://edugard-ai-powerd.vercel.app/).
@@ -20,4 +32,4 @@ EduGuard can be installed from Chrome as a home-screen web app. No APK download 
 
 Long-press the EduGuard icon and tap **Uninstall** or **Remove**. Your EduGuard account and college records are not deleted.
 
-> This is the installable web version of EduGuard. A signed APK or Play Store release requires a separate Capacitor Android build.
+The Chrome version and Android APK use the same EduGuard account and backend data.

@@ -299,7 +299,7 @@ const ClassOverview: React.FC = () => {
       <div className="flex-1 space-y-6 bg-bg-base p-6">
         <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-xs">
           <div className="flex items-center gap-3">
-            <div className="relative flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-50 text-primary">
+            <div className="relative flex h-10 w-10 items-center justify-center rounded-lg bg-primary/5 text-primary">
               <svg className="h-5 w-5 animate-spin" fill="none" viewBox="0 0 24 24">
                 <circle className="opacity-20" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                 <path className="opacity-80" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
@@ -509,7 +509,7 @@ const ClassOverview: React.FC = () => {
           </div>
 
           {/* AI class summary card */}
-          <div className="flex-1 rounded-xl border border-indigo-100 bg-white p-6 shadow-xs border-l-4 border-l-primary relative">
+          <div className="flex-1 rounded-xl border border-primary/15 bg-white p-6 shadow-xs border-l-4 border-l-primary relative">
             <div className="mb-2 flex items-center justify-between">
               <span className="text-xs font-bold text-primary uppercase tracking-wider flex items-center gap-1">
                 <svg className="h-4.5 w-4.5 text-primary" fill="currentColor" viewBox="0 0 24 24">
@@ -517,7 +517,7 @@ const ClassOverview: React.FC = () => {
                 </svg>
                 AI Class Summary Review
               </span>
-              <span className="rounded-md bg-indigo-50 px-1.5 py-0.5 text-[8px] font-bold text-primary uppercase">NVIDIA NIM</span>
+              <span className="rounded-md bg-primary/5 px-1.5 py-0.5 text-[8px] font-bold text-primary uppercase">NVIDIA NIM</span>
             </div>
 
             {generatingSummary ? (
@@ -569,7 +569,7 @@ const ClassOverview: React.FC = () => {
                   <tr
                     key={student._id}
                     onClick={() => navigate(`/students/${student._id}`)}
-                    className="border-b border-slate-100 hover:bg-indigo-50/10 cursor-pointer text-xs"
+                    className="border-b border-slate-100 hover:bg-primary/5 cursor-pointer text-xs"
                   >
                     <td className="py-3 px-3 font-bold text-text-primary">#{student.rollNo}</td>
                     <td className="py-3 px-3 font-semibold text-text-primary">{student.name}</td>

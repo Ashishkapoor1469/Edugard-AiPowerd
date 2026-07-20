@@ -120,7 +120,7 @@ const Sidebar: React.FC = () => {
             className={() =>
               `flex items-center gap-3 rounded-lg px-4 py-2.5 text-sm font-semibold transition-all ${
                 isItemActive(item)
-                  ? "bg-primary text-white shadow-md shadow-indigo-100"
+                  ? "bg-primary text-white shadow-md shadow-primary/10"
                   : "text-secondary hover:bg-slate-50 hover:text-text-primary"
               }`
             }
@@ -140,7 +140,7 @@ const Sidebar: React.FC = () => {
             </div>
             <div className="flex flex-col min-w-0">
               <span className="truncate text-xs font-bold text-text-primary">{user.name}</span>
-              <span className="inline-flex max-w-fit items-center rounded-md bg-indigo-50 px-2 py-0.5 text-[9px] font-bold text-primary capitalize mt-1">
+              <span className="inline-flex max-w-fit items-center rounded-md bg-primary/5 px-2 py-0.5 text-[9px] font-bold text-primary capitalize mt-1">
                 {user.role}
               </span>
             </div>

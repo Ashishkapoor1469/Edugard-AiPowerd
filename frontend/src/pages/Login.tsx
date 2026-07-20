@@ -235,12 +235,12 @@ const Login: React.FC = () => {
               <img src={eduGuardLogo} alt="" className="h-24 w-24 rounded-[22%] object-cover" />
             </div>
             <h1 className="text-center text-xl font-semibold tracking-wide">EduGuard: Multi-College Student Success Portal</h1>
-            <p className="mt-2 text-center text-sm font-medium text-blue-100 max-w-sm">
+            <p className="mt-2 text-center text-sm font-medium text-white/80 max-w-sm">
               Scalable administration, AI Study Planners, and academic tracking directories built for modern educational environments.
             </p>
           </div>
 
-          <div className="text-xs font-medium text-blue-200">
+          <div className="text-xs font-medium text-white/80">
             &ldquo;Helping colleges monitor risk & intervene early.&rdquo;
           </div>
         </div>

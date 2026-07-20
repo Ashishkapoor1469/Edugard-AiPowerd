@@ -84,7 +84,7 @@ export default function StudentAttendancePanel() {
           {calendar.map(({ date, records, state }) => {
             const label = `${date.toLocaleDateString()}: ${state}${records.length ? ` (${records.map((r) => `${r.session} ${r.status}`).join(", ")})` : ""}`;
             const color = state === "present" ? "bg-emerald-500 text-white" : state === "absent" ? "bg-red-500 text-white" : state === "mixed" ? "bg-amber-400 text-slate-900" : "bg-slate-100 text-slate-500";
-            return <span key={dayKey(date)} tabIndex={0} title={label} aria-label={label} className={`flex h-6 w-6 items-center justify-center rounded text-[9px] font-bold outline-none focus:ring-2 focus:ring-indigo-500 ${color}`}>{state === "present" ? "P" : state === "absent" ? "A" : state === "mixed" ? "M" : "·"}</span>;
+            return <span key={dayKey(date)} tabIndex={0} title={label} aria-label={label} className={`flex h-6 w-6 items-center justify-center rounded text-[9px] font-bold outline-none focus:ring-2 focus:ring-primary ${color}`}>{state === "present" ? "P" : state === "absent" ? "A" : state === "mixed" ? "M" : "·"}</span>;
           })}
         </div>
         <div className="mt-3 flex flex-wrap gap-4 text-[10px] text-slate-600" aria-label="Attendance calendar legend">
@@ -93,7 +93,7 @@ export default function StudentAttendancePanel() {
       </section>
 
       {context?.isCr && (
-        <form onSubmit={submit} className="rounded-2xl border border-indigo-100 bg-white p-5 shadow-sm">
+        <form onSubmit={submit} className="rounded-2xl border border-primary/15 bg-white p-5 shadow-sm">
           <h2 className="text-sm font-bold text-slate-800">Class attendance</h2>
           {context.canMark ? (
             <p className="mb-4 mt-1 text-xs text-slate-500">{context.currentSession} session · {new Date(context.collegeTime).toLocaleString()} ({context.timeZone})</p>
@@ -111,7 +111,7 @@ export default function StudentAttendancePanel() {
               </tbody>
             </table>
           </div>
-          <button disabled={!context.canMark || !complete || submitting} className="mt-4 rounded-lg bg-indigo-600 px-4 py-2 text-xs font-bold text-white disabled:bg-slate-300">{submitting ? "Finalizing…" : "Finalize full roster"}</button>
+          <button disabled={!context.canMark || !complete || submitting} className="mt-4 rounded-lg bg-primary px-4 py-2 text-xs font-bold text-white disabled:bg-slate-300">{submitting ? "Finalizing…" : "Finalize full roster"}</button>
         </form>
       )}
     </div>

@@ -16,7 +16,7 @@ ASP.NET Core API, MongoDB and SignalR
 
 Most frontend code remains shared. Capacitor plugins provide access to native features such as app lifecycle events, network status, push notifications, camera, files, and secure device storage.
 
-> Current status: EduGuard supports browser/home-screen installation, but Capacitor native projects have not been added yet.
+> Current status: the Capacitor Android project is configured under `frontend/android`. iOS has not been added because producing an iOS build requires macOS and Xcode.
 
 ## Prerequisites
 
@@ -25,18 +25,16 @@ Most frontend code remains shared. Capacitor plugins provide access to native fe
 - macOS, Xcode and an Apple Developer account for iOS builds
 - An HTTPS production API URL
 
-## One-time setup
+## Existing Android setup
 
-Run these commands from `frontend`:
+These setup commands have already been completed and should not be run again:
 
 ```powershell
-npm install @capacitor/core @capacitor/android @capacitor/ios
-npm install @capacitor/app @capacitor/network @capacitor/push-notifications @capacitor/splash-screen
-npm install -D @capacitor/cli @capacitor/assets
+npm install @capacitor/core @capacitor/android
+npm install -D @capacitor/cli
 
 npx cap init "EduGuard" "com.eduguard.app" --web-dir dist
 npx cap add android
-npx cap add ios
 ```
 
 Confirm the final package ID before publishing. Changing it later creates a different Play Store or App Store application.
@@ -59,10 +57,10 @@ Do not configure a production `server.url`. Production builds should package the
 
 ## API configuration
 
-Set the production backend URL in `frontend/.env.production`:
+Set the production backend URL in an untracked `frontend/.env` file for local builds:
 
 ```env
-VITE_API_URL=https://api.example.com
+VITE_API_URL=https://edugard-aipowerd.onrender.com
 ```
 
 The backend must use HTTPS, SignalR must connect over WSS, and ASP.NET Core CORS must explicitly allow the generated Capacitor WebView origins. Never use a wildcard CORS policy with authenticated requests.
@@ -81,28 +79,23 @@ Run on a device or emulator:
 
 ```powershell
 npx cap run android
-npx cap run ios
 ```
 
 Open the native projects when platform configuration is required:
 
 ```powershell
 npx cap open android
-npx cap open ios
 ```
 
 `npx cap sync` copies the latest `dist` build into both native projects and updates installed native plugins. Forgetting this step leaves the device running an older frontend build.
 
 ## Android APK and Play Store bundle
 
-For local testing:
+For local testing, use the included shortcut:
 
 ```powershell
 cd frontend
-npm run build
-npx cap sync android
-cd android
-.\gradlew.bat assembleDebug
+npm run android:apk
 ```
 
 The debug APK is generated under `frontend/android/app/build/outputs/apk/debug/`.
@@ -161,8 +154,12 @@ npx cap sync
 
 Review Android adaptive icons and iOS icons in their native projects before release.
 
+## Automated APK download
+
+Every relevant push to `main` runs `.github/workflows/android-apk.yml`. It builds the production React bundle, synchronizes Capacitor, compiles `EduGuard-debug.apk`, uploads it as a workflow artifact, and publishes it under [GitHub Releases](https://github.com/Ashishkapoor1469/Edugard-AiPowerd/releases/latest).
+
 ## What should be committed
 
-Commit `capacitor.config.ts`, `android/`, `ios/`, package changes and source assets. Do not commit signing keys, keystore passwords, Apple certificates, Firebase service-account secrets, production environment files or generated build outputs.
+Commit `capacitor.config.ts`, `android/`, package changes and source assets. Do not commit signing keys, keystore passwords, Apple certificates, Firebase service-account secrets, production environment files or generated build outputs.
 
 Official documentation: [Capacitor getting started](https://capacitorjs.com/docs/getting-started) and [development workflow](https://capacitorjs.com/docs/basics/workflow).
