@@ -15,6 +15,7 @@ import {
 } from "recharts";
 import ReactMarkdown from "react-markdown";
 import StudentAttendancePanel from "../components/StudentAttendancePanel.js";
+import CRBadge from "../components/CRBadge.js";
 
 interface ClassTest {
   testNumber: number;
@@ -46,6 +47,7 @@ interface Student {
   _id: string;
   rollNo: string;
   name: string;
+  isCr?: boolean;
   email: string;
   phoneNo: string | null;
   course: string;
@@ -821,9 +823,10 @@ ${student.aiImprovementPlan || "No plan generated."}
             {student.name.substring(0, 2).toUpperCase()}
           </div>
           <div>
-            <h1 className="text-xl font-semibold text-[#202124]">
-              {student.name}
-            </h1>
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="text-xl font-semibold text-[#202124]">{student.name}</h1>
+              {student.isCr && <CRBadge />}
+            </div>
             <p className="text-xs text-[#5f6368] mt-1 font-medium">
               Roll No: #{student.rollNo} · {student.course} · {student.class}
             </p>

@@ -696,6 +696,10 @@ namespace EduGuard.Controllers
         private async Task<object> MapToProfileDto(Student student)
         {
             object? mentorInfo = null;
+            var now = DateTime.UtcNow;
+            var isCr = await _mongoService.LeadershipAssignments.Find(a =>
+                a.StudentId == student.Id && a.IsActive && a.LeadershipType == "CR" &&
+                a.StartDate <= now && (!a.EndDate.HasValue || a.EndDate > now)).AnyAsync();
             if (!string.IsNullOrEmpty(student.MentorId))
             {
                 var mentor = await _mongoService.Mentors.Find(m => m.Id == student.MentorId).FirstOrDefaultAsync();
@@ -733,6 +737,7 @@ namespace EduGuard.Controllers
                 student.VerificationStatus,
                 student.RollNo,
                 student.Name,
+                isCr,
                 student.Email,
                 student.PhoneNo,
                 student.IsVerified,
