@@ -16,6 +16,7 @@ export default function AdminAttendancePanel({ view }: { view: "attendance" | "l
   const [leaders, setLeaders] = useState<LeaderRow[]>([]);
   const [studentId, setStudentId] = useState("");
   const [leadershipType, setLeadershipType] = useState("CR");
+  const [assigning, setAssigning] = useState(false);
   const [correction, setCorrection] = useState<{ id: string; status: string; reason: string } | null>(null);
 
   const classes = useMemo(() => [...new Set(roster.map((student) => student.classId).filter(Boolean))].sort(), [roster]);
@@ -60,12 +61,14 @@ export default function AdminAttendancePanel({ view }: { view: "attendance" | "l
     event.preventDefault();
     const student = roster.find((item) => item._id === studentId);
     if (!student) return;
+    setAssigning(true);
     try {
       await axios.post("/api/attendance/admin/leaders", { studentId, classId: student.classId, leadershipType });
       toast.success("Student leader assigned");
       setStudentId("");
       await loadLeaders();
     } catch (error: unknown) { toast.error(axios.isAxiosError(error) ? error.response?.data?.message || "Assignment failed" : "Assignment failed"); }
+    finally { setAssigning(false); }
   };
 
   if (view === "leaders") return (
@@ -78,7 +81,10 @@ export default function AdminAttendancePanel({ view }: { view: "attendance" | "l
           <select required aria-label="Student" value={studentId} onChange={(e) => setStudentId(e.target.value)} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs"><option value="">Choose student</option>{studentsForClass.map((student) => <option key={student._id} value={student._id}>{student.name} · {student.rollNo} · {student.classId}</option>)}</select>
           <input required aria-label="Leadership type" value={leadershipType} onChange={(e) => setLeadershipType(e.target.value)} className="rounded-lg border border-slate-200 px-3 py-2 text-xs" />
         </div>
-        <button className="mt-4 rounded-lg bg-indigo-600 px-4 py-2 text-xs font-bold text-white">Assign leader</button>
+        <button disabled={assigning} className="mt-4 inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-xs font-bold text-white disabled:cursor-not-allowed disabled:bg-indigo-400">
+          {assigning && <span aria-hidden="true" className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/40 border-t-white" />}
+          {assigning ? "Assigning…" : "Assign leader"}
+        </button>
       </form>
       <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-xs">
         <table className="w-full text-left text-xs"><thead className="bg-slate-50 text-[10px] uppercase tracking-wider text-slate-500"><tr><th className="px-4 py-3">Student</th><th className="px-4 py-3">Class</th><th className="px-4 py-3">Type</th><th className="px-4 py-3">Status</th><th className="px-4 py-3">Action</th></tr></thead><tbody className="divide-y divide-slate-100">{leaders.map(({ assignment, student }) => <tr key={assignment._id}><td className="px-4 py-3 font-semibold">{student?.name || "Unknown"}<span className="block text-[10px] font-normal text-slate-400">{student?.rollNo}</span></td><td className="px-4 py-3">{assignment.classId}</td><td className="px-4 py-3">{assignment.leadershipType}</td><td className="px-4 py-3">{assignment.isActive ? "Active" : "Revoked"}</td><td className="px-4 py-3">{assignment.isActive && <button onClick={async () => { await axios.post(`/api/attendance/admin/leaders/${assignment._id}/revoke`); toast.success("Assignment revoked"); loadLeaders(); }} className="rounded-lg border border-red-100 bg-red-50 px-3 py-1 text-[10px] font-bold text-red-700">Revoke</button>}</td></tr>)}</tbody></table>
