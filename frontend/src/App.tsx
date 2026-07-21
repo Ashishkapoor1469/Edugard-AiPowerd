@@ -15,6 +15,7 @@ import { Toaster } from "react-hot-toast";
 import CollegeAdminDashboard from "./pages/CollegeAdminDashboard";
 import eduGuardLogo from "./assets/e.png";
 import StudentAssignmentsPage from "./pages/StudentAssignmentsPage";
+import MyBadgesModal from "./components/MyBadgesModal";
 
 // Error Boundary to catch page crashes without losing the navbar/sidebar
 class RouteErrorBoundary extends React.Component<
@@ -218,6 +219,14 @@ const BottomNav: React.FC = () => {
               <p className="text-xs font-bold text-text-primary">{user?.name}</p>
               <p className="truncate text-[10px] text-slate-400">{user?.email}</p>
             </div>
+            {user?.role === "student" && <button
+              type="button"
+              onClick={() => { setShowProfileMenu(false); navigate("/?badges=1"); }}
+              className="flex w-full items-center gap-2 px-4 py-2 text-left text-xs font-medium text-primary hover:bg-slate-50"
+            >
+              <span aria-hidden="true">◆</span>
+              My Badges
+            </button>}
             <button
               type="button"
               onClick={() => {
@@ -289,6 +298,7 @@ const ProtectedLayout: React.FC = () => {
         </div>
       </div>
       <BottomNav />
+      <MyBadgesModal />
     </div>
   );
 };

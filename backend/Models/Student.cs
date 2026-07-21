@@ -150,10 +150,37 @@ namespace EduGuard.Models
         [BsonRepresentation(BsonType.ObjectId)]
         public List<string> Notifications { get; set; } = new();
 
+        [BsonElement("earnedBadges")]
+        public List<StudentBadge> EarnedBadges { get; set; } = new();
+
+        [BsonElement("lastBadgeCheckAt")]
+        public DateTime? LastBadgeCheckAt { get; set; }
+
         [BsonElement("createdAt")]
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
         [BsonElement("updatedAt")]
         public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+    }
+
+    public class StudentBadge
+    {
+        [BsonElement("sourceKey")]
+        public string SourceKey { get; set; } = string.Empty;
+
+        [BsonElement("type")]
+        public string Type { get; set; } = string.Empty;
+
+        [BsonElement("color")]
+        public string Color { get; set; } = "teal";
+
+        [BsonElement("name")]
+        public string Name { get; set; } = string.Empty;
+
+        [BsonElement("description")]
+        public string Description { get; set; } = string.Empty;
+
+        [BsonElement("awardedAt")]
+        public DateTime AwardedAt { get; set; } = DateTime.UtcNow;
     }
 }

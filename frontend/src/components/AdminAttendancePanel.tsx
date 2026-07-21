@@ -3,7 +3,7 @@ import axios from "axios";
 import toast from "react-hot-toast";
 
 interface Student { _id: string; name: string; rollNo: string; classId: string; }
-interface RecordRow { record: { _id: string; date: string; session: string; status: string; classId: string; auditHistory: unknown[] }; student: { name: string; rollNo: string } | null; }
+interface RecordRow { record: { _id: string; studentId: string; date: string; session: string; status: string; classId: string; auditHistory: unknown[] }; student: { name: string; rollNo: string } | null; }
 interface LeaderRow { assignment: { _id: string; classId: string; leadershipType: string; startDate: string; endDate?: string; isActive: boolean }; student: { name: string; rollNo: string } | null; }
 
 export default function AdminAttendancePanel({ view }: { view: "attendance" | "leaders" }) {
@@ -21,6 +21,12 @@ export default function AdminAttendancePanel({ view }: { view: "attendance" | "l
 
   const classes = useMemo(() => [...new Set(roster.map((student) => student.classId).filter(Boolean))].sort(), [roster]);
   const studentsForClass = roster.filter((student) => !classId || student.classId === classId);
+  const dayState = (record: RecordRow["record"]) => {
+    const day = records.filter((row) => row.record.studentId === record.studentId && row.record.date === record.date).map((row) => row.record);
+    const morning = day.some((item) => item.session === "morning" && item.status === "present");
+    const afternoon = day.some((item) => item.session === "afternoon" && item.status === "present");
+    return morning && afternoon ? { label: "Full day", color: "bg-emerald-500" } : morning ? { label: "Half day", color: "bg-emerald-500/50" } : { label: "Leave", color: "bg-red-500" };
+  };
 
   const loadRoster = async () => {
     const response = await axios.get("/api/attendance/admin/roster");
@@ -103,6 +109,13 @@ export default function AdminAttendancePanel({ view }: { view: "attendance" | "l
         </div>
         <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-4">{Object.entries(summary).map(([label, value]) => <div key={label} className="rounded-xl border border-slate-100 bg-slate-50 p-4"><span className="block text-[10px] font-bold uppercase text-slate-500">{label}</span><span className="mt-1 block text-2xl font-bold text-slate-800">{value}</span></div>)}</div>
       </section>
+      <div className="flex flex-wrap gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-xs" aria-label="Daily attendance states">
+        {records.filter((row, index, all) => index === all.findIndex((item) => item.record.studentId === row.record.studentId && item.record.date === row.record.date)).map(({ record, student }) => {
+          const state = dayState(record);
+          return <span key={`${record.studentId}-${record.date}`} title={`${student?.name || "Unknown"}: ${state.label}`} className="inline-flex items-center gap-2 rounded-full bg-slate-50 px-3 py-1.5 text-[10px] font-semibold text-slate-700"><span className={`h-2.5 w-2.5 rounded-full ${state.color}`} />{student?.name || "Unknown"} · {state.label}</span>;
+        })}
+        {records.length === 0 && <span className="text-xs text-slate-400">No attendance states for this selection.</span>}
+      </div>
       <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-xs">
         <table className="w-full text-left text-xs"><thead className="bg-slate-50 text-[10px] uppercase tracking-wider text-slate-500"><tr><th className="px-4 py-3">Student</th><th className="px-4 py-3">Class</th><th className="px-4 py-3">Session</th><th className="px-4 py-3">Status</th><th className="px-4 py-3">Audit</th><th className="px-4 py-3">Action</th></tr></thead><tbody className="divide-y divide-slate-100">{records.map(({ record, student }) => <tr key={record._id}><td className="px-4 py-3 font-semibold">{student?.name || "Unknown"}<span className="block text-[10px] font-normal text-slate-400">{student?.rollNo}</span></td><td className="px-4 py-3">{record.classId}</td><td className="px-4 py-3 capitalize">{record.session}</td><td className="px-4 py-3 capitalize">{record.status}</td><td className="px-4 py-3">{record.auditHistory?.length || 0}</td><td className="px-4 py-3"><button onClick={() => setCorrection({ id: record._id, status: record.status === "present" ? "absent" : "present", reason: "" })} className="rounded-lg border border-primary/15 px-3 py-1 text-[10px] font-bold text-primary">Correct</button></td></tr>)}</tbody></table>
       </div>

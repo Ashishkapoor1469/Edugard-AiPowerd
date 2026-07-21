@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -10,6 +11,7 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using MongoDB.Driver;
 using EduGuard.Models;
 using EduGuard.Services;
@@ -26,19 +28,25 @@ namespace EduGuard.Controllers
         private readonly EmailQueueService _emailQueueService;
         private readonly NotificationService _notificationService;
         private readonly NvidiaNimService _nvidiaNimService;
+        private readonly CacheService _cacheService;
+        private readonly BadgeAwardWorker _badgeAwardWorker;
 
         public StudentController(
             MongoService mongoService,
             ExcelParserService excelParserService,
             EmailQueueService emailQueueService,
             NotificationService notificationService,
-            NvidiaNimService nvidiaNimService)
+            NvidiaNimService nvidiaNimService,
+            CacheService cacheService,
+            BadgeAwardWorker badgeAwardWorker)
         {
             _mongoService = mongoService;
             _excelParserService = excelParserService;
             _emailQueueService = emailQueueService;
             _notificationService = notificationService;
             _nvidiaNimService = nvidiaNimService;
+            _cacheService = cacheService;
+            _badgeAwardWorker = badgeAwardWorker;
         }
 
         // --- STUDENT ALERTS: Announcements + Events for their college ---
@@ -178,23 +186,55 @@ namespace EduGuard.Controllers
                 ? Builders<Student>.Filter.And(filters)
                 : Builders<Student>.Filter.Empty;
 
-            var total = await _mongoService.Students.CountDocumentsAsync(filter);
-            var students = await _mongoService.Students
-                .Find(filter)
-                .SortByDescending(s => s.RiskScore)
-                .ThenBy(s => s.Name)
-                .Skip((page - 1) * limit)
-                .Limit(limit)
-                .ToListAsync();
+            async Task<StudentPage> LoadPageAsync() => new()
+            {
+                Total = await _mongoService.Students.CountDocumentsAsync(filter),
+                Data = (await _mongoService.Students.Find(filter).SortByDescending(s => s.RiskScore).ThenBy(s => s.Name).Skip((page - 1) * limit).Limit(limit).ToListAsync())
+                    .Select(s => new StudentListItem
+                    {
+                        Id = s.Id, RollNo = s.RollNo, Name = s.Name, Email = s.Email, Course = s.Course, Class = s.Class,
+                        Attendance = s.Attendance, RiskScore = s.RiskScore, RiskLevel = s.RiskLevel, Behavior = s.Behavior,
+                        VerificationStatus = s.VerificationStatus, Marks = s.Marks
+                    }).ToList()
+            };
+            var cacheSignature = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes($"{page}|{limit}|{course}|{@class}|{search}|{riskLevel}|{collegeId}|{courseId}")));
+            var result = userRole == "mentor" && !string.IsNullOrEmpty(userId)
+                ? await _cacheService.GetOrCreateAsync(
+                    $"mentor-students:{userId}:{cacheSignature}",
+                    TimeSpan.FromMinutes(5), LoadPageAsync)
+                : await LoadPageAsync();
 
             return Ok(new
             {
                 success = true,
-                count = students.Count,
-                total,
-                pages = (int)Math.Ceiling(total / (double)limit),
-                data = students
+                count = result.Data.Count,
+                total = result.Total,
+                pages = (int)Math.Ceiling(result.Total / (double)limit),
+                data = result.Data
             });
+        }
+
+        private sealed class StudentPage
+        {
+            public long Total { get; set; }
+            public List<StudentListItem> Data { get; set; } = new();
+        }
+
+        private sealed class StudentListItem
+        {
+            [System.Text.Json.Serialization.JsonPropertyName("_id")]
+            public string? Id { get; set; }
+            public string RollNo { get; set; } = string.Empty;
+            public string Name { get; set; } = string.Empty;
+            public string Email { get; set; } = string.Empty;
+            public string Course { get; set; } = string.Empty;
+            public string Class { get; set; } = string.Empty;
+            public double? Attendance { get; set; }
+            public double RiskScore { get; set; }
+            public string RiskLevel { get; set; } = string.Empty;
+            public string? Behavior { get; set; }
+            public string VerificationStatus { get; set; } = string.Empty;
+            public List<SubjectMarks> Marks { get; set; } = new();
         }
 
         [HttpGet("stats")]
@@ -986,6 +1026,7 @@ namespace EduGuard.Controllers
         }
 
         [HttpGet("assignments")]
+        [EnableRateLimiting("data-fetch")]
         public async Task<IActionResult> ListAssignments([FromQuery] string courseId, [FromQuery] string @class)
         {
             var filter = Builders<Assignment>.Filter.Eq(a => a.CourseId, courseId) & Builders<Assignment>.Filter.Eq(a => a.Class, @class);
@@ -1007,6 +1048,7 @@ namespace EduGuard.Controllers
         }
 
         [HttpGet("assignments/{assignmentId}/submissions")]
+        [EnableRateLimiting("data-fetch")]
         public async Task<IActionResult> ListSubmissions(string assignmentId)
         {
             var list = await _mongoService.Submissions.Find(s => s.AssignmentId == assignmentId).ToListAsync();
@@ -1048,6 +1090,36 @@ namespace EduGuard.Controllers
         }
 
         // --- REPORT CARD BACKGROUND JOBS ---
+
+        [HttpGet("me/badges")]
+        [Authorize(Roles = "student")]
+        [EnableRateLimiting("data-fetch")]
+        public async Task<IActionResult> MyBadges()
+        {
+            var studentId = User.FindFirst("id")?.Value;
+            if (string.IsNullOrEmpty(studentId)) return Unauthorized();
+            var student = await _mongoService.Students.Find(s => s.Id == studentId).FirstOrDefaultAsync();
+            if (student == null) return NotFound(new { success = false, message = "Student not found" });
+            var badges = student.EarnedBadges ?? new List<StudentBadge>();
+            var existing = badges.Select(b => b.SourceKey).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var hasNewContribution = student.Contribution.Where(c => !string.IsNullOrWhiteSpace(c)).Any(c => !existing.Contains(BadgeAwardWorker.Normalize(c)));
+            var due = !student.LastBadgeCheckAt.HasValue || student.LastBadgeCheckAt <= DateTime.UtcNow.AddDays(-3);
+            var processing = (hasNewContribution || due) && _badgeAwardWorker.EnsureQueued(student.Id!);
+            return Ok(new { success = true, data = badges, processing, lastCheckedAt = student.LastBadgeCheckAt });
+        }
+
+        [HttpGet("me/report-card/jobs")]
+        [Authorize(Roles = "student")]
+        [EnableRateLimiting("data-fetch")]
+        public async Task<IActionResult> MyReportCardJobs()
+        {
+            var studentId = User.FindFirst("id")?.Value;
+            if (string.IsNullOrEmpty(studentId)) return Unauthorized();
+            var student = await _mongoService.Students.Find(s => s.Id == studentId).FirstOrDefaultAsync();
+            if (student == null) return NotFound(new { success = false, message = "Student not found" });
+            var list = await _mongoService.ReportCardJobs.Find(j => j.StudentId == student.Id).SortByDescending(j => j.CreatedAt).ToListAsync();
+            return Ok(new { success = true, data = list });
+        }
 
         [HttpPost("{studentId}/report-card/generate")]
         public async Task<IActionResult> GenerateReportCardJob(string studentId)
@@ -1091,6 +1163,7 @@ namespace EduGuard.Controllers
         }
 
         [HttpGet("report-card/jobs/{jobId}")]
+        [EnableRateLimiting("data-fetch")]
         public async Task<IActionResult> GetReportCardJob(string jobId)
         {
             var job = await _mongoService.ReportCardJobs.Find(j => j.Id == jobId).FirstOrDefaultAsync();
@@ -1103,6 +1176,7 @@ namespace EduGuard.Controllers
         }
 
         [HttpGet("{studentId}/report-card/jobs")]
+        [EnableRateLimiting("data-fetch")]
         public async Task<IActionResult> ListStudentReportCardJobs(string studentId)
         {
             var list = await _mongoService.ReportCardJobs.Find(j => j.StudentId == studentId).SortByDescending(j => j.CreatedAt).ToListAsync();
@@ -1110,6 +1184,7 @@ namespace EduGuard.Controllers
         }
 
         [HttpGet("report-card/download/{jobId}")]
+        [EnableRateLimiting("data-fetch")]
         public async Task<IActionResult> DownloadReportCard(string jobId)
         {
             var job = await _mongoService.ReportCardJobs.Find(j => j.Id == jobId).FirstOrDefaultAsync();
@@ -1140,6 +1215,7 @@ namespace EduGuard.Controllers
         }
 
         [HttpGet("report-card/download/{jobId}/pdf")]
+        [EnableRateLimiting("data-fetch")]
         public async Task<IActionResult> DownloadReportCardPdf(string jobId)
         {
             var job = await _mongoService.ReportCardJobs.Find(j => j.Id == jobId).FirstOrDefaultAsync();

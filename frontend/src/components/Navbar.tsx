@@ -394,6 +394,15 @@ const Navbar: React.FC = () => {
                 <p className="text-xs font-bold text-text-primary">{user?.name}</p>
                 <p className="text-[10px] text-slate-400 truncate">{user?.email}</p>
               </div>
+              {user?.role === "student" && (
+                <button
+                  onClick={() => { setShowProfileDropdown(false); navigate("/?badges=1"); }}
+                  className="flex w-full items-center gap-2 px-4 py-2 text-left text-xs font-medium text-primary hover:bg-slate-50"
+                >
+                  <span aria-hidden="true">◆</span>
+                  My Badges
+                </button>
+              )}
               <button
                 onClick={() => {
                   setShowProfileDropdown(false);

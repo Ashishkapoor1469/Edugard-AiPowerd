@@ -77,6 +77,18 @@ builder.Services.AddRateLimiter(options =>
                 Window = TimeSpan.FromMinutes(1),
                 QueueLimit = 0
             }));
+    options.AddPolicy("attendance-refresh", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            context.User.FindFirst("id")?.Value ?? context.Connection.RemoteIpAddress?.ToString() ?? "anonymous",
+            _ => new FixedWindowRateLimiterOptions { PermitLimit = 3, Window = TimeSpan.FromHours(1), QueueLimit = 0 }));
+    options.AddPolicy("attendance-finalize", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            context.User.FindFirst("id")?.Value ?? context.Connection.RemoteIpAddress?.ToString() ?? "anonymous",
+            _ => new FixedWindowRateLimiterOptions { PermitLimit = 3, Window = TimeSpan.FromMinutes(20), QueueLimit = 0 }));
+    options.AddPolicy("data-fetch", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            $"{context.User.FindFirst("id")?.Value ?? context.Connection.RemoteIpAddress?.ToString() ?? "anonymous"}:{context.Request.Path}",
+            _ => new FixedWindowRateLimiterOptions { PermitLimit = 5, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
 });
 builder.Services.AddSignalR(options =>
 {
@@ -108,6 +120,8 @@ builder.Services.AddSingleton<CacheService>();
 builder.Services.AddSingleton<EmailQueueService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<EmailQueueService>());
 builder.Services.AddHostedService<ReportQueueWorker>();
+builder.Services.AddSingleton<BadgeAwardWorker>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<BadgeAwardWorker>());
 
 // Configure JWT Authentication
 var jwtSecret = builder.Configuration.GetValue<string>("JWT_SECRET") ?? "eduguard_jwt_secret_dev_2026";
@@ -168,7 +182,13 @@ app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 
-app.MapControllers();
+var controllers = app.MapControllers();
+controllers.Add(endpoint =>
+{
+    var isGet = endpoint.Metadata.OfType<HttpMethodMetadata>().Any(metadata => metadata.HttpMethods.Contains("GET"));
+    if (isGet && !endpoint.Metadata.OfType<EnableRateLimitingAttribute>().Any())
+        endpoint.Metadata.Add(new EnableRateLimitingAttribute("data-fetch"));
+});
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 app.MapHub<EduGuardHub>("/eduguardHub");
 

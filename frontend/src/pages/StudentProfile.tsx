@@ -70,6 +70,28 @@ interface Student {
   mentorName?: string;
 }
 
+interface ReportCardJob {
+  _id: string;
+  studentName: string;
+  status: string;
+  createdAt: string;
+}
+
+interface AttendanceHistoryRecord {
+  date: string;
+  session: "morning" | "afternoon";
+  status: "present" | "absent";
+}
+
+interface ProfileChartPoint {
+  name?: string;
+  date?: string;
+  attendance?: number;
+  "Class Tests (%)"?: number;
+  "Mid Term (%)"?: number;
+  "House Exam (%)"?: number;
+}
+
 const StudentProfile: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const { user } = useAuth();
@@ -105,6 +127,10 @@ const StudentProfile: React.FC = () => {
 
   // Notifications State
   const [alerts, setAlerts] = useState<any[]>([]);
+  const [reportCards, setReportCards] = useState<ReportCardJob[]>([]);
+  const [attendanceHistory, setAttendanceHistory] = useState<AttendanceHistoryRecord[]>([]);
+  const [attendancePercentage, setAttendancePercentage] = useState<number | null>(null);
+  const [chartMode, setChartMode] = useState<"marks" | "attendance">("marks");
 
   // Overrides modal for Mentors/Admins
   const [showOverrideForm, setShowOverrideForm] = useState(false);
@@ -438,6 +464,9 @@ const StudentProfile: React.FC = () => {
     if (user?.role === "student") {
       fetchMentors(signal);
       fetchNotifications(signal);
+      axios.get("/api/students/me/report-card/jobs", { signal })
+        .then((response) => setReportCards(response.data.data || []))
+        .catch((error) => { if (!axios.isCancel(error)) console.error(error); });
     }
 
     return () => {
@@ -448,6 +477,13 @@ const StudentProfile: React.FC = () => {
   // Socket communication
   useEffect(() => {
     if (!student) return;
+
+    axios.get(`/api/attendance/student/${student._id}/history`)
+      .then((response) => {
+        setAttendanceHistory(response.data.data || []);
+        setAttendancePercentage(response.data.attendancePercentage ?? null);
+      })
+      .catch((error) => console.error("Failed to load attendance chart", error));
 
     // Join room
     socket.connect();
@@ -755,6 +791,21 @@ ${student.aiImprovementPlan || "No plan generated."}
     window.print();
   };
 
+  const openReportCard = async (job: ReportCardJob, download: boolean) => {
+    const popup = download ? null : window.open("", "_blank");
+    try {
+      const response = await axios.get(`/api/students/report-card/download/${job._id}/pdf`, { responseType: "blob" });
+      const url = URL.createObjectURL(new Blob([response.data], { type: "application/pdf" }));
+      if (download) {
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `Report-Card-${job.studentName.replace(/\s+/g, "-")}.pdf`;
+        link.click();
+      } else if (popup) popup.location.href = url;
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch { popup?.close(); toast.error("Failed to open report card"); }
+  };
+
   if (loading || !student) {
     return (
       <div className="flex h-full w-full items-center justify-center bg-[#f8f9fa] animate-pulse">
@@ -782,7 +833,7 @@ ${student.aiImprovementPlan || "No plan generated."}
   }
 
   // Map marks data to Recharts format
-  const chartData = student.marks.map((sub) => {
+  const chartData: ProfileChartPoint[] = student.marks.map((sub) => {
     const tMax = sub.classTests.reduce((sum, t) => sum + t.maxMarks, 0);
     const tObt = sub.classTests.reduce((sum, t) => sum + t.marks, 0);
     const testPct = tMax > 0 ? (tObt / tMax) * 100 : 0;
@@ -803,6 +854,13 @@ ${student.aiImprovementPlan || "No plan generated."}
       "House Exam (%)": Math.round(housePct),
     };
   });
+  const attendanceChartData: ProfileChartPoint[] = Object.values(attendanceHistory.reduce<Record<string, AttendanceHistoryRecord[]>>((days, record) => {
+    (days[record.date] ||= []).push(record);
+    return days;
+  }, {})).map((records) => ({
+    date: new Date(`${records[0].date}T00:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric" }),
+    attendance: records.filter((record) => record.status === "present").length * 50,
+  })).slice(-30);
 
   return (
     <div className="main-content flex-1 overflow-y-auto bg-[#f8f9fa] p-4 md:p-6 font-sans">
@@ -993,8 +1051,8 @@ ${student.aiImprovementPlan || "No plan generated."}
                     Attendance
                   </span>
                   <span className="text-2xl font-bold text-[#202124] mt-2 block">
-                    {student.attendance != null
-                      ? `${student.attendance}%`
+                    {(attendancePercentage ?? student.attendance) != null
+                      ? `${attendancePercentage ?? student.attendance}%`
                       : "N/A"}
                   </span>
                   <span className="text-[10px] text-[#5f6368] mt-1 block">
@@ -1032,24 +1090,30 @@ ${student.aiImprovementPlan || "No plan generated."}
                 </div>
               </div>
 
+              {user?.role === "student" && reportCards.some((job) => job.status === "completed") && (
+                <section className="rounded-2xl border border-[#dadce0] bg-white p-5 shadow-sm">
+                  <h3 className="text-sm font-semibold text-[#202124]">Report Cards</h3>
+                  <p className="mb-4 mt-1 text-xs text-[#5f6368]">Report cards generated by your mentor.</p>
+                  <div className="space-y-3">{reportCards.filter((job) => job.status === "completed").map((job) => <div key={job._id} className="flex flex-col gap-3 rounded-xl border border-emerald-100 bg-emerald-50/50 p-4 sm:flex-row sm:items-center sm:justify-between"><div><span className="block text-xs font-bold text-slate-800">Academic Report Card</span><span className="text-[10px] text-slate-500">Generated {new Date(job.createdAt).toLocaleDateString()}</span></div><div className="flex gap-2"><button onClick={() => openReportCard(job, false)} className="rounded-lg border border-primary/20 bg-white px-3 py-1.5 text-[10px] font-bold text-primary">View</button><button onClick={() => openReportCard(job, true)} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-[10px] font-bold text-white">Download</button></div></div>)}</div>
+                </section>
+              )}
+
               {/* Performance chart */}
               <div className="bg-white border border-[#dadce0] rounded-2xl p-6 shadow-sm">
-                <h3 className="text-sm font-semibold text-[#202124] mb-4">
-                  Subject Performance Analysis
-                </h3>
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-3"><h3 className="text-sm font-semibold text-[#202124]">{chartMode === "marks" ? "Subject Performance Analysis" : "Attendance History"}</h3><button type="button" onClick={() => setChartMode((mode) => mode === "marks" ? "attendance" : "marks")} className="rounded-lg border border-primary/20 bg-primary/5 px-3 py-1.5 text-xs font-bold text-primary">Show {chartMode === "marks" ? "Attendance" : "Marks"}</button></div>
                 <div className="h-64">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={chartData}>
+                    <BarChart data={chartMode === "marks" ? chartData : attendanceChartData}>
                       <XAxis
-                        dataKey="name"
+                        dataKey={chartMode === "marks" ? "name" : "date"}
                         stroke="#5f6368"
                         fontSize={10}
                         tickLine={false}
                       />
-                      <YAxis stroke="#5f6368" fontSize={10} tickLine={false} />
+                      <YAxis stroke="#5f6368" fontSize={10} tickLine={false} domain={chartMode === "attendance" ? [0, 100] : undefined} />
                       <Tooltip />
-                      <Legend />
-                      <Bar
+                      {chartMode === "marks" ? <>
+                      <Legend /><Bar
                         dataKey="Class Tests (%)"
                         fill="#12274E"
                         radius={[4, 4, 0, 0]}
@@ -1063,7 +1127,7 @@ ${student.aiImprovementPlan || "No plan generated."}
                         dataKey="House Exam (%)"
                         fill="#e37400"
                         radius={[4, 4, 0, 0]}
-                      />
+                      /></> : <Bar dataKey="attendance" name="Attendance (%)" fill="#10b981" radius={[4, 4, 0, 0]} />}
                     </BarChart>
                   </ResponsiveContainer>
                 </div>

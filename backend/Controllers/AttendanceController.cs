@@ -4,6 +4,7 @@ using EduGuard.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using MongoDB.Bson;
 using MongoDB.Driver;
 
 namespace EduGuard.Controllers
@@ -63,6 +64,7 @@ namespace EduGuard.Controllers
 
         [HttpGet("context")]
         [Authorize(Roles = "student")]
+        [EnableRateLimiting("data-fetch")]
         public async Task<IActionResult> Context()
         {
             if (string.IsNullOrEmpty(UserId)) return Unauthorized();
@@ -79,6 +81,13 @@ namespace EduGuard.Controllers
             var roster = isCr
                 ? await _mongo.Students.Find(s => s.CollegeId == student.CollegeId && s.Class == assignment!.ClassId && s.VerificationStatus == "approved").ToListAsync()
                 : new List<Student>();
+            var date = localNow.ToString("yyyy-MM-dd");
+            var recentRecords = isCr
+                ? await _mongo.AttendanceRecords.Find(a => a.CollegeId == student.CollegeId && a.ClassId == assignment!.ClassId && a.Date == date && a.MarkedBy == student.Id).ToListAsync()
+                : new List<AttendanceRecord>();
+            var recentSubmission = recentRecords.GroupBy(a => a.Session).OrderByDescending(g => g.Max(a => a.CreatedAt)).FirstOrDefault();
+            var submittedAt = recentSubmission?.Max(a => a.CreatedAt);
+            var currentAlreadySubmitted = currentSession != null && recentRecords.Any(a => a.Session == currentSession);
 
             return Ok(new
             {
@@ -87,7 +96,11 @@ namespace EduGuard.Controllers
                 {
                     isCr,
                     assignment,
-                    canMark = isCr && currentSession != null,
+                    canMark = isCr && currentSession != null && !currentAlreadySubmitted,
+                    canUpdate = submittedAt.HasValue && submittedAt.Value >= DateTime.UtcNow.AddMinutes(-15) && (currentSession == null || recentSubmission?.Key == currentSession),
+                    submittedAt,
+                    submittedSession = recentSubmission?.Key,
+                    submittedRecords = recentSubmission?.Select(a => new { studentId = a.StudentId, a.Status }) ?? Enumerable.Empty<object>(),
                     currentSession,
                     collegeTime = localNow,
                     timeZone = college?.TimeZone ?? "Asia/Kolkata",
@@ -96,9 +109,14 @@ namespace EduGuard.Controllers
             });
         }
 
+        [HttpGet("cr/refresh")]
+        [Authorize(Roles = "student")]
+        [EnableRateLimiting("attendance-refresh")]
+        public Task<IActionResult> Refresh() => Context();
+
         [HttpPost("mark")]
         [Authorize(Roles = "student")]
-        [EnableRateLimiting("attendance-writes")]
+        [EnableRateLimiting("attendance-finalize")]
         public async Task<IActionResult> Mark([FromBody] MarkAttendanceRequest request)
         {
             if (string.IsNullOrEmpty(UserId)) return Unauthorized();
@@ -152,8 +170,49 @@ namespace EduGuard.Controllers
             return Ok(new { success = true, data = new { date, session, total = records.Count } });
         }
 
+        [HttpPatch("change")]
+        [Authorize(Roles = "student")]
+        [EnableRateLimiting("attendance-writes")]
+        public async Task<IActionResult> Change([FromBody] MarkAttendanceRequest request)
+        {
+            if (string.IsNullOrEmpty(UserId)) return Unauthorized();
+            var marker = await _mongo.Students.Find(s => s.Id == UserId).FirstOrDefaultAsync();
+            var assignment = marker == null ? null : await ActiveCrAsync(marker.Id!);
+            if (marker == null || assignment == null || assignment.CollegeId != marker.CollegeId || assignment.ClassId != marker.Class) return Forbid();
+
+            var session = request?.Session?.Trim().ToLowerInvariant();
+            if (session is not ("morning" or "afternoon") || request!.Records == null) return BadRequest(new { success = false, message = "A valid session and full roster are required" });
+            var roster = await _mongo.Students.Find(s => s.CollegeId == marker.CollegeId && s.Class == assignment.ClassId && s.VerificationStatus == "approved").ToListAsync();
+            var rosterIds = roster.Select(s => s.Id!).OrderBy(id => id).ToArray();
+            var submittedIds = request.Records.Select(r => r.StudentId).OrderBy(id => id).ToArray();
+            if (rosterIds.Length == 0 || rosterIds.Length != submittedIds.Distinct().Count() || !rosterIds.SequenceEqual(submittedIds) || request.Records.Any(r => r.Status.Trim().ToLowerInvariant() is not ("present" or "absent")))
+                return BadRequest(new { success = false, message = "A valid status for every active roster student is required" });
+
+            var college = await _mongo.Colleges.Find(c => c.Id == marker.CollegeId).FirstOrDefaultAsync();
+            var date = AttendanceRules.CollegeNow(college?.TimeZone ?? "Asia/Kolkata").ToString("yyyy-MM-dd");
+            var records = await _mongo.AttendanceRecords.Find(a => a.CollegeId == marker.CollegeId && a.ClassId == assignment.ClassId && a.Date == date && a.Session == session && a.MarkedBy == marker.Id).ToListAsync();
+            if (records.Count != roster.Count) return NotFound(new { success = false, message = "Original CR submission not found" });
+            if (records.Max(a => a.CreatedAt) < DateTime.UtcNow.AddMinutes(-15)) return StatusCode(403, new { success = false, message = "The 15-minute correction window has closed" });
+
+            var requested = request.Records.ToDictionary(r => r.StudentId, r => r.Status.Trim().ToLowerInvariant());
+            var now = DateTime.UtcNow;
+            var writes = new List<WriteModel<AttendanceRecord>>();
+            foreach (var record in records.Where(r => requested[r.StudentId] != r.Status))
+            {
+                var status = requested[record.StudentId];
+                record.AuditHistory.Add(new AttendanceAuditEntry { ChangedBy = marker.Id!, PreviousStatus = record.Status, NewStatus = status, Reason = "CR correction within 15 minutes", ChangedAt = now });
+                record.Status = status;
+                record.UpdatedAt = now;
+                writes.Add(new ReplaceOneModel<AttendanceRecord>(Builders<AttendanceRecord>.Filter.Eq(a => a.Id, record.Id), record));
+            }
+            if (writes.Count > 0) await _mongo.AttendanceRecords.BulkWriteAsync(writes);
+            await RecalculateAttendanceAsync(roster);
+            return Ok(new { success = true, data = new { date, session, updated = writes.Count } });
+        }
+
         [HttpGet("history")]
         [Authorize(Roles = "student")]
+        [EnableRateLimiting("data-fetch")]
         public async Task<IActionResult> History([FromQuery] string? from = null, [FromQuery] string? to = null)
         {
             if (string.IsNullOrEmpty(UserId)) return Unauthorized();
@@ -165,8 +224,36 @@ namespace EduGuard.Controllers
             return Ok(new { success = true, data = records, attendancePercentage = percentage });
         }
 
+        [HttpGet("student/{studentId}/history")]
+        [Authorize(Roles = "student,mentor,college-admin")]
+        [EnableRateLimiting("data-fetch")]
+        public async Task<IActionResult> StudentHistory(string studentId)
+        {
+            if (string.IsNullOrEmpty(UserId)) return Unauthorized();
+            if (!ObjectId.TryParse(studentId, out _)) return BadRequest(new { success = false, message = "Invalid student ID" });
+            var student = await _mongo.Students.Find(s => s.Id == studentId).FirstOrDefaultAsync();
+            if (student == null) return NotFound(new { success = false, message = "Student not found" });
+
+            if (Role == "student" && student.Id != UserId) return Forbid();
+            if (Role == "mentor")
+            {
+                var mentor = await _mongo.Mentors.Find(m => m.Id == UserId).FirstOrDefaultAsync();
+                if (mentor == null || mentor.CollegeId != student.CollegeId || student.MentorId != mentor.Id) return Forbid();
+            }
+            if (Role == "college-admin")
+            {
+                var (_, collegeId) = await AdminScopeAsync();
+                if (string.IsNullOrEmpty(collegeId) || collegeId != student.CollegeId) return Forbid();
+            }
+
+            var records = await _mongo.AttendanceRecords.Find(a => a.StudentId == student.Id).SortBy(a => a.Date).ThenBy(a => a.Session).ToListAsync();
+            var percentage = records.Count == 0 ? (double?)null : Math.Round(records.Count(a => a.Status == "present") * 100d / records.Count, 2);
+            return Ok(new { success = true, data = records, attendancePercentage = percentage });
+        }
+
         [HttpGet("admin/summary")]
         [Authorize(Roles = "college-admin")]
+        [EnableRateLimiting("data-fetch")]
         public async Task<IActionResult> Summary([FromQuery] string? classId = null, [FromQuery] string? date = null, [FromQuery] string? session = null)
         {
             var (_, collegeId) = await AdminScopeAsync();
@@ -201,6 +288,7 @@ namespace EduGuard.Controllers
 
         [HttpGet("admin/roster")]
         [Authorize(Roles = "college-admin")]
+        [EnableRateLimiting("data-fetch")]
         public async Task<IActionResult> Roster([FromQuery] string? classId = null)
         {
             var (_, collegeId) = await AdminScopeAsync();
@@ -213,6 +301,7 @@ namespace EduGuard.Controllers
 
         [HttpGet("admin/leaders")]
         [Authorize(Roles = "college-admin")]
+        [EnableRateLimiting("data-fetch")]
         public async Task<IActionResult> Leaders([FromQuery] bool activeOnly = false)
         {
             var (_, collegeId) = await AdminScopeAsync();

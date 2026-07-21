@@ -85,6 +85,7 @@ const StudentAssignmentsPage: React.FC = () => {
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [submissions, setSubmissions] = useState<{ [assignmentId: string]: Submission }>({});
   const [loadingAssignments, setLoadingAssignments] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(true);
 
   // Submit Modal/Form State
   const [selectedAsgn, setSelectedAsgn] = useState<Assignment | null>(null);
@@ -162,6 +163,8 @@ const StudentAssignmentsPage: React.FC = () => {
 
   useEffect(() => {
     fetchProfile();
+    const timer = window.setTimeout(() => setInitialLoading(false), 3200);
+    return () => window.clearTimeout(timer);
   }, []);
 
   useEffect(() => {
@@ -203,7 +206,7 @@ const StudentAssignmentsPage: React.FC = () => {
           <h1 className="text-xl font-bold tracking-tight text-slate-800">Academic Hub</h1>
           <p className="text-xs text-slate-500 mt-1">Manage coursework submissions and explore customized AI study plans.</p>
         </div>
-        <div className="flex gap-2 border border-slate-200 rounded-lg p-1 bg-slate-50">
+        <div className="flex w-full gap-2 overflow-x-auto rounded-lg border border-slate-200 bg-slate-50 p-1 sm:w-auto">
           <button
             onClick={() => setActiveTab("assignments")}
             className={`px-3 py-1 rounded-md text-xs font-bold transition-all ${
@@ -228,7 +231,9 @@ const StudentAssignmentsPage: React.FC = () => {
       </div>
 
       {/* BLOCKER IF STUDENT PENDING APPROVED */}
-      {studentProfile && studentProfile.verificationStatus !== "approved" && (
+      {initialLoading && <div className="flex min-h-48 items-center justify-center rounded-2xl border border-slate-200 bg-white"><div className="text-center"><span className="mx-auto block h-7 w-7 animate-spin rounded-full border-2 border-primary/20 border-t-primary" /><p className="mt-3 text-xs font-semibold text-slate-500">Loading your academic hub…</p></div></div>}
+
+      {!initialLoading && studentProfile && studentProfile.verificationStatus !== "approved" && (
         <div className="rounded-2xl bg-amber-50 border border-amber-200 text-amber-800 p-6 text-center shadow-xs">
           <svg className="h-10 w-10 text-amber-600 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
@@ -239,7 +244,7 @@ const StudentAssignmentsPage: React.FC = () => {
       )}
 
       {/* MAIN LAYOUT */}
-      {studentProfile && studentProfile.verificationStatus === "approved" && (
+      {!initialLoading && studentProfile && studentProfile.verificationStatus === "approved" && (
         <div className="grid grid-cols-1 gap-6">
           {/* TAB 1: ASSIGNMENTS */}
           {activeTab === "assignments" && (
@@ -337,7 +342,7 @@ const StudentAssignmentsPage: React.FC = () => {
               ) : (
                 <div className="grid grid-cols-1 gap-6">
                   {/* Weekly Learning Study Plan */}
-                  <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs flex flex-col justify-between">
+                  <div className="min-w-0 bg-white border border-slate-200 rounded-2xl p-4 sm:p-6 shadow-xs flex flex-col justify-between">
                     <div>
                       <div className="flex items-center gap-2 mb-4">
                         <div className="h-8 w-8 rounded-lg bg-primary/5 border border-primary/15 flex items-center justify-center text-primary">
@@ -349,12 +354,12 @@ const StudentAssignmentsPage: React.FC = () => {
                       </div>
                       
                       {studentProfile.aiImprovementPlan ? (
-                        <div className="rounded-xl border border-primary/15 bg-primary/5 p-4">
-                          <div className="space-y-4">
+                        <div className="min-w-0 rounded-xl border border-primary/15 bg-primary/5 p-3 sm:p-4">
+                          <div className="min-w-0 space-y-4">
                             {splitStudyPlanMarkdown(studentProfile.aiImprovementPlan).map((segment, index) => (
                               segment.type === "table" ? (
                                 <div key={`table-${index}`} className="overflow-x-auto rounded-xl border border-primary/15 bg-white shadow-xs">
-                                  <table className="w-full min-w-[560px] border-collapse text-left text-xs">
+                                  <table className="w-full min-w-[480px] border-collapse text-left text-xs">
                                     <thead className="bg-primary/5 text-[10px] font-bold uppercase tracking-wide text-primary">
                                       <tr>
                                         {segment.headers.map((header, headerIndex) => (
