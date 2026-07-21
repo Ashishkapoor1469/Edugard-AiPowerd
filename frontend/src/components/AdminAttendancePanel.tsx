@@ -25,7 +25,7 @@ export default function AdminAttendancePanel({ view }: { view: "attendance" | "l
     const day = records.filter((row) => row.record.studentId === record.studentId && row.record.date === record.date).map((row) => row.record);
     const morning = day.some((item) => item.session === "morning" && item.status === "present");
     const afternoon = day.some((item) => item.session === "afternoon" && item.status === "present");
-    return morning && afternoon ? { label: "Full day", color: "bg-emerald-500" } : morning ? { label: "Half day", color: "bg-emerald-500/50" } : { label: "Leave", color: "bg-red-500" };
+    return day.some((item) => item.status === "leave") ? { label: "Leave", color: "bg-orange-500" } : morning && afternoon ? { label: "Full day", color: "bg-emerald-500" } : morning || afternoon ? { label: "Half day", color: "bg-emerald-500/50" } : { label: "Absent", color: "bg-red-500" };
   };
 
   const loadRoster = async () => {

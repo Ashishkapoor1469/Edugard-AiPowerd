@@ -121,12 +121,12 @@ export default function StudentAttendancePanel() {
             if (!day) return <span key={`empty-${index}`} />;
             const { date, records, state } = day;
             const label = `${date.toLocaleDateString()}: ${state}${records.length ? ` (${records.map((record) => `${record.session} ${record.status}`).join(", ")})` : ""}`;
-            const color = state === "present" ? "bg-emerald-600 text-white" : state === "half" ? "bg-emerald-200 text-emerald-900" : state === "leave" ? "bg-red-500 text-white" : state === "absent" ? "bg-slate-300 text-slate-800" : "text-slate-500";
+            const color = state === "present" ? "bg-emerald-600 text-white" : state === "half" ? "bg-emerald-200 text-emerald-900" : state === "leave" ? "bg-orange-500 text-white" : state === "absent" ? "bg-red-500 text-white" : "text-slate-500";
             const today = dayKey(date) === dayKey(new Date());
             return <span key={dayKey(date)} tabIndex={0} title={label} aria-label={label} className={`mx-auto flex h-9 w-9 items-center justify-center rounded-full text-xs font-bold outline-none focus:ring-2 focus:ring-primary ${today ? "ring-2 ring-primary ring-offset-2" : ""} ${color}`}>{date.getDate()}</span>;
           })}
         </div>
-        <div className="mt-4 flex flex-wrap gap-4 text-[10px] text-slate-600"><span><b className="mr-1 inline-block h-2.5 w-2.5 rounded-full bg-emerald-600" />Present</span><span><b className="mr-1 inline-block h-2.5 w-2.5 rounded-full bg-emerald-200" />Half day</span><span><b className="mr-1 inline-block h-2.5 w-2.5 rounded-full bg-red-500" />Leave</span><span><b className="mr-1 inline-block h-2.5 w-2.5 rounded-full bg-slate-300" />Absent</span></div>
+        <div className="mt-4 flex flex-wrap gap-4 text-[10px] text-slate-600"><span><b className="mr-1 inline-block h-2.5 w-2.5 rounded-full bg-emerald-600" />Present</span><span><b className="mr-1 inline-block h-2.5 w-2.5 rounded-full bg-emerald-200" />Half day</span><span><b className="mr-1 inline-block h-2.5 w-2.5 rounded-full bg-orange-500" />Leave</span><span><b className="mr-1 inline-block h-2.5 w-2.5 rounded-full bg-red-500" />Absent</span></div>
       </section>
 
       {context?.isCr && (
