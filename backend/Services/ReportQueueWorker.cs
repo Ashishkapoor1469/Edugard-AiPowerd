@@ -76,6 +76,7 @@ namespace EduGuard.Services
                                 htmlBuilder.AppendLine("<html>");
                                 htmlBuilder.AppendLine("<head>");
                                 htmlBuilder.AppendLine("<meta charset=\"utf-8\">");
+                                htmlBuilder.AppendLine("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">");
                                 htmlBuilder.AppendLine("<title>Academic Progress Report Card</title>");
                                 htmlBuilder.AppendLine("<style>");
                                 htmlBuilder.AppendLine("  body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: #2D3748; line-height: 1.6; margin: 0; padding: 40px; background-color: #F7FAFC; }");
@@ -98,6 +99,8 @@ namespace EduGuard.Services
                                 htmlBuilder.AppendLine("  .section-title { font-size: 14px; font-weight: bold; color: #2D3748; border-left: 4px solid #3182CE; padding-left: 8px; margin-bottom: 16px; text-transform: uppercase; letter-spacing: 0.5px; }");
                                 htmlBuilder.AppendLine("  .summary-box { background-color: #F7FAFC; border: 1px solid #E2E8F0; border-radius: 12px; padding: 20px; margin-bottom: 30px; }");
                                 htmlBuilder.AppendLine("  .footer { text-align: center; font-size: 11px; color: #A0AEC0; border-top: 1px solid #E2E8F0; padding-top: 20px; margin-top: 40px; }");
+                                htmlBuilder.AppendLine("  * { box-sizing: border-box; overflow-wrap: anywhere; }");
+                                htmlBuilder.AppendLine("  @media (max-width: 600px) { body { padding: 0; } .container { width: 100%; padding: 20px 14px; border: 0; border-radius: 0; box-shadow: none; } .info-grid { grid-template-columns: 1fr; gap: 10px; } table { display: block; overflow-x: auto; white-space: nowrap; } .signatures { flex-wrap: wrap; gap: 32px; } }");
                                 htmlBuilder.AppendLine("</style>");
                                 htmlBuilder.AppendLine("</head>");
                                 htmlBuilder.AppendLine("<body>");
@@ -213,7 +216,7 @@ namespace EduGuard.Services
                                 htmlBuilder.AppendLine("    </table>");
 
                                 // Signatures
-                                htmlBuilder.AppendLine("    <div style=\"display: flex; justify-content: space-between; margin-top: 40px; padding-top: 20px; border-top: 1px solid #E2E8F0;\">");
+                                htmlBuilder.AppendLine("    <div class=\"signatures\" style=\"display: flex; justify-content: space-between; margin-top: 40px; padding-top: 20px; border-top: 1px solid #E2E8F0;\">");
                                 htmlBuilder.AppendLine("      <div style=\"text-align: center;\">");
                                 htmlBuilder.AppendLine("        <div style=\"border-top: 1px solid #CBD5E0; width: 180px; margin-bottom: 6px;\"></div>");
                                 htmlBuilder.AppendLine("        <div style=\"font-size: 11px; color: #718096;\">Class Teacher</div>");
