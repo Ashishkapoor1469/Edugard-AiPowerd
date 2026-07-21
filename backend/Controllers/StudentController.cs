@@ -1359,19 +1359,19 @@ namespace EduGuard.Controllers
 
             AddSectionTitle("Grading Scale");
             RenderTable(
-                new List<string> { "Marks Range", "Grade", "Remark" },
+                new List<string> { "Marks Range", "Grade" },
                 new List<List<string>>
                 {
-                    new() { "91 - 100", "A1", "Outstanding" },
-                    new() { "81 - 90", "A2", "Excellent" },
-                    new() { "71 - 80", "B1", "Very Good" },
-                    new() { "61 - 70", "B2", "Good" },
-                    new() { "51 - 60", "C1", "Average" },
-                    new() { "41 - 50", "C2", "Below Average" },
-                    new() { "33 - 40", "D", "Pass" },
-                    new() { "Below 33", "E", "Needs Improvement" },
+                    new() { "91 - 100", "A1" },
+                    new() { "81 - 90", "A2" },
+                    new() { "71 - 80", "B1" },
+                    new() { "61 - 70", "B2" },
+                    new() { "51 - 60", "C1" },
+                    new() { "41 - 50", "C2" },
+                    new() { "33 - 40", "D" },
+                    new() { "Below 33", "E" },
                 },
-                new[] { 150, 70, 230 });
+                new[] { 150, 70 });
 
             AddSignatures();
             AddPageFooters();

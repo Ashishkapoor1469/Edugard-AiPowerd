@@ -16,6 +16,7 @@ import CollegeAdminDashboard from "./pages/CollegeAdminDashboard";
 import eduGuardLogo from "./assets/e.png";
 import StudentAssignmentsPage from "./pages/StudentAssignmentsPage";
 import MyBadgesModal from "./components/MyBadgesModal";
+import ReportCard from "./pages/ReportCard";
 
 // Error Boundary to catch page crashes without losing the navbar/sidebar
 class RouteErrorBoundary extends React.Component<
@@ -292,6 +293,7 @@ const ProtectedLayout: React.FC = () => {
               <Route path="/class/:className" element={user?.role === "student" ? <Navigate to="/" replace /> : (user?.role === "admin" || user?.role === "college-admin" ? <Navigate to="/" replace /> : <ClassOverview />)} />
               <Route path="/notifications" element={user?.role === "student" ? <Navigate to="/" replace /> : (user?.role === "admin" || user?.role === "college-admin" ? <Navigate to="/" replace /> : <NotificationsPage />)} />
               <Route path="/assignments" element={user?.role === "student" ? <StudentAssignmentsPage /> : <Navigate to="/" replace />} />
+              <Route path="/reportcard/:jobId" element={user?.role === "student" ? <ReportCard /> : <Navigate to="/" replace />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </RouteErrorBoundary>
