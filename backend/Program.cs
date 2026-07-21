@@ -89,6 +89,10 @@ builder.Services.AddRateLimiter(options =>
         RateLimitPartition.GetFixedWindowLimiter(
             $"{context.User.FindFirst("id")?.Value ?? context.Connection.RemoteIpAddress?.ToString() ?? "anonymous"}:{context.Request.Path}",
             _ => new FixedWindowRateLimiterOptions { PermitLimit = 5, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
+    options.AddPolicy("dashboard-fetch", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            $"{context.User.FindFirst("id")?.Value ?? context.Connection.RemoteIpAddress?.ToString() ?? "anonymous"}:{context.Request.Path}",
+            _ => new FixedWindowRateLimiterOptions { PermitLimit = 20, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
 });
 builder.Services.AddSignalR(options =>
 {
@@ -177,9 +181,8 @@ app.UseCors("AllowAll");
 
 app.UseStaticFiles(); // Serve wwwroot/ (report cards, etc.)
 
-app.UseRateLimiter();
-
 app.UseAuthentication();
+app.UseRateLimiter();
 app.UseAuthorization();
 
 var controllers = app.MapControllers();

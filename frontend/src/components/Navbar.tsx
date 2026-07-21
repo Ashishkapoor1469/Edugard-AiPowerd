@@ -5,6 +5,7 @@ import axios from "axios";
 import socket from "../utils/socket.js";
 import toast from "react-hot-toast";
 import eduGuardBrand from "../assets/e-witheduguardtext.png";
+import { listLoadError } from "../utils/apiErrors.js";
 
 interface SearchStudent {
   _id: string;
@@ -28,6 +29,7 @@ const Navbar: React.FC = () => {
   const [searchResults, setSearchResults] = useState<SearchStudent[]>([]);
   const [showSearchDropdown, setShowSearchDropdown] = useState(false);
   const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState("");
   const searchRef = useRef<HTMLDivElement>(null);
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -36,6 +38,7 @@ const Navbar: React.FC = () => {
   const [unreadCount, setUnreadCount] = useState(0);
   const [showBellDropdown, setShowBellDropdown] = useState(false);
   const [showProfileDropdown, setShowProfileDropdown] = useState(false);
+  const [notificationsError, setNotificationsError] = useState("");
 
   const bellRef = useRef<HTMLDivElement>(null);
   const profileRef = useRef<HTMLDivElement>(null);
@@ -46,11 +49,13 @@ const Navbar: React.FC = () => {
 
     if (search.trim().length < 2) {
       setSearchResults([]);
+      setSearchError("");
       setShowSearchDropdown(false);
       return;
     }
 
     setSearchLoading(true);
+    setSearchError("");
     searchTimerRef.current = setTimeout(async () => {
       try {
         const res = await axios.get("/api/students", {
@@ -60,8 +65,10 @@ const Navbar: React.FC = () => {
           setSearchResults(res.data.data);
           setShowSearchDropdown(true);
         }
-      } catch (err) {
+      } catch (err: unknown) {
         console.error("Search failed:", err);
+        setSearchError(listLoadError(err, "Student search failed. Please try again."));
+        setShowSearchDropdown(true);
       } finally {
         setSearchLoading(false);
       }
@@ -74,14 +81,16 @@ const Navbar: React.FC = () => {
 
   // Fetch notifications
   const fetchNotifications = async () => {
+    setNotificationsError("");
     try {
       const res = await axios.get("/api/notifications");
       if (res.data.success) {
         setNotifications(res.data.data);
         setUnreadCount(res.data.data.filter((n: any) => !n.isRead).length);
       }
-    } catch (err) {
+    } catch (err: unknown) {
       console.error("Failed to fetch notifications:", err);
+      setNotificationsError(listLoadError(err, "Failed to load notifications."));
     }
   };
 
@@ -241,6 +250,8 @@ const Navbar: React.FC = () => {
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                   </svg>
                 </div>
+              ) : searchError ? (
+                <div role="alert" className="px-4 py-6 text-center text-xs text-amber-700">{searchError}</div>
               ) : searchResults.length === 0 ? (
                 <div className="px-4 py-6 text-center text-xs text-slate-400">No students found for "{search}"</div>
               ) : (
@@ -334,7 +345,9 @@ const Navbar: React.FC = () => {
                 )}
               </div>
               <div className="max-h-64 overflow-y-auto">
-                {notifications.length === 0 ? (
+                {notificationsError ? (
+                  <div role="alert" className="px-4 py-6 text-center text-xs text-amber-700">{notificationsError}</div>
+                ) : notifications.length === 0 ? (
                   <div className="px-4 py-6 text-center text-xs text-slate-400">No alerts found</div>
                 ) : (
                   notifications.slice(0, 5).map((n) => (

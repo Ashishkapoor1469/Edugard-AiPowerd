@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import toast from "react-hot-toast";
+import { listLoadError } from "../utils/apiErrors.js";
 
 interface Notification {
   _id: string;
@@ -24,15 +25,18 @@ const NotificationsPage: React.FC = () => {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("all");
+  const [notificationsError, setNotificationsError] = useState("");
 
   // College broadcasts state
   const [collegeAlerts, setCollegeAlerts] = useState<any[]>([]);
   const [loadingBroadcasts, setLoadingBroadcasts] = useState(false);
+  const [broadcastsError, setBroadcastsError] = useState("");
 
   const abortRef = useRef<AbortController | null>(null);
 
   const fetchNotifications = async (signal?: AbortSignal) => {
     setLoading(true);
+    setNotificationsError("");
     try {
       const params: any = {};
       if (activeTab === "unread") params.isRead = "false";
@@ -45,10 +49,12 @@ const NotificationsPage: React.FC = () => {
       if (res.data.success) {
         setNotifications(res.data.data);
       }
-    } catch (err) {
+    } catch (err: unknown) {
       if (axios.isCancel(err)) return;
       console.error(err);
-      toast.error("Failed to load notifications");
+      const message = listLoadError(err, "Failed to load notifications");
+      setNotificationsError(message);
+      toast.error(message);
     } finally {
       setLoading(false);
     }
@@ -74,15 +80,17 @@ const NotificationsPage: React.FC = () => {
     }
 
     setLoadingBroadcasts(true);
+    setBroadcastsError("");
     try {
       const res = await axios.get("/api/mentors/my-alerts", { signal });
       if (res.data.success) {
         setCollegeAlerts(res.data.data);
         sessionStorage.setItem(CACHE_KEY, JSON.stringify({ data: res.data.data, ts: Date.now() }));
       }
-    } catch (err) {
+    } catch (err: unknown) {
       if (axios.isCancel(err)) return;
       console.error(err);
+      setBroadcastsError(listLoadError(err, "Failed to load college broadcasts."));
     } finally {
       setLoadingBroadcasts(false);
     }
@@ -216,6 +224,8 @@ const NotificationsPage: React.FC = () => {
             Array.from({ length: 3 }).map((_, idx) => (
               <div key={idx} className="h-20 w-full animate-pulse rounded-xl bg-slate-200" />
             ))
+          ) : broadcastsError ? (
+            <div role="alert" className="rounded-xl border border-amber-200 bg-amber-50 py-12 text-center text-xs text-amber-800">{broadcastsError}</div>
           ) : collegeAlerts.length === 0 ? (
             <div className="rounded-xl border border-slate-200 bg-white py-12 text-center text-xs text-slate-400">
               No college broadcasts found. Your college admin hasn't posted any announcements or events yet.
@@ -258,6 +268,8 @@ const NotificationsPage: React.FC = () => {
           Array.from({ length: 4 }).map((_, idx) => (
             <div key={idx} className="h-24 w-full animate-pulse rounded-xl bg-slate-200" />
           ))
+        ) : notificationsError ? (
+          <div role="alert" className="rounded-xl border border-amber-200 bg-amber-50 py-12 text-center text-xs text-amber-800">{notificationsError}</div>
         ) : notifications.length === 0 ? (
           <div className="rounded-xl border border-slate-200 bg-white py-12 text-center text-xs text-slate-400">
             No notifications found.

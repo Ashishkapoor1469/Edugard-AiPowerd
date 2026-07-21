@@ -2,6 +2,7 @@ using System;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using MongoDB.Driver;
 using EduGuard.Models;
 using EduGuard.Services;
@@ -21,6 +22,7 @@ namespace EduGuard.Controllers
         }
 
         [HttpGet]
+        [EnableRateLimiting("dashboard-fetch")]
         public async Task<IActionResult> GetNotifications([FromQuery] bool? isRead = null, [FromQuery] string? type = null)
         {
             var userId = User.FindFirst("id")?.Value;

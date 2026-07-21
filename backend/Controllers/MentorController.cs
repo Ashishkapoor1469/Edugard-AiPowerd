@@ -3,6 +3,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using MongoDB.Driver;
 using EduGuard.Models;
 using EduGuard.Services;
@@ -23,6 +24,7 @@ namespace EduGuard.Controllers
 
         [AllowAnonymous]
         [HttpGet("list")]
+        [EnableRateLimiting("dashboard-fetch")]
         public async Task<IActionResult> GetMentorsList([FromQuery] string? collegeId = null, [FromQuery] string? courseId = null)
         {
             var filters = new List<FilterDefinition<Mentor>>
@@ -73,6 +75,7 @@ namespace EduGuard.Controllers
 
         // --- MENTOR ALERTS: Announcements + Events for their college ---
         [HttpGet("my-alerts")]
+        [EnableRateLimiting("dashboard-fetch")]
         public async Task<IActionResult> GetMyAlerts()
         {
             var userId = User.FindFirst("id")?.Value;

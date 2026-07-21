@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import axios from "axios";
 import { useDropzone } from "react-dropzone";
 import toast from "react-hot-toast";
+import { listLoadError } from "../utils/apiErrors.js";
 
 interface Student {
   _id: string;
@@ -54,6 +55,9 @@ const Dashboard: React.FC = () => {
   const [pendingStudents, setPendingStudents] = useState<Student[]>([]);
   const [stats, setStats] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [studentsError, setStudentsError] = useState("");
+  const [pendingError, setPendingError] = useState("");
+  const [assignmentsError, setAssignmentsError] = useState("");
   const studentsRequestId = useRef(0);
   
   // Table Filters
@@ -124,6 +128,7 @@ const Dashboard: React.FC = () => {
     const requestId = studentsRequestId.current + 1;
     studentsRequestId.current = requestId;
     setLoading(true);
+    setStudentsError("");
     try {
       const params: any = {
         page,
@@ -139,10 +144,11 @@ const Dashboard: React.FC = () => {
         setStudents(res.data.data);
         setTotalPages(res.data.pages);
       }
-    } catch (err) {
+    } catch (err: unknown) {
       if (axios.isCancel(err)) return; // Request was aborted, ignore
-      console.error(err);
-      toast.error("Failed to fetch students list");
+      const message = listLoadError(err, "Failed to fetch students list");
+      setStudentsError(message);
+      toast.error(message);
     } finally {
       if (!signal?.aborted && requestId === studentsRequestId.current) {
         setLoading(false);
@@ -151,6 +157,7 @@ const Dashboard: React.FC = () => {
   };
 
   const fetchPendingStudents = async () => {
+    setPendingError("");
     try {
       // Fetch students pending mentor verification
       const res = await axios.get("/api/students", {
@@ -161,19 +168,22 @@ const Dashboard: React.FC = () => {
           res.data.data.filter((s: Student) => s.verificationStatus === "pending_mentor_approval")
         );
       }
-    } catch (err) {
+    } catch (err: unknown) {
       console.error(err);
+      setPendingError(listLoadError(err, "Failed to load pending enrollments."));
     }
   };
 
   const fetchAssignments = async () => {
+    setAssignmentsError("");
     try {
       const res = await axios.get("/api/students/assignments", {
         params: { courseId: "", class: classFilter || "BCA-A" },
       });
       if (res.data.success) setAssignments(res.data.data);
-    } catch (err) {
+    } catch (err: unknown) {
       console.error(err);
+      setAssignmentsError(listLoadError(err, "Failed to load assignments."));
     }
   };
 
@@ -184,10 +194,11 @@ const Dashboard: React.FC = () => {
   useEffect(() => {
     const controller = new AbortController();
     fetchStudents(controller.signal);
-    fetchPendingStudents();
-    fetchAssignments();
     return () => controller.abort(); // Cancel in-flight requests on dependency change
-  }, [courseFilter, classFilter, searchFilter, riskFilter, page, activeTab]);
+  }, [courseFilter, classFilter, searchFilter, riskFilter, page]);
+
+  useEffect(() => { fetchPendingStudents(); }, []);
+  useEffect(() => { if (activeTab === "assignments") fetchAssignments(); }, [activeTab, classFilter]);
 
   // Actions
   const handleApproveStudent = async (id: string, approve: boolean) => {
@@ -551,6 +562,8 @@ const Dashboard: React.FC = () => {
                   </tbody>
                 </table>
               </div>
+            ) : studentsError ? (
+              <div role="alert" className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-6 text-center text-sm text-amber-800">{studentsError}<button type="button" onClick={() => fetchStudents()} className="ml-2 font-bold underline">Try again</button></div>
             ) : students.length === 0 ? (
               <p className="text-sm text-center py-10 text-[#5f6368] italic">No matching student records found.</p>
             ) : (
@@ -623,7 +636,9 @@ const Dashboard: React.FC = () => {
         {activeTab === "enrollments" && (
           <div className="rounded-2xl border border-[#dadce0] bg-white p-6 shadow-sm">
             <h2 className="text-lg font-semibold text-[#202124] mb-4">Pending Student Registrations</h2>
-            {pendingStudents.length === 0 ? (
+            {pendingError ? (
+              <div role="alert" className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-6 text-center text-sm text-amber-800">{pendingError}<button type="button" onClick={fetchPendingStudents} className="ml-2 font-bold underline">Try again</button></div>
+            ) : pendingStudents.length === 0 ? (
               <p className="text-sm text-[#5f6368] py-8 text-center italic">No pending enrollment requests.</p>
             ) : (
               <div className="overflow-x-auto">
@@ -736,7 +751,9 @@ const Dashboard: React.FC = () => {
             <div className="rounded-2xl border border-[#dadce0] bg-white p-6 shadow-sm flex flex-col gap-6">
               <div>
                 <h2 className="text-lg font-semibold text-[#202124] mb-3">Evaluate Submissions</h2>
-                {assignments.length === 0 ? (
+                {assignmentsError ? (
+                  <p role="alert" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">{assignmentsError}</p>
+                ) : assignments.length === 0 ? (
                   <p className="text-xs text-[#5f6368] italic">No assignments active.</p>
                 ) : (
                   <div className="flex flex-wrap gap-2">

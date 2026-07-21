@@ -120,6 +120,7 @@ namespace EduGuard.Controllers
         }
 
         [HttpGet]
+        [EnableRateLimiting("dashboard-fetch")]
         public async Task<IActionResult> GetStudents(
             [FromQuery] int page = 1,
             [FromQuery] int limit = 8,
@@ -128,10 +129,12 @@ namespace EduGuard.Controllers
             [FromQuery] string? search = null,
             [FromQuery] string? riskLevel = null,
             [FromQuery] string? collegeId = null,
-            [FromQuery] string? courseId = null)
+            [FromQuery] string? courseId = null,
+            [FromQuery] string? classId = null)
         {
             page = Math.Max(1, page);
             limit = Math.Clamp(limit, 1, 100);
+            @class = string.IsNullOrWhiteSpace(@class) ? classId : @class;
 
             var filters = new List<FilterDefinition<Student>>();
 
@@ -238,6 +241,7 @@ namespace EduGuard.Controllers
         }
 
         [HttpGet("stats")]
+        [EnableRateLimiting("dashboard-fetch")]
         public async Task<IActionResult> GetDashboardStats([FromQuery] string? course = null, [FromQuery] string? @class = null)
         {
             var filters = new List<FilterDefinition<Student>>();
@@ -567,6 +571,7 @@ namespace EduGuard.Controllers
         }
 
         [HttpGet("class/{className}")]
+        [EnableRateLimiting("dashboard-fetch")]
         public async Task<IActionResult> GetStudentsByClass(string className)
         {
             var students = await _mongoService.Students.Find(s => s.Class == className).ToListAsync();
@@ -574,6 +579,7 @@ namespace EduGuard.Controllers
         }
 
         [HttpGet("class/{className}/summary")]
+        [EnableRateLimiting("dashboard-fetch")]
         public async Task<IActionResult> GetClassSummary(string className)
         {
             var userRole = User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value;
@@ -1026,10 +1032,13 @@ namespace EduGuard.Controllers
         }
 
         [HttpGet("assignments")]
-        [EnableRateLimiting("data-fetch")]
-        public async Task<IActionResult> ListAssignments([FromQuery] string courseId, [FromQuery] string @class)
+        [EnableRateLimiting("dashboard-fetch")]
+        public async Task<IActionResult> ListAssignments([FromQuery] string? courseId = null, [FromQuery] string? @class = null, [FromQuery] string? classId = null)
         {
-            var filter = Builders<Assignment>.Filter.Eq(a => a.CourseId, courseId) & Builders<Assignment>.Filter.Eq(a => a.Class, @class);
+            var selectedClass = string.IsNullOrWhiteSpace(@class) ? classId : @class;
+            var filter = Builders<Assignment>.Filter.Empty;
+            if (!string.IsNullOrWhiteSpace(courseId)) filter &= Builders<Assignment>.Filter.Eq(a => a.CourseId, courseId);
+            if (!string.IsNullOrWhiteSpace(selectedClass)) filter &= Builders<Assignment>.Filter.Eq(a => a.Class, selectedClass);
             var list = await _mongoService.Assignments.Find(filter).ToListAsync();
             return Ok(new { success = true, data = list });
         }
@@ -1048,7 +1057,7 @@ namespace EduGuard.Controllers
         }
 
         [HttpGet("assignments/{assignmentId}/submissions")]
-        [EnableRateLimiting("data-fetch")]
+        [EnableRateLimiting("dashboard-fetch")]
         public async Task<IActionResult> ListSubmissions(string assignmentId)
         {
             var list = await _mongoService.Submissions.Find(s => s.AssignmentId == assignmentId).ToListAsync();

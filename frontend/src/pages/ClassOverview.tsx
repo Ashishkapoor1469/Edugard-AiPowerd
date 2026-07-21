@@ -4,6 +4,7 @@ import axios from "axios";
 import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
 import toast from "react-hot-toast";
 import { useAuth } from "../context/AuthContext.js";
+import { listLoadError } from "../utils/apiErrors.js";
 
 interface Student {
   _id: string;
@@ -52,6 +53,7 @@ const ClassOverview: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [generatingSummary, setGeneratingSummary] = useState(false);
   const [loadingMessageIndex, setLoadingMessageIndex] = useState(0);
+  const [rosterError, setRosterError] = useState("");
 
   const loadingMessages = [
     `Analyzing ${activeClass} class performance...`,
@@ -132,6 +134,7 @@ const ClassOverview: React.FC = () => {
 
   const fetchClassDetails = async () => {
     const requestedClass = activeClass;
+    setRosterError("");
     const cacheKey = `class_data_${requestedClass}`;
     const cachedDataStr = sessionStorage.getItem(cacheKey);
     if (cachedDataStr) {
@@ -175,9 +178,11 @@ const ClassOverview: React.FC = () => {
             students: fetchedStudents,
           }));
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error(err);
-        toast.error(err.response?.data?.message || "Failed to load class analytics");
+        const message = listLoadError(err, "Failed to load class analytics");
+        setRosterError(message);
+        toast.error(message);
         setGeneratingSummary(false);
         return;
       } finally {
@@ -560,7 +565,9 @@ const ClassOverview: React.FC = () => {
               </tr>
             </thead>
             <tbody>
-              {students.length === 0 ? (
+              {rosterError ? (
+                <tr><td colSpan={5} role="alert" className="bg-amber-50 py-6 text-center text-xs text-amber-800">{rosterError}<button type="button" onClick={fetchClassDetails} className="ml-2 font-bold underline">Try again</button></td></tr>
+              ) : students.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="py-6 text-center text-xs text-slate-400">No student records in this class</td>
                 </tr>
