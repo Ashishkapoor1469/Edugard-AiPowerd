@@ -4,6 +4,7 @@ import axios from "axios";
 import { useDropzone } from "react-dropzone";
 import toast from "react-hot-toast";
 import { listLoadError } from "../utils/apiErrors.js";
+import { downloadFile } from "../utils/downloadFile.js";
 
 interface Student {
   _id: string;
@@ -1060,17 +1061,8 @@ const Dashboard: React.FC = () => {
                             <button
                               onClick={async () => {
                                 try {
-                                  const pdfUrl = `/api/students/report-card/download/${job._id}/pdf`;
-                                  const res = await axios.get(pdfUrl, { responseType: "blob" });
-                                  const url = window.URL.createObjectURL(new Blob([res.data], { type: "application/pdf" }));
-                                  const a = document.createElement("a");
-                                  a.href = url;
-                                  a.download = `Report-Card-${job.studentName.replace(/\s+/g, "-")}-${new Date(job.createdAt).toISOString().slice(0,10)}.pdf`;
-                                  document.body.appendChild(a);
-                                  a.click();
-                                  a.remove();
-                                  window.URL.revokeObjectURL(url);
-                                  toast.success("PDF report card downloaded!");
+                                  const result = await downloadFile(`/api/students/report-card/download/${job._id}/pdf`, `Report-Card-${job.studentName.replace(/\s+/g, "-")}-${new Date(job.createdAt).toISOString().slice(0,10)}.pdf`, "application/pdf");
+                                  toast.success(result === "started" ? "Downloading PDF to Downloads." : "PDF report card downloaded!");
                                 } catch {
                                   toast.error("Failed to download PDF report card.");
                                 }
@@ -1083,16 +1075,8 @@ const Dashboard: React.FC = () => {
                             <button
                               onClick={async () => {
                                 try {
-                                  const res = await axios.get(job.outputFile, { responseType: "blob" });
-                                  const url = window.URL.createObjectURL(new Blob([res.data], { type: "text/html" }));
-                                  const a = document.createElement("a");
-                                  a.href = url;
-                                  a.download = `Report-Card-${job.studentName.replace(/\s+/g, "-")}-${new Date(job.createdAt).toISOString().slice(0,10)}.html`;
-                                  document.body.appendChild(a);
-                                  a.click();
-                                  a.remove();
-                                  window.URL.revokeObjectURL(url);
-                                  toast.success("HTML report card downloaded!");
+                                  const result = await downloadFile(job.outputFile, `Report-Card-${job.studentName.replace(/\s+/g, "-")}-${new Date(job.createdAt).toISOString().slice(0,10)}.html`, "text/html");
+                                  toast.success(result === "started" ? "Downloading HTML to Downloads." : "HTML report card downloaded!");
                                 } catch {
                                   toast.error("Failed to download HTML report card.");
                                 }

@@ -141,8 +141,8 @@ namespace EduGuard.Controllers
             var submittedIds = request.Records.Select(r => r.StudentId).OrderBy(id => id).ToArray();
             if (rosterIds.Length == 0 || rosterIds.Length != submittedIds.Distinct().Count() || !rosterIds.SequenceEqual(submittedIds))
                 return BadRequest(new { success = false, message = "A status for every active roster student is required" });
-            if (request.Records.Any(r => r.Status.Trim().ToLowerInvariant() is not ("present" or "absent")))
-                return BadRequest(new { success = false, message = "Each status must be present or absent" });
+            if (request.Records.Any(r => r.Status.Trim().ToLowerInvariant() is not ("present" or "absent" or "leave")))
+                return BadRequest(new { success = false, message = "Each status must be present, absent, or leave" });
 
             var date = localNow.ToString("yyyy-MM-dd");
             var alreadyFinalized = await _mongo.AttendanceRecords.Find(a =>
@@ -185,7 +185,7 @@ namespace EduGuard.Controllers
             var roster = await _mongo.Students.Find(s => s.CollegeId == marker.CollegeId && s.Class == assignment.ClassId && s.VerificationStatus == "approved").ToListAsync();
             var rosterIds = roster.Select(s => s.Id!).OrderBy(id => id).ToArray();
             var submittedIds = request.Records.Select(r => r.StudentId).OrderBy(id => id).ToArray();
-            if (rosterIds.Length == 0 || rosterIds.Length != submittedIds.Distinct().Count() || !rosterIds.SequenceEqual(submittedIds) || request.Records.Any(r => r.Status.Trim().ToLowerInvariant() is not ("present" or "absent")))
+            if (rosterIds.Length == 0 || rosterIds.Length != submittedIds.Distinct().Count() || !rosterIds.SequenceEqual(submittedIds) || request.Records.Any(r => r.Status.Trim().ToLowerInvariant() is not ("present" or "absent" or "leave")))
                 return BadRequest(new { success = false, message = "A valid status for every active roster student is required" });
 
             var college = await _mongo.Colleges.Find(c => c.Id == marker.CollegeId).FirstOrDefaultAsync();
@@ -361,7 +361,7 @@ namespace EduGuard.Controllers
             if (string.IsNullOrEmpty(adminId) || string.IsNullOrEmpty(collegeId)) return Unauthorized();
             if (request == null) return BadRequest(new { success = false, message = "Correction details are required" });
             var status = request.Status.Trim().ToLowerInvariant();
-            if (status is not ("present" or "absent") || string.IsNullOrWhiteSpace(request.Reason))
+            if (status is not ("present" or "absent" or "leave") || string.IsNullOrWhiteSpace(request.Reason))
                 return BadRequest(new { success = false, message = "A valid status and correction reason are required" });
             var record = await _mongo.AttendanceRecords.Find(a => a.Id == id && a.CollegeId == collegeId).FirstOrDefaultAsync();
             if (record == null) return NotFound(new { success = false, message = "Attendance record not found" });

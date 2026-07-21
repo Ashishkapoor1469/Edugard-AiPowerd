@@ -16,6 +16,7 @@ import {
 import ReactMarkdown from "react-markdown";
 import StudentAttendancePanel from "../components/StudentAttendancePanel.js";
 import CRBadge from "../components/CRBadge.js";
+import { downloadFile } from "../utils/downloadFile.js";
 
 interface ClassTest {
   testNumber: number;
@@ -796,14 +797,8 @@ ${student.aiImprovementPlan || "No plan generated."}
     if (downloadingReportCard) return;
     setDownloadingReportCard(job._id);
     try {
-      const response = await axios.get(`/api/students/report-card/download/${job._id}/pdf`, { responseType: "blob" });
-      const url = URL.createObjectURL(new Blob([response.data], { type: "application/pdf" }));
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `Report-Card-${job.studentName.replace(/\s+/g, "-")}.pdf`;
-      link.click();
-      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
-      toast.success("Report card downloaded.");
+      const result = await downloadFile(`/api/students/report-card/download/${job._id}/pdf`, `Report-Card-${job.studentName.replace(/\s+/g, "-")}.pdf`, "application/pdf");
+      toast.success(result === "started" ? "Downloading report card to Downloads." : "Report card downloaded.");
     } catch {
       toast.error("Failed to download report card.");
     } finally {

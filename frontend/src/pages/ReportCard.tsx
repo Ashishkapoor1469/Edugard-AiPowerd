@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import axios from "axios";
 import toast from "react-hot-toast";
+import { downloadFile } from "../utils/downloadFile.js";
 
 const Spinner = () => (
   <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24" aria-hidden="true">
@@ -34,14 +35,12 @@ const ReportCard = () => {
     if (!jobId || downloading) return;
     setDownloading(format);
     try {
-      const response = await axios.get(`/api/students/report-card/download/${jobId}${format === "pdf" ? "/pdf" : ""}`, { responseType: "blob" });
-      const url = URL.createObjectURL(response.data);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `Report-Card-${new Date().toISOString().slice(0, 10)}.${format}`;
-      link.click();
-      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
-      toast.success(`${format.toUpperCase()} report card downloaded.`);
+      const result = await downloadFile(
+        `/api/students/report-card/download/${jobId}${format === "pdf" ? "/pdf" : ""}`,
+        `Report-Card-${new Date().toISOString().slice(0, 10)}.${format}`,
+        format === "pdf" ? "application/pdf" : "text/html",
+      );
+      toast.success(result === "started" ? `Downloading ${format.toUpperCase()} to Downloads.` : `${format.toUpperCase()} report card downloaded.`);
     } catch {
       toast.error("Failed to download report card.");
     } finally {
