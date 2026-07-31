@@ -23,12 +23,14 @@ namespace EduGuard.Controllers
         private readonly MongoService _mongoService;
         private readonly EmailQueueService _emailQueueService;
         private readonly string _jwtSecret;
+        private readonly IConfiguration _configuration;
 
         public AuthController(MongoService mongoService, IConfiguration configuration, EmailQueueService emailQueueService)
         {
             _mongoService = mongoService;
             _emailQueueService = emailQueueService;
-            _jwtSecret = configuration.GetValue<string>("JWT_SECRET") ?? "eduguard_jwt_secret_dev_2026";
+            _configuration = configuration;
+            _jwtSecret = configuration.GetValue<string>("JWT_SECRET") ?? throw new InvalidOperationException("JWT_SECRET is required.");
         }
 
         private string GenerateJwtToken(string userId, string role = "mentor")
@@ -47,6 +49,24 @@ namespace EduGuard.Controllers
             };
             var token = tokenHandler.CreateToken(tokenDescriptor);
             return tokenHandler.WriteToken(token);
+        }
+
+        private string GenerateLmsToken(string userId, string role, string collegeId, string name, string email)
+        {
+            var key = SHA256.HashData(Encoding.UTF8.GetBytes(_jwtSecret));
+            var descriptor = new SecurityTokenDescriptor
+            {
+                Subject = new ClaimsIdentity(new[]
+                {
+                    new Claim("id", userId), new Claim(ClaimTypes.Role, role), new Claim("collegeId", collegeId),
+                    new Claim("name", name), new Claim("email", email)
+                }),
+                Issuer = "eduguard",
+                Audience = "eduguard-lms",
+                Expires = DateTime.UtcNow.AddMinutes(5),
+                SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(key), SecurityAlgorithms.HmacSha256Signature)
+            };
+            return new JwtSecurityTokenHandler().WriteToken(new JwtSecurityTokenHandler().CreateToken(descriptor));
         }
 
         private void SetTokenCookies(string accessToken, string refreshToken)
@@ -286,6 +306,8 @@ namespace EduGuard.Controllers
             var admin = await _mongoService.Admins.Find(a => a.Email == model.Email).FirstOrDefaultAsync();
             if (admin != null && BCrypt.Net.BCrypt.Verify(model.Password, admin.Password))
             {
+                if (admin.Status is "disabled" or "rejected")
+                    return Unauthorized(new { success = false, message = "Your account is inactive. Please contact your college administrator." });
                 if (!string.IsNullOrEmpty(admin.CollegeId))
                 {
                     var college = await _mongoService.Colleges.Find(c => c.Id == admin.CollegeId).FirstOrDefaultAsync();
@@ -561,6 +583,36 @@ namespace EduGuard.Controllers
             return Unauthorized(new { success = false, message = "User not found" });
 
 
+        }
+
+        [Authorize]
+        [HttpPost("lms-sso")]
+        public async Task<IActionResult> CreateLmsSsoToken()
+        {
+            var userId = User.FindFirst("id")?.Value;
+            var role = User.FindFirst(ClaimTypes.Role)?.Value;
+            if (string.IsNullOrEmpty(userId) || string.IsNullOrEmpty(role)) return Unauthorized();
+
+            string? collegeId = null, name = null, email = null;
+            if (role is "admin" or "college-admin" or "librarian")
+            {
+                var user = await _mongoService.Admins.Find(x => x.Id == userId).FirstOrDefaultAsync();
+                (collegeId, name, email) = (user?.CollegeId, user?.Name, user?.Email);
+            }
+            else if (role == "mentor")
+            {
+                var user = await _mongoService.Mentors.Find(x => x.Id == userId).FirstOrDefaultAsync();
+                (collegeId, name, email) = (user?.CollegeId, user?.Name, user?.Email);
+            }
+            else if (role == "student")
+            {
+                var user = await _mongoService.Students.Find(x => x.Id == userId).FirstOrDefaultAsync();
+                (collegeId, name, email) = (user?.CollegeId, user?.Name, user?.Email);
+            }
+            if (string.IsNullOrEmpty(collegeId) || string.IsNullOrEmpty(name) || string.IsNullOrEmpty(email))
+                return BadRequest(new { success = false, message = "A college-scoped EduGuard account is required for LMS access." });
+
+            return Ok(new { success = true, token = GenerateLmsToken(userId, role, collegeId, name, email), lmsUrl = _configuration.GetValue<string>("LMS_FRONTEND_URL") ?? "http://localhost:5174" });
         }
 
         // --- TEMP DEVELOPER SEEDING ADAPTERS ---

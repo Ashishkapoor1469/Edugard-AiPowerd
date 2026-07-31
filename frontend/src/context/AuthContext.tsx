@@ -8,7 +8,7 @@ export interface User {
   id: string;
   name: string;
   email?: string;
-  role: "mentor" | "admin" | "student" | "college-admin";
+  role: "mentor" | "admin" | "student" | "college-admin" | "librarian";
   status?: "pending_verification" | "approved" | "rejected" | "disabled" | string;
   assignedClasses?: string[];
   rollNo?: string;

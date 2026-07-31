@@ -120,7 +120,7 @@ builder.Services.AddHttpClient("nvidia-nim", client => client.Timeout = TimeSpan
 builder.Services.AddSingleton<INvidiaNimService, NvidiaNimService>();
 builder.Services.AddTransient<NotificationService>();
 builder.Services.AddSingleton<ICacheService, CacheService>();
-builder.Services.AddScoped<ILibraryService, MongoLibraryService>();
+builder.Services.AddHttpClient<ILibraryService, HttpLibraryService>(client => client.Timeout = TimeSpan.FromSeconds(10));
 builder.Services.AddScoped<IPushAudienceNotifier, PushAudienceNotifier>();
 builder.Services.AddHttpClient<FirebasePushNotificationSender>(client => client.Timeout = TimeSpan.FromSeconds(15));
 builder.Services.AddSingleton<IPushNotificationSender>(sp => sp.GetRequiredService<FirebasePushNotificationSender>());
@@ -136,7 +136,7 @@ builder.Services.AddSingleton<BadgeAwardWorker>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<BadgeAwardWorker>());
 
 // Configure JWT Authentication
-var jwtSecret = builder.Configuration.GetValue<string>("JWT_SECRET") ?? "eduguard_jwt_secret_dev_2026";
+var jwtSecret = builder.Configuration.GetValue<string>("JWT_SECRET") ?? throw new InvalidOperationException("JWT_SECRET is required.");
 var key = SHA256.HashData(Encoding.UTF8.GetBytes(jwtSecret));
 
 builder.Services.AddAuthentication(options =>

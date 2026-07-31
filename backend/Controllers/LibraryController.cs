@@ -24,6 +24,7 @@ public sealed class LibraryController : ControllerBase
             return Ok(new { success = true, data = books.Select(x => new { x.BookId, x.Title, x.IssueDate, x.DueDate, status = x.DueDate.Date < now.Date ? "overdue" : "on-time" }) });
         }
         catch (KeyNotFoundException) { return NotFound(new { success = false, message = "Student not found" }); }
+        catch (HttpRequestException) { return StatusCode(503, new { success = false, message = "Library service is temporarily unavailable" }); }
     }
 
     private async Task<bool> CanViewAsync(string studentId, CancellationToken token)

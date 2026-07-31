@@ -17,6 +17,7 @@ import eduGuardLogo from "./assets/e.png";
 import StudentAssignmentsPage from "./pages/StudentAssignmentsPage";
 import MyBadgesModal from "./components/MyBadgesModal";
 import ReportCard from "./pages/ReportCard";
+import axios from "axios";
 
 // Error Boundary to catch page crashes without losing the navbar/sidebar
 class RouteErrorBoundary extends React.Component<
@@ -109,6 +110,16 @@ const MentorApprovalStatus: React.FC = () => {
   );
 };
 
+const LmsRedirect: React.FC = () => {
+  const [error, setError] = React.useState("");
+  React.useEffect(() => {
+    axios.post("/api/auth/lms-sso").then(({ data }) => {
+      window.location.assign(`${data.lmsUrl.replace(/\/$/, "")}/#token=${encodeURIComponent(data.token)}`);
+    }).catch((err) => setError(err.response?.data?.message || "Could not open the Library service"));
+  }, []);
+  return <div className="flex flex-1 items-center justify-center p-6 text-sm text-slate-600">{error || "Opening EduGuard Library…"}</div>;
+};
+
 // Bottom Navigation Bar for mobile devices
 const BottomNav: React.FC = () => {
   const { user, logout } = useAuth();
@@ -140,6 +151,12 @@ const BottomNav: React.FC = () => {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 00-2 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
             </svg>
           ),
+        },
+        {
+          name: "Library",
+          path: "/library",
+          matchPath: "/library",
+          icon: <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 19.5A2.5 2.5 0 016.5 17H20M4 19.5V5a2 2 0 012-2h14v14H6.5A2.5 2.5 0 004 19.5z" /></svg>,
         },
       ]
     : user?.role === "admin" || user?.role === "college-admin"
@@ -287,7 +304,8 @@ const ProtectedLayout: React.FC = () => {
         <div className="mobile-route-space flex min-w-0 flex-1 overflow-hidden">
           <RouteErrorBoundary>
             <Routes>
-              <Route path="/" element={user?.role === "student" ? <StudentProfile /> : (user?.role === "college-admin" ? <CollegeAdminDashboard /> : (user?.role === "admin" ? <AdminDashboard /> : <Dashboard />))} />
+              <Route path="/" element={user?.role === "librarian" ? <LmsRedirect /> : user?.role === "student" ? <StudentProfile /> : (user?.role === "college-admin" ? <CollegeAdminDashboard /> : (user?.role === "admin" ? <AdminDashboard /> : <Dashboard />))} />
+              <Route path="/library" element={<LmsRedirect />} />
               <Route path="/students" element={user?.role === "student" ? <Navigate to="/" replace /> : (user?.role === "college-admin" ? <Navigate to="/" replace /> : (user?.role === "admin" ? <AdminDashboard /> : <Dashboard />))} />
               <Route path="/students/:id" element={<StudentProfile />} />
               <Route path="/class/:className" element={user?.role === "student" ? <Navigate to="/" replace /> : (user?.role === "admin" || user?.role === "college-admin" ? <Navigate to="/" replace /> : <ClassOverview />)} />

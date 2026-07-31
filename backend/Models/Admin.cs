@@ -30,6 +30,9 @@ namespace EduGuard.Models
         [BsonElement("role")]
         public string Role { get; set; } = "admin";
 
+        [BsonElement("status")]
+        public string Status { get; set; } = "active";
+
         [BsonElement("isSuperAdmin")]
         public bool IsSuperAdmin { get; set; } = false;
 

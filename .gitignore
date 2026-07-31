@@ -21,6 +21,7 @@ EduGuard Project Analysis.md
 **/publish/
 **/TestResults/
 **/coverage/
+*.tsbuildinfo
 
 # Local configuration and secrets
 **/.env
