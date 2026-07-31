@@ -21,7 +21,7 @@ LMS worker -> service-key/idempotent push jobs -> EduGuard push queue -> FCM
 
 There is no separate LMS login. EduGuard creates a short SSO token, the LMS validates it back-channel through EduGuard, then creates an eight-hour LMS-only session signed by `LMS_JWT_SECRET`. `LMS_SERVICE_KEY` must be the same strong value in both backend deployments. Production secrets must be environment variables, never committed settings.
 
-The active local config uses `https://edugard-aipowerd.onrender.com` for the EduGuard API, `https://edugard-ai-powerd.vercel.app` for returning to EduGuard, and `https://edugard-ai-powerd-swsb.vercel.app` for the LMS frontend.
+The active configuration uses `https://edugard-aipowerd-1.onrender.com` for the LMS API, `https://edugard-aipowerd.onrender.com` for the EduGuard API, `https://edugard-ai-powerd.vercel.app` for returning to EduGuard, and `https://edugard-ai-powerd-swsb.vercel.app` for the LMS frontend.
 
 ## Features
 
