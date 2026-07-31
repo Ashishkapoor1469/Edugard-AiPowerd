@@ -12,7 +12,7 @@ export default function LibrarianManagementPanel() {
   const save = async (event: React.FormEvent) => {
     event.preventDefault(); setLoading(true);
     try { if (editing) await axios.put(`/api/librarians/${editing}`, form); else await axios.post("/api/librarians", form); toast.success(editing ? "Librarian updated" : "Librarian account created"); setEditing(null); setForm(empty); await load(); }
-    catch (error: any) { toast.error(error.response?.data?.message || "Could not save librarian"); }
+    catch (error: any) { toast.error(error.response?.status === 401 ? "Session expired. Sign in again as college admin." : error.response?.data?.message || "Could not save librarian"); }
     finally { setLoading(false); }
   };
   const edit = (item: Librarian) => { setEditing(item._id); setForm({ name: item.name, email: item.email, password: "", status: item.status }); };

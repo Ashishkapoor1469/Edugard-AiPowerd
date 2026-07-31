@@ -41,6 +41,11 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:5000";
 axios.defaults.baseURL = apiUrl;
+axios.interceptors.request.use((config) => {
+  const jwt = localStorage.getItem("token");
+  if (jwt) config.headers.Authorization = `Bearer ${jwt}`;
+  return config;
+});
 installHttpCache();
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
