@@ -416,13 +416,13 @@ const Navbar: React.FC = () => {
                   My Badges
                 </button>
               )}
-              <button
+              {(user?.role === "admin" || user?.role === "college-admin") && <button
                 onClick={() => { setShowProfileDropdown(false); navigate("/library"); }}
                 className="flex w-full items-center gap-2 px-4 py-2 text-left text-xs font-medium text-primary hover:bg-slate-50"
               >
                 <span aria-hidden="true">▤</span>
                 Library LMS
-              </button>
+              </button>}
               <button
                 onClick={() => {
                   setShowProfileDropdown(false);
