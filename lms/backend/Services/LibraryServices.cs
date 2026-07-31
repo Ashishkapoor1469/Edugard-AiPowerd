@@ -17,10 +17,12 @@ public interface IEduGuardClient
 {
     Task<EduGuardIdentity> IdentityAsync(string id, CancellationToken token);
     Task<LmsActor> ValidateSsoAsync(string tokenValue, CancellationToken token);
+    Task<LmsActor> LibrarianLoginAsync(string email, string password, CancellationToken token);
     Task NotifyAsync(PushRequest request, CancellationToken token);
     Task<JsonElement> LibrariansAsync(string collegeId, string actorId, CancellationToken token);
     Task<JsonElement> CreateLibrarianAsync(string collegeId, string actorId, string name, string email, string password, CancellationToken token);
-    Task UpdateLibrarianAsync(string id, string actorId, string status, CancellationToken token);
+    Task UpdateLibrarianAsync(string id, string actorId, string status, string? name, string? email, string? password, CancellationToken token);
+    Task DeleteLibrarianAsync(string id, string actorId, CancellationToken token);
     Task<IReadOnlyList<LibrarianIdentity>> ActiveLibrariansAsync(string collegeId, CancellationToken token);
 }
 
@@ -43,14 +45,22 @@ public sealed class EduGuardClient : IEduGuardClient
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<LmsActor>(cancellationToken: token))!;
     }
+    public async Task<LmsActor> LibrarianLoginAsync(string email, string password, CancellationToken token)
+    {
+        var response = await _http.PostAsJsonAsync("/api/integrations/lms/librarians/authenticate", new { email, password }, token);
+        if (!response.IsSuccessStatusCode) throw new UnauthorizedAccessException("Invalid librarian email or password.");
+        return (await response.Content.ReadFromJsonAsync<LmsActor>(cancellationToken: token))!;
+    }
     public async Task NotifyAsync(PushRequest request, CancellationToken token)
     { var response = await _http.PostAsJsonAsync("/api/integrations/lms/push", request, token); response.EnsureSuccessStatusCode(); }
     public async Task<JsonElement> LibrariansAsync(string collegeId, string actorId, CancellationToken token)
     { var response = await _http.GetAsync($"/api/integrations/lms/colleges/{collegeId}/librarians?actorId={Uri.EscapeDataString(actorId)}", token); response.EnsureSuccessStatusCode(); return await response.Content.ReadFromJsonAsync<JsonElement>(cancellationToken: token); }
     public async Task<JsonElement> CreateLibrarianAsync(string collegeId, string actorId, string name, string email, string password, CancellationToken token)
     { var response = await _http.PostAsJsonAsync($"/api/integrations/lms/colleges/{collegeId}/librarians", new { actorId, name, email, password }, token); if (!response.IsSuccessStatusCode) throw new InvalidOperationException(await response.Content.ReadAsStringAsync(token)); return await response.Content.ReadFromJsonAsync<JsonElement>(cancellationToken: token); }
-    public async Task UpdateLibrarianAsync(string id, string actorId, string status, CancellationToken token)
-    { var response = await _http.PatchAsJsonAsync($"/api/integrations/lms/librarians/{id}", new { actorId, status }, token); response.EnsureSuccessStatusCode(); }
+    public async Task UpdateLibrarianAsync(string id, string actorId, string status, string? name, string? email, string? password, CancellationToken token)
+    { var response = await _http.PatchAsJsonAsync($"/api/integrations/lms/librarians/{id}", new { actorId, status, name, email, password }, token); if (!response.IsSuccessStatusCode) throw new InvalidOperationException(await response.Content.ReadAsStringAsync(token)); }
+    public async Task DeleteLibrarianAsync(string id, string actorId, CancellationToken token)
+    { var response = await _http.DeleteAsync($"/api/integrations/lms/librarians/{id}?actorId={Uri.EscapeDataString(actorId)}", token); response.EnsureSuccessStatusCode(); }
     public async Task<IReadOnlyList<LibrarianIdentity>> ActiveLibrariansAsync(string collegeId, CancellationToken token)
     {
         var response = await _http.GetAsync($"/api/integrations/lms/colleges/{collegeId}/librarians/internal", token); response.EnsureSuccessStatusCode();

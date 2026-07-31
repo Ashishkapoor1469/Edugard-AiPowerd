@@ -51,9 +51,19 @@ public sealed class LmsIntegrationController : ControllerBase
     public async Task<IActionResult> Librarians(string collegeId, [FromQuery] string actorId, CancellationToken token)
     {
         if (!Authorized() || !await IsCollegeAdminAsync(actorId, collegeId, token)) return Unauthorized();
-        var list = await _mongo.Admins.Find(x => x.CollegeId == collegeId && x.Role == "librarian")
+        var list = await _mongo.Admins.Find(x => x.CollegeId == collegeId && x.Role == "librarian" && x.Status != "deleted")
             .Project(x => new { x.Id, x.Name, x.Email, x.Role, x.Status, x.CreatedAt }).ToListAsync(token);
         return Ok(new { success = true, data = list });
+    }
+
+    [HttpPost("librarians/authenticate")]
+    public async Task<IActionResult> AuthenticateLibrarian([FromBody] LibrarianLoginRequest request, CancellationToken token)
+    {
+        if (!Authorized()) return Unauthorized();
+        var email = request.Email.Trim().ToLowerInvariant();
+        var librarian = await _mongo.Admins.Find(x => x.Email == email && x.Role == "librarian" && x.Status == "active").FirstOrDefaultAsync(token);
+        if (librarian == null || !BCrypt.Net.BCrypt.Verify(request.Password, librarian.Password)) return Unauthorized(new { success = false, message = "Invalid librarian email or password." });
+        return Ok(new { id = librarian.Id, librarian.Name, librarian.Email, librarian.Role, librarian.CollegeId });
     }
 
     [HttpGet("colleges/{collegeId}/librarians/internal")]
@@ -69,8 +79,8 @@ public sealed class LmsIntegrationController : ControllerBase
     public async Task<IActionResult> CreateLibrarian(string collegeId, [FromBody] CreateLibrarianRequest request, CancellationToken token)
     {
         if (!Authorized() || !await IsCollegeAdminAsync(request.ActorId, collegeId, token)) return Unauthorized();
-        if (string.IsNullOrWhiteSpace(request.Name) || string.IsNullOrWhiteSpace(request.Email) || request.Password.Length < 8)
-            return BadRequest(new { success = false, message = "Name, email, and an 8-character password are required." });
+        if (string.IsNullOrWhiteSpace(request.Name) || string.IsNullOrWhiteSpace(request.Email)) return BadRequest(new { success = false, message = "Name and email are required." });
+        if (!LibrarianPasswordPolicy.IsStrong(request.Password)) return BadRequest(new { success = false, message = LibrarianPasswordPolicy.Message });
         var email = request.Email.Trim().ToLowerInvariant();
         if (await _mongo.Admins.Find(x => x.Email == email).AnyAsync(token) || await _mongo.Mentors.Find(x => x.Email == email).AnyAsync(token) || await _mongo.Students.Find(x => x.Email == email).AnyAsync(token))
             return Conflict(new { success = false, message = "Email is already registered." });
@@ -83,10 +93,34 @@ public sealed class LmsIntegrationController : ControllerBase
     public async Task<IActionResult> UpdateLibrarian(string id, [FromBody] UpdateLibrarianRequest request, CancellationToken token)
     {
         if (!Authorized() || request.Status is not ("active" or "disabled")) return BadRequest();
-        var librarian = await _mongo.Admins.Find(x => x.Id == id && x.Role == "librarian").FirstOrDefaultAsync(token);
+        var librarian = await _mongo.Admins.Find(x => x.Id == id && x.Role == "librarian" && x.Status != "deleted").FirstOrDefaultAsync(token);
         if (librarian == null) return NotFound();
         if (!await IsCollegeAdminAsync(request.ActorId, librarian.CollegeId!, token)) return Unauthorized();
-        await _mongo.Admins.UpdateOneAsync(x => x.Id == id, Builders<Admin>.Update.Set(x => x.Status, request.Status).Set(x => x.UpdatedAt, DateTime.UtcNow), cancellationToken: token);
+        var update = Builders<Admin>.Update.Set(x => x.Status, request.Status).Set(x => x.UpdatedAt, DateTime.UtcNow);
+        if (!string.IsNullOrWhiteSpace(request.Name)) update = update.Set(x => x.Name, request.Name.Trim());
+        if (!string.IsNullOrWhiteSpace(request.Email))
+        {
+            var email = request.Email.Trim().ToLowerInvariant();
+            if (await _mongo.Admins.Find(x => x.Email == email && x.Id != id).AnyAsync(token) || await _mongo.Mentors.Find(x => x.Email == email).AnyAsync(token) || await _mongo.Students.Find(x => x.Email == email).AnyAsync(token)) return Conflict(new { success = false, message = "Email is already registered." });
+            update = update.Set(x => x.Email, email);
+        }
+        if (!string.IsNullOrEmpty(request.Password))
+        {
+            if (!LibrarianPasswordPolicy.IsStrong(request.Password)) return BadRequest(new { success = false, message = LibrarianPasswordPolicy.Message });
+            update = update.Set(x => x.Password, BCrypt.Net.BCrypt.HashPassword(request.Password));
+        }
+        await _mongo.Admins.UpdateOneAsync(x => x.Id == id, update, cancellationToken: token);
+        return Ok(new { success = true });
+    }
+
+    [HttpDelete("librarians/{id}")]
+    public async Task<IActionResult> DeleteLibrarian(string id, [FromQuery] string actorId, CancellationToken token)
+    {
+        if (!Authorized()) return Unauthorized();
+        var librarian = await _mongo.Admins.Find(x => x.Id == id && x.Role == "librarian").FirstOrDefaultAsync(token);
+        if (librarian == null) return NotFound();
+        if (!await IsCollegeAdminAsync(actorId, librarian.CollegeId!, token)) return Unauthorized();
+        await _mongo.Admins.UpdateOneAsync(x => x.Id == id, Builders<Admin>.Update.Set(x => x.Status, "deleted").Set(x => x.UpdatedAt, DateTime.UtcNow), cancellationToken: token);
         return Ok(new { success = true });
     }
 
@@ -112,6 +146,7 @@ public sealed class LmsIntegrationController : ControllerBase
 }
 
 public sealed record CreateLibrarianRequest(string ActorId, string Name, string Email, string Password);
-public sealed record UpdateLibrarianRequest(string ActorId, string Status);
+public sealed record UpdateLibrarianRequest(string ActorId, string Status, string? Name = null, string? Email = null, string? Password = null);
+public sealed record LibrarianLoginRequest(string Email, string Password);
 public sealed record LmsPushRequest(string UserId, string IdempotencyKey, string Title, string Body, string Priority, Dictionary<string, string>? Data);
 public sealed record ValidateLmsSsoRequest(string Token);

@@ -4,6 +4,7 @@ import axios from "axios";
 import toast from "react-hot-toast";
 import { useAuth } from "../context/AuthContext.js";
 import AdminAttendancePanel from "../components/AdminAttendancePanel.js";
+import LibrarianManagementPanel from "../components/LibrarianManagementPanel.js";
 
 interface Mentor {
   _id: string;
@@ -39,7 +40,7 @@ interface Degree {
 const CollegeAdminDashboard: React.FC = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<"mentors" | "risk-students" | "attendance" | "leaders" | "announcements" | "syllabus">("mentors");
+  const [activeTab, setActiveTab] = useState<"mentors" | "librarians" | "risk-students" | "attendance" | "leaders" | "announcements" | "syllabus">("mentors");
 
   // State
   const [mentors, setMentors] = useState<Mentor[]>([]);
@@ -264,6 +265,7 @@ const CollegeAdminDashboard: React.FC = () => {
       <div className="mb-6 border-b border-slate-200 flex gap-2 overflow-x-auto pb-px">
         {[
           { id: "mentors", label: "Mentor Management" },
+          { id: "librarians", label: "Librarian Management" },
           { id: "risk-students", label: "Risk Students" },
           { id: "attendance", label: "Attendance" },
           { id: "leaders", label: "Student Leaders" },
@@ -286,6 +288,7 @@ const CollegeAdminDashboard: React.FC = () => {
 
       {/* Tab Contents */}
       <div className="grid grid-cols-1 gap-6">
+        {activeTab === "librarians" && <LibrarianManagementPanel />}
         {activeTab === "attendance" && <AdminAttendancePanel view="attendance" />}
         {activeTab === "leaders" && <AdminAttendancePanel view="leaders" />}
         {/* TAB 1: MENTOR MANAGEMENT */}

@@ -306,7 +306,7 @@ namespace EduGuard.Controllers
             var admin = await _mongoService.Admins.Find(a => a.Email == model.Email).FirstOrDefaultAsync();
             if (admin != null && BCrypt.Net.BCrypt.Verify(model.Password, admin.Password))
             {
-                if (admin.Status is "disabled" or "rejected")
+                if (admin.Status is not "active")
                     return Unauthorized(new { success = false, message = "Your account is inactive. Please contact your college administrator." });
                 if (!string.IsNullOrEmpty(admin.CollegeId))
                 {

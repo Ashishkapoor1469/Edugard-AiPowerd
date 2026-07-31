@@ -25,6 +25,7 @@ using EduGuard.Services;
 ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12 | SecurityProtocolType.Tls13;
 
 var builder = WebApplication.CreateBuilder(args);
+LibrarianPasswordPolicy.SelfCheck();
 
 builder.Logging.ClearProviders();
 builder.Logging.AddConsole();

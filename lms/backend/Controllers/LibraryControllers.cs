@@ -24,6 +24,18 @@ public sealed class AuthController : ControllerBase
     public async Task<IActionResult> Exchange([FromBody] ExchangeRequest request, CancellationToken cancellationToken)
     {
         var actor = await _eduguard.ValidateSsoAsync(request.Token, cancellationToken);
+        return Ok(new { success = true, token = CreateToken(actor) });
+    }
+
+    [AllowAnonymous, HttpPost("librarian-login")]
+    public async Task<IActionResult> LibrarianLogin([FromBody] LibrarianLoginRequest request, CancellationToken cancellationToken)
+    {
+        var actor = await _eduguard.LibrarianLoginAsync(request.Email, request.Password, cancellationToken);
+        return Ok(new { success = true, token = CreateToken(actor) });
+    }
+
+    private string CreateToken(LmsActor actor)
+    {
         var lmsKey = SHA256.HashData(Encoding.UTF8.GetBytes(_config["LMS_JWT_SECRET"] ?? throw new InvalidOperationException("LMS_JWT_SECRET is required.")));
         var descriptor = new SecurityTokenDescriptor
         {
@@ -31,8 +43,7 @@ public sealed class AuthController : ControllerBase
             Issuer = "eduguard-lms", Audience = "eduguard-lms-api", Expires = DateTime.UtcNow.AddHours(8),
             SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(lmsKey), SecurityAlgorithms.HmacSha256Signature)
         };
-        var token = new JwtSecurityTokenHandler().WriteToken(new JwtSecurityTokenHandler().CreateToken(descriptor));
-        return Ok(new { success = true, token });
+        return new JwtSecurityTokenHandler().WriteToken(new JwtSecurityTokenHandler().CreateToken(descriptor));
     }
 
     [HttpGet("me")]
@@ -146,7 +157,9 @@ public sealed class LibraryAdminController : ControllerBase
     [HttpPost("librarians"), Authorize(Roles = "college-admin")]
     public async Task<IActionResult> CreateLibrarian([FromBody] LibrarianRequest request, CancellationToken token) { var actor = AuthController.Actor(User); return Content((await _eduguard.CreateLibrarianAsync(actor.CollegeId, actor.Id, request.Name, request.Email, request.Password, token)).GetRawText(), "application/json"); }
     [HttpPatch("librarians/{id}"), Authorize(Roles = "college-admin")]
-    public async Task<IActionResult> UpdateLibrarian(string id, [FromBody] LibrarianStatusRequest request, CancellationToken token) { var actor = AuthController.Actor(User); await _eduguard.UpdateLibrarianAsync(id, actor.Id, request.Status, token); return Ok(new { success = true }); }
+    public async Task<IActionResult> UpdateLibrarian(string id, [FromBody] LibrarianStatusRequest request, CancellationToken token) { var actor = AuthController.Actor(User); await _eduguard.UpdateLibrarianAsync(id, actor.Id, request.Status, request.Name, request.Email, request.Password, token); return Ok(new { success = true }); }
+    [HttpDelete("librarians/{id}"), Authorize(Roles = "college-admin")]
+    public async Task<IActionResult> DeleteLibrarian(string id, CancellationToken token) { var actor = AuthController.Actor(User); await _eduguard.DeleteLibrarianAsync(id, actor.Id, token); return Ok(new { success = true }); }
 
     [HttpGet("preferences"), Authorize(Roles = "librarian")]
     public async Task<IActionResult> Preferences(CancellationToken token) { var actor = AuthController.Actor(User); var prefs = await _db.Preferences.Find(x => x.LibrarianId == actor.Id).FirstOrDefaultAsync(token) ?? new LibrarianPreferences { LibrarianId = actor.Id, CollegeId = actor.CollegeId }; return Ok(new { success = true, data = prefs }); }
@@ -178,7 +191,8 @@ public sealed record IssueRequest(string StudentId, string BookId);
 public sealed record ReserveRequest(string StudentId, string BookId);
 public sealed record FineActionRequest(decimal Amount, string? Reason);
 public sealed record LibrarianRequest(string Name, string Email, string Password);
-public sealed record LibrarianStatusRequest(string Status);
+public sealed record LibrarianStatusRequest(string Status, string? Name = null, string? Email = null, string? Password = null);
 public sealed record CompatibilityBook(string BookId, string Title, DateTime IssueDate, DateTime DueDate, string Status);
 public sealed record CompatibilityReturn(string BookId);
 public sealed record ExchangeRequest(string Token);
+public sealed record LibrarianLoginRequest(string Email, string Password);
