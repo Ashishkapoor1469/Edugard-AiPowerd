@@ -22,14 +22,14 @@ namespace EduGuard.Hubs
     public class EduGuardHub : Hub
     {
         private readonly MongoService _mongoService;
-        private readonly NvidiaNimService _nvidiaNimService;
+        private readonly INvidiaNimService _nvidiaNimService;
 
         // Tracks active connections per mentor ID
         private static readonly ConcurrentDictionary<string, HashSet<string>> MentorConnections = new();
         // Maps connection ID to mentor ID for easy lookup on disconnect
         private static readonly ConcurrentDictionary<string, string> ConnectionMentorMap = new();
 
-        public EduGuardHub(MongoService mongoService, NvidiaNimService nvidiaNimService)
+        public EduGuardHub(MongoService mongoService, INvidiaNimService nvidiaNimService)
         {
             _mongoService = mongoService;
             _nvidiaNimService = nvidiaNimService;

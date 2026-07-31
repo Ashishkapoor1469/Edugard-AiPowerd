@@ -84,6 +84,14 @@ interface AttendanceHistoryRecord {
   status: "present" | "absent";
 }
 
+interface IssuedBook {
+  bookId: string;
+  title: string;
+  issueDate: string;
+  dueDate: string;
+  status: "on-time" | "overdue";
+}
+
 interface ProfileChartPoint {
   name?: string;
   date?: string;
@@ -103,8 +111,8 @@ const StudentProfile: React.FC = () => {
 
   // Tabs for Student vs Mentor
   const [activeTab, setActiveTab] = useState<
-    "performance" | "attendance" | "chat" | "notifications" | "settings"
-  >("performance");
+    "performance" | "attendance" | "books" | "chat" | "notifications" | "settings"
+  >(() => new URLSearchParams(window.location.search).get("tab") === "books" ? "books" : "performance");
 
   // States
   const [student, setStudent] = useState<Student | null>(null);
@@ -128,11 +136,22 @@ const StudentProfile: React.FC = () => {
 
   // Notifications State
   const [alerts, setAlerts] = useState<any[]>([]);
+  const [issuedBooks, setIssuedBooks] = useState<IssuedBook[]>([]);
+  const [booksLoading, setBooksLoading] = useState(false);
   const [reportCards, setReportCards] = useState<ReportCardJob[]>([]);
   const [downloadingReportCard, setDownloadingReportCard] = useState<string | null>(null);
   const [attendanceHistory, setAttendanceHistory] = useState<AttendanceHistoryRecord[]>([]);
   const [attendancePercentage, setAttendancePercentage] = useState<number | null>(null);
   const [chartMode, setChartMode] = useState<"marks" | "attendance">("marks");
+
+  useEffect(() => {
+    if (activeTab !== "books" || !studentId) return;
+    setBooksLoading(true);
+    axios.get(`/api/library/students/${studentId}/books`)
+      .then((response) => setIssuedBooks(response.data.data ?? []))
+      .catch((error) => toast.error(error.response?.data?.message || "Could not load issued books"))
+      .finally(() => setBooksLoading(false));
+  }, [activeTab, studentId]);
 
   // Overrides modal for Mentors/Admins
   const [showOverrideForm, setShowOverrideForm] = useState(false);
@@ -984,6 +1003,7 @@ ${student.aiImprovementPlan || "No plan generated."}
               {[
                 { id: "performance", label: "Academic Performance" },
                 { id: "attendance", label: "Attendance" },
+                { id: "books", label: "Books" },
                 {
                   id: "chat",
                   label: `Chat with Mentor ${student.mentorId?.isOnline ? "●" : ""}`,
@@ -1415,6 +1435,38 @@ ${student.aiImprovementPlan || "No plan generated."}
           )}
 
           {user?.role === "student" && activeTab === "attendance" && <StudentAttendancePanel />}
+
+          {user?.role === "student" && activeTab === "books" && (
+            <section className="rounded-2xl border border-[#dadce0] bg-white p-6 shadow-sm">
+              <div className="mb-5 flex items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-semibold text-[#202124]">Issued library books</h3>
+                  <p className="mt-1 text-xs text-[#5f6368]">Read-only LMS record · maximum 2 active issues</p>
+                </div>
+                <span className="rounded-full bg-primary/10 px-2.5 py-1 text-xs font-bold text-primary">{issuedBooks.length}/2</span>
+              </div>
+              {booksLoading ? (
+                <p className="py-8 text-center text-xs text-slate-500">Loading books...</p>
+              ) : issuedBooks.length === 0 ? (
+                <p className="py-8 text-center text-xs italic text-slate-500">No books are currently issued.</p>
+              ) : (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {issuedBooks.map((book) => (
+                    <article key={book.bookId} className="rounded-xl border border-slate-200 p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <h4 className="text-sm font-semibold text-slate-900">{book.title}</h4>
+                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${book.status === "overdue" ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700"}`}>{book.status}</span>
+                      </div>
+                      <dl className="mt-4 grid grid-cols-2 gap-3 text-xs">
+                        <div><dt className="text-slate-500">Issued</dt><dd className="mt-1 font-medium text-slate-800">{new Date(book.issueDate).toLocaleDateString()}</dd></div>
+                        <div><dt className="text-slate-500">Due</dt><dd className="mt-1 font-medium text-slate-800">{new Date(book.dueDate).toLocaleDateString()}</dd></div>
+                      </dl>
+                    </article>
+                  ))}
+                </div>
+              )}
+            </section>
+          )}
 
           {/* 2. CHAT TAB */}
           {(user?.role !== "student" || activeTab === "chat") && (

@@ -40,6 +40,16 @@ jobs:
         env:
           VITE_API_URL: https://edugard-aipowerd.onrender.com
 
+      - name: Configure Firebase
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.FIREBASE_GOOGLE_SERVICES_JSON }}
+        run: |
+          if [ -n "$GOOGLE_SERVICES_JSON" ]; then
+            printf '%s' "$GOOGLE_SERVICES_JSON" > android/app/google-services.json
+          else
+            echo "::warning::FIREBASE_GOOGLE_SERVICES_JSON is not configured; APK push registration will be disabled."
+          fi
+
       - name: Sync Capacitor
         run: npx cap sync android
 

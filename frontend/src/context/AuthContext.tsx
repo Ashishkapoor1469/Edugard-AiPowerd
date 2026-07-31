@@ -2,6 +2,7 @@ import React, { createContext, useState, useEffect, useContext } from "react";
 import axios from "axios";
 import socket from "../utils/socket.js";
 import { installHttpCache } from "../utils/httpCache.js";
+import { initializeMobilePush, unregisterMobilePush } from "../utils/mobilePush.js";
 
 export interface User {
   id: string;
@@ -64,6 +65,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           const res = await axios.get("/api/auth/me");
           if (res.data.success) {
             setUser(res.data.data);
+            void initializeMobilePush();
           } else {
             logout();
           }
@@ -87,6 +89,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setToken(jwtToken);
         setUser(mentorUser);
         setAuthHeader(jwtToken);
+        void initializeMobilePush();
       }
     } catch (err: any) {
       throw new Error(err.response?.data?.message || "Login failed");
@@ -111,6 +114,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setToken(jwtToken);
         setUser(mentorUser);
         setAuthHeader(jwtToken);
+        void initializeMobilePush();
       }
     } catch (err: any) {
       throw new Error(err.response?.data?.message || "Registration failed");
@@ -118,6 +122,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logout = () => {
+    void unregisterMobilePush();
     localStorage.clear();
     sessionStorage.clear();
     socket.disconnect();

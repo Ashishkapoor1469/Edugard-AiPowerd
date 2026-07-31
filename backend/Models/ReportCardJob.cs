@@ -13,6 +13,9 @@ namespace EduGuard.Models
         [JsonPropertyName("_id")]
         public string? Id { get; set; }
 
+        [BsonElement("idempotencyKey")]
+        public string? IdempotencyKey { get; set; }
+
         [BsonElement("requesterId")]
         [BsonRepresentation(BsonType.ObjectId)]
         public string RequesterId { get; set; } = string.Empty;

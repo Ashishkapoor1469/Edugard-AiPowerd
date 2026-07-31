@@ -18,13 +18,15 @@ namespace EduGuard.Controllers
     {
         private readonly MongoService _mongoService;
         private readonly ExcelParserService _excelParserService;
-        private readonly CacheService _cacheService;
+        private readonly ICacheService _cacheService;
+        private readonly IPushAudienceNotifier _push;
 
-        public CollegeAdminController(MongoService mongoService, ExcelParserService excelParserService, CacheService cacheService)
+        public CollegeAdminController(MongoService mongoService, ExcelParserService excelParserService, ICacheService cacheService, IPushAudienceNotifier push)
         {
             _mongoService = mongoService;
             _excelParserService = excelParserService;
             _cacheService = cacheService;
+            _push = push;
         }
 
         private async Task<string?> GetCollegeIdAsync()
@@ -57,6 +59,9 @@ namespace EduGuard.Controllers
             model.UpdatedAt = DateTime.UtcNow;
 
             await _mongoService.Announcements.InsertOneAsync(model);
+            await _push.NotifyStudentsAsync(collegeId, model.TargetAudience is "class" or "batch" ? model.TargetId : null,
+                $"announcement:{model.Id}", new PushMessage(model.Title, model.Description, "normal",
+                    new Dictionary<string, string> { ["type"] = "announcement", ["path"] = "/?tab=notifications" }));
             return Ok(new { success = true, data = model });
         }
 
@@ -81,6 +86,9 @@ namespace EduGuard.Controllers
             model.UpdatedAt = DateTime.UtcNow;
 
             await _mongoService.Events.InsertOneAsync(model);
+            await _push.NotifyStudentsAsync(collegeId, null, $"event:{model.Id}",
+                new PushMessage(model.EventName, model.Description, "normal",
+                    new Dictionary<string, string> { ["type"] = "event", ["path"] = "/?tab=notifications" }));
             return Ok(new { success = true, data = model });
         }
 

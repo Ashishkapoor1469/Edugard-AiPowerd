@@ -153,6 +153,9 @@ namespace EduGuard.Models
         [BsonElement("earnedBadges")]
         public List<StudentBadge> EarnedBadges { get; set; } = new();
 
+        [BsonElement("issuedBooks")]
+        public List<IssuedBook> IssuedBooks { get; set; } = new();
+
         [BsonElement("lastBadgeCheckAt")]
         public DateTime? LastBadgeCheckAt { get; set; }
 
@@ -161,6 +164,24 @@ namespace EduGuard.Models
 
         [BsonElement("updatedAt")]
         public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+    }
+
+    public class IssuedBook
+    {
+        [BsonElement("bookId")]
+        public string BookId { get; set; } = string.Empty;
+
+        [BsonElement("title")]
+        public string Title { get; set; } = string.Empty;
+
+        [BsonElement("issueDate")]
+        public DateTime IssueDate { get; set; }
+
+        [BsonElement("dueDate")]
+        public DateTime DueDate { get; set; }
+
+        [BsonElement("status")]
+        public string Status { get; set; } = "active";
     }
 
     public class StudentBadge

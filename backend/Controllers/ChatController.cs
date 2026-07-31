@@ -18,13 +18,15 @@ namespace EduGuard.Controllers
     {
         private readonly MongoService _mongoService;
         private readonly IHubContext<EduGuardHub> _hubContext;
-        private readonly NvidiaNimService _nvidiaNimService;
+        private readonly INvidiaNimService _nvidiaNimService;
+        private readonly IPushNotificationQueue _pushQueue;
 
-        public ChatController(MongoService mongoService, IHubContext<EduGuardHub> hubContext, NvidiaNimService nvidiaNimService)
+        public ChatController(MongoService mongoService, IHubContext<EduGuardHub> hubContext, INvidiaNimService nvidiaNimService, IPushNotificationQueue pushQueue)
         {
             _mongoService = mongoService;
             _hubContext = hubContext;
             _nvidiaNimService = nvidiaNimService;
+            _pushQueue = pushQueue;
         }
 
         private async Task StreamAiMessageAsync(string roomId, Message message)
@@ -206,6 +208,12 @@ namespace EduGuard.Controllers
                 };
 
                 await _mongoService.Messages.InsertOneAsync(message);
+
+                var recipientId = string.Equals(sender, "mentor", StringComparison.OrdinalIgnoreCase) ? request.StudentId : request.MentorId;
+                if (recipientId != "ai-assistant")
+                    await _pushQueue.EnqueueAsync(recipientId, $"chat:{message.Id}:{recipientId}",
+                        new PushMessage("New chat message", request.Text.Length > 120 ? request.Text[..120] : request.Text, "normal",
+                            new Dictionary<string, string> { ["type"] = "chat", ["path"] = $"/students/{request.StudentId}?tab=chat", ["studentId"] = request.StudentId }));
 
                 // Broadcast to the SignalR room (room = studentId)
                 var roomId = request.StudentId;

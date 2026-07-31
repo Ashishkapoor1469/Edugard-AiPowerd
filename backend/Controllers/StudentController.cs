@@ -27,18 +27,22 @@ namespace EduGuard.Controllers
         private readonly ExcelParserService _excelParserService;
         private readonly EmailQueueService _emailQueueService;
         private readonly NotificationService _notificationService;
-        private readonly NvidiaNimService _nvidiaNimService;
-        private readonly CacheService _cacheService;
+        private readonly INvidiaNimService _nvidiaNimService;
+        private readonly ICacheService _cacheService;
         private readonly BadgeAwardWorker _badgeAwardWorker;
+        private readonly IPushAudienceNotifier _pushAudience;
+        private readonly IPushNotificationQueue _pushQueue;
 
         public StudentController(
             MongoService mongoService,
             ExcelParserService excelParserService,
             EmailQueueService emailQueueService,
             NotificationService notificationService,
-            NvidiaNimService nvidiaNimService,
-            CacheService cacheService,
-            BadgeAwardWorker badgeAwardWorker)
+            INvidiaNimService nvidiaNimService,
+            ICacheService cacheService,
+            BadgeAwardWorker badgeAwardWorker,
+            IPushAudienceNotifier pushAudience,
+            IPushNotificationQueue pushQueue)
         {
             _mongoService = mongoService;
             _excelParserService = excelParserService;
@@ -47,6 +51,8 @@ namespace EduGuard.Controllers
             _nvidiaNimService = nvidiaNimService;
             _cacheService = cacheService;
             _badgeAwardWorker = badgeAwardWorker;
+            _pushAudience = pushAudience;
+            _pushQueue = pushQueue;
         }
 
         // --- STUDENT ALERTS: Announcements + Events for their college ---
@@ -1028,6 +1034,9 @@ namespace EduGuard.Controllers
             model.UpdatedAt = DateTime.UtcNow;
 
             await _mongoService.Assignments.InsertOneAsync(model);
+            await _pushAudience.NotifyStudentsAsync(model.CollegeId, model.Class, $"assignment:{model.Id}",
+                new PushMessage("New assignment", model.Title, "normal",
+                    new Dictionary<string, string> { ["type"] = "assignment", ["path"] = "/assignments", ["assignmentId"] = model.Id! }));
             return Ok(new { success = true, data = model });
         }
 
@@ -1068,6 +1077,8 @@ namespace EduGuard.Controllers
         public async Task<IActionResult> GradeSubmission(string submissionId, [FromBody] GradeRequest request)
         {
             if (request == null) return BadRequest("Grade and feedback are required");
+            var submission = await _mongoService.Submissions.Find(s => s.Id == submissionId).FirstOrDefaultAsync();
+            if (submission == null) return NotFound("Submission not found");
             
             var filter = Builders<Submission>.Filter.Eq(s => s.Id, submissionId);
             var update = Builders<Submission>.Update
@@ -1077,6 +1088,10 @@ namespace EduGuard.Controllers
 
             var result = await _mongoService.Submissions.UpdateOneAsync(filter, update);
             if (result.MatchedCount == 0) return NotFound("Submission not found");
+
+            await _pushQueue.EnqueueAsync(submission.StudentId, $"assignment-graded:{submissionId}:{request.Grade}",
+                new PushMessage("Assignment graded", $"Your submission was graded {request.Grade}.", "normal",
+                    new Dictionary<string, string> { ["type"] = "assignment_graded", ["path"] = "/assignments", ["assignmentId"] = submission.AssignmentId }));
 
             return Ok(new { success = true, message = "Submission graded successfully" });
         }
@@ -1134,6 +1149,10 @@ namespace EduGuard.Controllers
         public async Task<IActionResult> GenerateReportCardJob(string studentId)
         {
             var requesterId = User.FindFirst("id")?.Value ?? "system";
+            var idempotencyKey = Request.Headers["Idempotency-Key"].FirstOrDefault() ?? Guid.NewGuid().ToString("N");
+            var existingJob = await _mongoService.ReportCardJobs.Find(j => j.IdempotencyKey == idempotencyKey).FirstOrDefaultAsync();
+            if (existingJob != null)
+                return Ok(new { success = true, message = "Report card generation already queued.", jobId = existingJob.Id });
 
             var student = await _mongoService.Students.Find(s => s.Id == studentId).FirstOrDefaultAsync();
             if (student == null)
@@ -1160,6 +1179,7 @@ namespace EduGuard.Controllers
             var job = new ReportCardJob
             {
                 RequesterId = requesterId,
+                IdempotencyKey = idempotencyKey,
                 StudentId = studentId,
                 StudentName = student.Name,
                 Status = "pending",
@@ -1167,7 +1187,12 @@ namespace EduGuard.Controllers
                 UpdatedAt = DateTime.UtcNow
             };
 
-            await _mongoService.ReportCardJobs.InsertOneAsync(job);
+            try { await _mongoService.ReportCardJobs.InsertOneAsync(job); }
+            catch (MongoWriteException ex) when (ex.WriteError?.Category == ServerErrorCategory.DuplicateKey)
+            {
+                var duplicate = await _mongoService.ReportCardJobs.Find(j => j.IdempotencyKey == idempotencyKey).FirstOrDefaultAsync();
+                return Ok(new { success = true, message = "Report card generation already queued.", jobId = duplicate?.Id });
+            }
             return Ok(new { success = true, message = "Report card generation queued. Previous report replaced.", jobId = job.Id });
         }
 

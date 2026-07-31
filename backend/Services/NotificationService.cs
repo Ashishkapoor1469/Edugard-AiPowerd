@@ -13,11 +13,13 @@ namespace EduGuard.Services
     {
         private readonly MongoService _mongoService;
         private readonly IHubContext<EduGuardHub> _hubContext;
+        private readonly IPushNotificationQueue _pushQueue;
 
-        public NotificationService(MongoService mongoService, IHubContext<EduGuardHub> hubContext)
+        public NotificationService(MongoService mongoService, IHubContext<EduGuardHub> hubContext, IPushNotificationQueue pushQueue)
         {
             _mongoService = mongoService;
             _hubContext = hubContext;
+            _pushQueue = pushQueue;
         }
 
         public async Task CreateNotificationAsync(string mentorId, string studentId, string type, string messageStr, string priority = "low")
@@ -220,6 +222,7 @@ namespace EduGuard.Services
                         $"CRITICAL ALERT: Student {student.Name} is at CRITICAL RISK level (score: {student.RiskScore}/100). Immediate action required.",
                         "urgent"
                     );
+                    await EnqueueRiskPushAsync(student, "Critical risk alert", student.MentorId);
                 }
                 else if (wentHigh)
                 {
@@ -230,8 +233,18 @@ namespace EduGuard.Services
                         $"Student {student.Name} has risen to HIGH RISK level (score: {student.RiskScore}/100).",
                         "high"
                     );
+                    await EnqueueRiskPushAsync(student, "High risk alert", student.MentorId);
                 }
             }
+        }
+
+        private async Task EnqueueRiskPushAsync(Student student, string title, string mentorId)
+        {
+            var message = new PushMessage(title, $"{student.Name} is now {student.RiskLevel} risk.", "important",
+                new Dictionary<string, string> { ["type"] = "risk", ["path"] = $"/students/{student.Id}", ["studentId"] = student.Id! });
+            var key = $"risk:{student.Id}:{student.RiskLevel}:{student.UpdatedAt.Ticks}";
+            await _pushQueue.EnqueueAsync(student.Id!, key + ":student", message);
+            await _pushQueue.EnqueueAsync(mentorId, key + ":mentor", message);
         }
     }
 }

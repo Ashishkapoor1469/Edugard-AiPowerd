@@ -37,22 +37,20 @@ namespace EduGuard.Services
                     {
                         var mongoService = scope.ServiceProvider.GetRequiredService<MongoService>();
                         
-                        // Find first pending job
-                        var job = await mongoService.ReportCardJobs
-                            .Find(j => j.Status == "pending")
-                            .SortBy(j => j.CreatedAt)
-                            .FirstOrDefaultAsync(stoppingToken);
+                        // Atomically claim one job so multiple worker replicas cannot process it twice.
+                        var job = await mongoService.ReportCardJobs.FindOneAndUpdateAsync(
+                            j => j.Status == "pending",
+                            Builders<ReportCardJob>.Update.Set(j => j.Status, "processing").Set(j => j.UpdatedAt, DateTime.UtcNow),
+                            new FindOneAndUpdateOptions<ReportCardJob>
+                            {
+                                Sort = Builders<ReportCardJob>.Sort.Ascending(j => j.CreatedAt),
+                                ReturnDocument = ReturnDocument.After
+                            }, stoppingToken);
 
                         if (job != null)
                         {
                             _logger.LogInformation($"Processing report card generation job: {job.Id} for student: {job.StudentId}");
                             
-                            // Mark as processing
-                            var updateProcessing = Builders<ReportCardJob>.Update
-                                .Set(j => j.Status, "processing")
-                                .Set(j => j.UpdatedAt, DateTime.UtcNow);
-                            await mongoService.ReportCardJobs.UpdateOneAsync(j => j.Id == job.Id, updateProcessing, cancellationToken: stoppingToken);
-
                             try
                             {
                                 // Retrieve Student details

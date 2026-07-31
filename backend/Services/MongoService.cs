@@ -57,6 +57,8 @@ namespace EduGuard.Services
         public IMongoCollection<ClassSummaryCache> ClassSummaryCaches => _database.GetCollection<ClassSummaryCache>("class_summary_cache");
         public IMongoCollection<AttendanceRecord> AttendanceRecords => _database.GetCollection<AttendanceRecord>("attendance_records");
         public IMongoCollection<LeadershipAssignment> LeadershipAssignments => _database.GetCollection<LeadershipAssignment>("leadership_assignments");
+        public IMongoCollection<DeviceToken> DeviceTokens => _database.GetCollection<DeviceToken>("device_tokens");
+        public IMongoCollection<PushNotificationJob> PushNotificationJobs => _database.GetCollection<PushNotificationJob>("push_notification_jobs");
 
         private void CreateIndexesSafe()
         {
@@ -116,6 +118,19 @@ namespace EduGuard.Services
                 var leadershipKey = Builders<LeadershipAssignment>.IndexKeys
                     .Ascending(a => a.CollegeId).Ascending(a => a.ClassId).Ascending(a => a.IsActive).Ascending(a => a.LeadershipType);
                 LeadershipAssignments.Indexes.CreateOne(new CreateIndexModel<LeadershipAssignment>(leadershipKey));
+
+                DeviceTokens.Indexes.CreateOne(new CreateIndexModel<DeviceToken>(
+                    Builders<DeviceToken>.IndexKeys.Ascending(x => x.Token),
+                    new CreateIndexOptions { Unique = true }));
+                PushNotificationJobs.Indexes.CreateOne(new CreateIndexModel<PushNotificationJob>(
+                    Builders<PushNotificationJob>.IndexKeys.Ascending(x => x.IdempotencyKey),
+                    new CreateIndexOptions { Unique = true }));
+                PushNotificationJobs.Indexes.CreateOne(new CreateIndexModel<PushNotificationJob>(
+                    Builders<PushNotificationJob>.IndexKeys.Ascending(x => x.Status).Ascending(x => x.NextAttemptAt)));
+
+                ReportCardJobs.Indexes.CreateOne(new CreateIndexModel<ReportCardJob>(
+                    Builders<ReportCardJob>.IndexKeys.Ascending(x => x.IdempotencyKey),
+                    new CreateIndexOptions { Unique = true, Sparse = true }));
 
                 _logger.LogInformation("[MONGO] Indexes created successfully.");
             }

@@ -116,9 +116,17 @@ builder.Services.AddSingleton<MongoService>();
 
 // Configure Business & Utility Services
 builder.Services.AddTransient<ExcelParserService>();
-builder.Services.AddTransient<NvidiaNimService>();
+builder.Services.AddHttpClient("nvidia-nim", client => client.Timeout = TimeSpan.FromSeconds(45));
+builder.Services.AddSingleton<INvidiaNimService, NvidiaNimService>();
 builder.Services.AddTransient<NotificationService>();
-builder.Services.AddSingleton<CacheService>();
+builder.Services.AddSingleton<ICacheService, CacheService>();
+builder.Services.AddScoped<ILibraryService, MongoLibraryService>();
+builder.Services.AddScoped<IPushAudienceNotifier, PushAudienceNotifier>();
+builder.Services.AddHttpClient<FirebasePushNotificationSender>(client => client.Timeout = TimeSpan.FromSeconds(15));
+builder.Services.AddSingleton<IPushNotificationSender>(sp => sp.GetRequiredService<FirebasePushNotificationSender>());
+builder.Services.AddSingleton<PushNotificationQueue>();
+builder.Services.AddSingleton<IPushNotificationQueue>(sp => sp.GetRequiredService<PushNotificationQueue>());
+builder.Services.AddHostedService(sp => sp.GetRequiredService<PushNotificationQueue>());
 
 // Configure Email Queue Service as a Hosted background service
 builder.Services.AddSingleton<EmailQueueService>();

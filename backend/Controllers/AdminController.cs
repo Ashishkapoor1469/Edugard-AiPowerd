@@ -16,16 +16,18 @@ namespace EduGuard.Controllers
     public class AdminController : ControllerBase
     {
         private readonly MongoService _mongoService;
-        private readonly NvidiaNimService _nvidiaNimService;
+        private readonly INvidiaNimService _nvidiaNimService;
         private readonly NotificationService _notificationService;
-        private readonly CacheService _cacheService;
+        private readonly ICacheService _cacheService;
+        private readonly IPushAudienceNotifier _push;
 
-        public AdminController(MongoService mongoService, NvidiaNimService nvidiaNimService, NotificationService notificationService, CacheService cacheService)
+        public AdminController(MongoService mongoService, INvidiaNimService nvidiaNimService, NotificationService notificationService, ICacheService cacheService, IPushAudienceNotifier push)
         {
             _mongoService = mongoService;
             _nvidiaNimService = nvidiaNimService;
             _notificationService = notificationService;
             _cacheService = cacheService;
+            _push = push;
         }
 
         private bool IsSuperAdmin()
@@ -237,6 +239,9 @@ namespace EduGuard.Controllers
             }
 
             await _mongoService.Announcements.InsertOneAsync(model);
+            await _push.NotifyStudentsAsync(model.CollegeId, model.TargetAudience is "class" or "batch" ? model.TargetId : null,
+                $"announcement:{model.Id}", new PushMessage(model.Title, model.Description, "normal",
+                    new Dictionary<string, string> { ["type"] = "announcement", ["path"] = "/?tab=notifications" }));
             return Ok(new { success = true, data = model });
         }
 
@@ -251,6 +256,9 @@ namespace EduGuard.Controllers
             }
 
             await _mongoService.Events.InsertOneAsync(model);
+            await _push.NotifyStudentsAsync(model.CollegeId, null, $"event:{model.Id}",
+                new PushMessage(model.EventName, model.Description, "normal",
+                    new Dictionary<string, string> { ["type"] = "event", ["path"] = "/?tab=notifications" }));
             return Ok(new { success = true, data = model });
         }
 

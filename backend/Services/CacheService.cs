@@ -5,7 +5,13 @@ using Microsoft.Extensions.Logging;
 
 namespace EduGuard.Services
 {
-    public class CacheService
+    public interface ICacheService
+    {
+        Task<T> GetOrCreateAsync<T>(string key, TimeSpan ttl, Func<Task<T>> factory);
+        Task RemoveAsync(params string[] keys);
+    }
+
+    public class CacheService : ICacheService
     {
         private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
         private readonly IDistributedCache _cache;
