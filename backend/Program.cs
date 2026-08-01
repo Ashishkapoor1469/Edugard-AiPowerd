@@ -201,7 +201,7 @@ controllers.Add(endpoint =>
     if (isGet && !endpoint.Metadata.OfType<EnableRateLimitingAttribute>().Any())
         endpoint.Metadata.Add(new EnableRateLimitingAttribute("data-fetch"));
 });
-app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
+app.MapGet("/health", () => Results.Ok(new { status = "ok", commit = Environment.GetEnvironmentVariable("RENDER_GIT_COMMIT") }));
 app.MapHub<EduGuardHub>("/eduguardHub");
 
 app.Run();
