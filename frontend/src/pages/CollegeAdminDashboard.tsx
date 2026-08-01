@@ -53,6 +53,7 @@ const CollegeAdminDashboard: React.FC = () => {
   const [annDesc, setAnnDesc] = useState("");
   const [annTarget, setAnnTarget] = useState("all");
   const [annExpiry, setAnnExpiry] = useState("");
+  const [publishingAnnouncement, setPublishingAnnouncement] = useState(false);
 
   // Event Form State
   const [evtName, setEvtName] = useState("");
@@ -60,6 +61,7 @@ const CollegeAdminDashboard: React.FC = () => {
   const [evtDate, setEvtDate] = useState("");
   const [evtLocation, setEvtLocation] = useState("");
   const [evtLink, setEvtLink] = useState("");
+  const [schedulingEvent, setSchedulingEvent] = useState(false);
 
   // Syllabus State
   const [degrees, setDegrees] = useState<Degree[]>([]);
@@ -166,6 +168,7 @@ const CollegeAdminDashboard: React.FC = () => {
 
   const handleCreateAnnouncement = async (e: React.FormEvent) => {
     e.preventDefault();
+    setPublishingAnnouncement(true);
     try {
       const res = await axios.post("/api/college-admin/announcements", {
         title: annTitle,
@@ -181,11 +184,12 @@ const CollegeAdminDashboard: React.FC = () => {
       }
     } catch (err) {
       toast.error("Failed to post announcement");
-    }
+    } finally { setPublishingAnnouncement(false); }
   };
 
   const handleCreateEvent = async (e: React.FormEvent) => {
     e.preventDefault();
+    setSchedulingEvent(true);
     try {
       const res = await axios.post("/api/college-admin/events", {
         eventName: evtName,
@@ -204,7 +208,7 @@ const CollegeAdminDashboard: React.FC = () => {
       }
     } catch (err) {
       toast.error("Failed to schedule event");
-    }
+    } finally { setSchedulingEvent(false); }
   };
 
   const handleSyllabusSubmit = async (e: React.FormEvent) => {
@@ -528,9 +532,10 @@ const CollegeAdminDashboard: React.FC = () => {
                 </div>
                 <button
                   type="submit"
-                  className="w-full bg-primary text-white py-2 rounded-lg text-xs font-bold hover:bg-primary-hover transition-colors mt-2"
+                  disabled={publishingAnnouncement}
+                  className="w-full bg-primary text-white py-2 rounded-lg text-xs font-bold hover:bg-primary-hover transition-colors mt-2 disabled:opacity-60"
                 >
-                  Publish Announcement
+                  {publishingAnnouncement ? "Publishing…" : "Publish Announcement"}
                 </button>
               </form>
             </div>
@@ -598,9 +603,10 @@ const CollegeAdminDashboard: React.FC = () => {
                 </div>
                 <button
                   type="submit"
-                  className="w-full bg-primary text-white py-2 rounded-lg text-xs font-bold hover:bg-primary-hover transition-colors"
+                  disabled={schedulingEvent}
+                  className="w-full bg-primary text-white py-2 rounded-lg text-xs font-bold hover:bg-primary-hover transition-colors disabled:opacity-60"
                 >
-                  Schedule Event
+                  {schedulingEvent ? "Scheduling…" : "Schedule Event"}
                 </button>
               </form>
             </div>
