@@ -73,7 +73,7 @@ public sealed class LmsIntegrationController : ControllerBase
     {
         if (!Authorized() || !await IsCollegeAdminAsync(actorId, collegeId, token)) return Unauthorized();
         var list = await _mongo.Admins.Find(x => x.CollegeId == collegeId && x.Role == "librarian" && x.Status != "deleted")
-            .Project(x => new { x.Id, x.Name, x.Email, x.Role, x.Status, x.CreatedAt }).ToListAsync(token);
+            .Project(x => new { _id = x.Id, x.Name, x.Email, x.Role, x.Status, x.CreatedAt }).ToListAsync(token);
         return Ok(new { success = true, data = list });
     }
 
@@ -108,12 +108,13 @@ public sealed class LmsIntegrationController : ControllerBase
             return Conflict(new { success = false, message = "Email is already registered." });
         var librarian = new Admin { CollegeId = collegeId, Name = request.Name.Trim(), Email = email, Password = BCrypt.Net.BCrypt.HashPassword(request.Password), Role = "librarian", Status = "active" };
         await _mongo.Admins.InsertOneAsync(librarian, cancellationToken: token);
-        return StatusCode(201, new { success = true, data = new { librarian.Id, librarian.Name, librarian.Email, librarian.Role, librarian.Status } });
+        return StatusCode(201, new { success = true, data = new { _id = librarian.Id, librarian.Name, librarian.Email, librarian.Role, librarian.Status } });
     }
 
     [HttpPatch("librarians/{id}")]
     public async Task<IActionResult> UpdateLibrarian(string id, [FromBody] UpdateLibrarianRequest request, CancellationToken token)
     {
+        if (!ObjectId.TryParse(id, out _)) return BadRequest(new { success = false, message = "Invalid librarian ID." });
         if (!Authorized() || request.Status is not ("active" or "disabled")) return BadRequest();
         var librarian = await _mongo.Admins.Find(x => x.Id == id && x.Role == "librarian" && x.Status != "deleted").FirstOrDefaultAsync(token);
         if (librarian == null) return NotFound();
@@ -138,6 +139,7 @@ public sealed class LmsIntegrationController : ControllerBase
     [HttpDelete("librarians/{id}")]
     public async Task<IActionResult> DeleteLibrarian(string id, [FromQuery] string actorId, CancellationToken token)
     {
+        if (!ObjectId.TryParse(id, out _)) return BadRequest(new { success = false, message = "Invalid librarian ID." });
         if (!Authorized()) return Unauthorized();
         var librarian = await _mongo.Admins.Find(x => x.Id == id && x.Role == "librarian").FirstOrDefaultAsync(token);
         if (librarian == null) return NotFound();

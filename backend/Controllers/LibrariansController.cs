@@ -3,6 +3,7 @@ using EduGuard.Models;
 using EduGuard.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using MongoDB.Bson;
 using MongoDB.Driver;
 
 namespace EduGuard.Controllers;
@@ -18,7 +19,7 @@ public sealed class LibrariansController : ControllerBase
     {
         var admin = await CurrentAdmin(token); if (admin == null) return Unauthorized();
         var data = await _mongo.Admins.Find(x => x.CollegeId == admin.CollegeId && x.Role == "librarian" && x.Status != "deleted")
-            .Project(x => new { x.Id, x.Name, x.Email, x.Status, x.CreatedAt }).ToListAsync(token);
+            .Project(x => new { _id = x.Id, x.Name, x.Email, x.Status, x.CreatedAt }).ToListAsync(token);
         return Ok(new { success = true, data });
     }
 
@@ -26,15 +27,16 @@ public sealed class LibrariansController : ControllerBase
     public async Task<IActionResult> Create([FromBody] LibrarianAccountRequest request, CancellationToken token)
     {
         var admin = await CurrentAdmin(token); if (admin == null) return Unauthorized();
-        var error = await Validate(request, null, token); if (error != null) return BadRequest(new { success = false, message = error });
+        var error = await Validate(request, null, token); if (error != null) return error == "Email is already registered." ? Conflict(new { success = false, message = error }) : BadRequest(new { success = false, message = error });
         var librarian = new Admin { CollegeId = admin.CollegeId, Name = request.Name.Trim(), Email = request.Email.Trim().ToLowerInvariant(), Password = BCrypt.Net.BCrypt.HashPassword(request.Password), Role = "librarian", Status = "active" };
         await _mongo.Admins.InsertOneAsync(librarian, cancellationToken: token);
-        return StatusCode(201, new { success = true, data = new { librarian.Id, librarian.Name, librarian.Email, librarian.Status } });
+        return StatusCode(201, new { success = true, data = new { _id = librarian.Id, librarian.Name, librarian.Email, librarian.Status } });
     }
 
     [HttpPut("{id}")]
     public async Task<IActionResult> Update(string id, [FromBody] LibrarianAccountRequest request, CancellationToken token)
     {
+        if (!ObjectId.TryParse(id, out _)) return BadRequest(new { success = false, message = "Invalid librarian ID." });
         var admin = await CurrentAdmin(token); if (admin == null) return Unauthorized();
         var librarian = await _mongo.Admins.Find(x => x.Id == id && x.CollegeId == admin.CollegeId && x.Role == "librarian" && x.Status != "deleted").FirstOrDefaultAsync(token);
         if (librarian == null) return NotFound();
@@ -48,6 +50,7 @@ public sealed class LibrariansController : ControllerBase
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(string id, CancellationToken token)
     {
+        if (!ObjectId.TryParse(id, out _)) return BadRequest(new { success = false, message = "Invalid librarian ID." });
         var admin = await CurrentAdmin(token); if (admin == null) return Unauthorized();
         var result = await _mongo.Admins.UpdateOneAsync(x => x.Id == id && x.CollegeId == admin.CollegeId && x.Role == "librarian",
             Builders<Admin>.Update.Set(x => x.Status, "deleted").Set(x => x.UpdatedAt, DateTime.UtcNow), cancellationToken: token);
