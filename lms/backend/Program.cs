@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.IdentityModel.Tokens;
+using StackExchange.Redis;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.WebHost.UseUrls($"http://*:{builder.Configuration["PORT"] ?? "5100"}");
@@ -17,7 +18,7 @@ builder.Services.AddCors(x => x.AddDefaultPolicy(policy => policy.WithOrigins(bu
 
 var redisUrl = builder.Configuration["REDIS_URL"];
 if (string.IsNullOrWhiteSpace(redisUrl)) builder.Services.AddDistributedMemoryCache();
-else builder.Services.AddStackExchangeRedisCache(x => { x.Configuration = redisUrl; x.InstanceName = "eduguard:lms:"; });
+else builder.Services.AddStackExchangeRedisCache(x => { x.ConfigurationOptions = CreateRedisOptions(redisUrl); x.InstanceName = "eduguard:lms:"; });
 
 var jwtKey = SHA256.HashData(Encoding.UTF8.GetBytes(builder.Configuration["LMS_JWT_SECRET"] ?? throw new InvalidOperationException("LMS_JWT_SECRET is required.")));
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(x => x.TokenValidationParameters = new()
@@ -51,3 +52,14 @@ app.UseCors(); app.UseAuthentication(); app.UseRateLimiter(); app.UseAuthorizati
 app.MapGet("/health", () => Results.Ok(new { status = "ok", service = "eduguard-lms", commit = Environment.GetEnvironmentVariable("RENDER_GIT_COMMIT") }));
 await app.Services.GetRequiredService<LmsMongoContext>().EnsureIndexesAsync();
 app.Run();
+
+static ConfigurationOptions CreateRedisOptions(string redisUrl)
+{
+    if (!Uri.TryCreate(redisUrl, UriKind.Absolute, out var uri) || string.IsNullOrEmpty(uri.Host)) return ConfigurationOptions.Parse(redisUrl);
+    var options = new ConfigurationOptions { AbortOnConnectFail = false, Ssl = uri.Scheme == "rediss", ConnectTimeout = 2000, AsyncTimeout = 2000, ConnectRetry = 1 };
+    options.EndPoints.Add(uri.Host, uri.Port > 0 ? uri.Port : 6379);
+    var credentials = Uri.UnescapeDataString(uri.UserInfo ?? "").Split(':', 2);
+    if (credentials.Length == 2) { options.User = credentials[0]; options.Password = credentials[1]; }
+    else if (credentials.Length == 1 && !string.IsNullOrEmpty(credentials[0])) options.Password = credentials[0];
+    return options;
+}

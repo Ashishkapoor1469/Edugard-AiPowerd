@@ -102,7 +102,7 @@ public sealed class CatalogService : ICatalogService
         catch { /* ponytail: cache is optional; serve MongoDB directly when Redis is unavailable. */ }
         if (cached != null) return JsonSerializer.Deserialize<CatalogPage>(cached, JsonOptions)!;
         var page = await _books.SearchAsync(collegeId, query, token);
-        try { await _cache.SetStringAsync(key, JsonSerializer.Serialize(page, JsonOptions), new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = TimeSpan.FromSeconds(30) }, token); }
+        try { await _cache.SetStringAsync(key, JsonSerializer.Serialize(page, JsonOptions), new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(10) }, token); }
         catch { /* ponytail: cache is optional; the database response is still valid. */ }
         return page;
     }
