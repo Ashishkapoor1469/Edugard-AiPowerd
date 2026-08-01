@@ -17,6 +17,10 @@ export default function AdminAttendancePanel({ view }: { view: "attendance" | "l
   const [studentId, setStudentId] = useState("");
   const [leadershipType, setLeadershipType] = useState("CR");
   const [assigning, setAssigning] = useState(false);
+  const [loadingSummary, setLoadingSummary] = useState(false);
+  const [loadingLeaders, setLoadingLeaders] = useState(false);
+  const [correcting, setCorrecting] = useState(false);
+  const [revokingId, setRevokingId] = useState<string | null>(null);
   const [correction, setCorrection] = useState<{ id: string; status: string; reason: string } | null>(null);
 
   const classes = useMemo(() => [...new Set(roster.map((student) => student.classId).filter(Boolean))].sort(), [roster]);
@@ -33,17 +37,21 @@ export default function AdminAttendancePanel({ view }: { view: "attendance" | "l
     setRoster(response.data.data || []);
   };
   const loadSummary = async () => {
+    setLoadingSummary(true);
     try {
       const response = await axios.get("/api/attendance/admin/summary", { params: { classId: classId || undefined, date, session: session || undefined } });
       setSummary(response.data.summary);
       setRecords(response.data.data || []);
     } catch { toast.error("Failed to load attendance summary"); }
+    finally { setLoadingSummary(false); }
   };
   const loadLeaders = async () => {
+    setLoadingLeaders(true);
     try {
       const response = await axios.get("/api/attendance/admin/leaders");
       setLeaders(response.data.data || []);
     } catch { toast.error("Failed to load student leaders"); }
+    finally { setLoadingLeaders(false); }
   };
 
   // Fetch when the selected dashboard view mounts.
@@ -55,12 +63,21 @@ export default function AdminAttendancePanel({ view }: { view: "attendance" | "l
   const correct = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!correction) return;
+    setCorrecting(true);
     try {
       await axios.patch(`/api/attendance/admin/records/${correction.id}`, { status: correction.status, reason: correction.reason });
       toast.success("Attendance corrected and audited");
       setCorrection(null);
       await loadSummary();
     } catch (error: unknown) { toast.error(axios.isAxiosError(error) ? error.response?.data?.message || "Correction failed" : "Correction failed"); }
+    finally { setCorrecting(false); }
+  };
+
+  const revoke = async (id: string) => {
+    setRevokingId(id);
+    try { await axios.post(`/api/attendance/admin/leaders/${id}/revoke`); toast.success("Assignment revoked"); await loadLeaders(); }
+    catch { toast.error("Could not revoke assignment"); }
+    finally { setRevokingId(null); }
   };
 
   const assign = async (event: React.FormEvent) => {
@@ -93,7 +110,7 @@ export default function AdminAttendancePanel({ view }: { view: "attendance" | "l
         </button>
       </form>
       <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-xs">
-        <table className="w-full text-left text-xs"><thead className="bg-slate-50 text-[10px] uppercase tracking-wider text-slate-500"><tr><th className="px-4 py-3">Student</th><th className="px-4 py-3">Class</th><th className="px-4 py-3">Type</th><th className="px-4 py-3">Status</th><th className="px-4 py-3">Action</th></tr></thead><tbody className="divide-y divide-slate-100">{leaders.map(({ assignment, student }) => <tr key={assignment._id}><td className="px-4 py-3 font-semibold">{student?.name || "Unknown"}<span className="block text-[10px] font-normal text-slate-400">{student?.rollNo}</span></td><td className="px-4 py-3">{assignment.classId}</td><td className="px-4 py-3">{assignment.leadershipType}</td><td className="px-4 py-3">{assignment.isActive ? "Active" : "Revoked"}</td><td className="px-4 py-3">{assignment.isActive && <button onClick={async () => { await axios.post(`/api/attendance/admin/leaders/${assignment._id}/revoke`); toast.success("Assignment revoked"); loadLeaders(); }} className="rounded-lg border border-red-100 bg-red-50 px-3 py-1 text-[10px] font-bold text-red-700">Revoke</button>}</td></tr>)}</tbody></table>
+        {loadingLeaders ? <p className="p-8 text-center text-xs text-slate-500">Loading student leaders…</p> : <table className="w-full text-left text-xs"><thead className="bg-slate-50 text-[10px] uppercase tracking-wider text-slate-500"><tr><th className="px-4 py-3">Student</th><th className="px-4 py-3">Class</th><th className="px-4 py-3">Type</th><th className="px-4 py-3">Status</th><th className="px-4 py-3">Action</th></tr></thead><tbody className="divide-y divide-slate-100">{leaders.map(({ assignment, student }) => <tr key={assignment._id}><td className="px-4 py-3 font-semibold">{student?.name || "Unknown"}<span className="block text-[10px] font-normal text-slate-400">{student?.rollNo}</span></td><td className="px-4 py-3">{assignment.classId}</td><td className="px-4 py-3">{assignment.leadershipType}</td><td className="px-4 py-3">{assignment.isActive ? "Active" : "Revoked"}</td><td className="px-4 py-3">{assignment.isActive && <button disabled={revokingId !== null} onClick={() => revoke(assignment._id)} className="rounded-lg border border-red-100 bg-red-50 px-3 py-1 text-[10px] font-bold text-red-700 disabled:opacity-50">{revokingId === assignment._id ? "Revoking…" : "Revoke"}</button>}</td></tr>)}</tbody></table>}
       </div>
     </div>
   );
@@ -105,7 +122,7 @@ export default function AdminAttendancePanel({ view }: { view: "attendance" | "l
           <select aria-label="Class filter" value={classId} onChange={(e) => setClassId(e.target.value)} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs"><option value="">All classes</option>{classes.map((name) => <option key={name}>{name}</option>)}</select>
           <input aria-label="Attendance date" type="date" value={date} onChange={(e) => setDate(e.target.value)} className="rounded-lg border border-slate-200 px-3 py-2 text-xs" />
           <select aria-label="Session filter" value={session} onChange={(e) => setSession(e.target.value)} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs"><option value="">Both sessions</option><option value="morning">Morning</option><option value="afternoon">Afternoon</option></select>
-          <button onClick={loadSummary} className="rounded-lg bg-primary px-4 py-2 text-xs font-bold text-white">Apply filters</button>
+          <button disabled={loadingSummary} onClick={loadSummary} className="rounded-lg bg-primary px-4 py-2 text-xs font-bold text-white disabled:opacity-60">{loadingSummary ? "Loading…" : "Apply filters"}</button>
         </div>
         <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-4">{Object.entries(summary).map(([label, value]) => <div key={label} className="rounded-xl border border-slate-100 bg-slate-50 p-4"><span className="block text-[10px] font-bold uppercase text-slate-500">{label}</span><span className="mt-1 block text-2xl font-bold text-slate-800">{value}</span></div>)}</div>
       </section>
@@ -114,12 +131,12 @@ export default function AdminAttendancePanel({ view }: { view: "attendance" | "l
           const state = dayState(record);
           return <span key={`${record.studentId}-${record.date}`} title={`${student?.name || "Unknown"}: ${state.label}`} className="inline-flex items-center gap-2 rounded-full bg-slate-50 px-3 py-1.5 text-[10px] font-semibold text-slate-700"><span className={`h-2.5 w-2.5 rounded-full ${state.color}`} />{student?.name || "Unknown"} · {state.label}</span>;
         })}
-        {records.length === 0 && <span className="text-xs text-slate-400">No attendance states for this selection.</span>}
+        {loadingSummary ? <span className="text-xs text-slate-400">Loading attendance…</span> : records.length === 0 && <span className="text-xs text-slate-400">No attendance states for this selection.</span>}
       </div>
       <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-xs">
         <table className="w-full text-left text-xs"><thead className="bg-slate-50 text-[10px] uppercase tracking-wider text-slate-500"><tr><th className="px-4 py-3">Student</th><th className="px-4 py-3">Class</th><th className="px-4 py-3">Session</th><th className="px-4 py-3">Status</th><th className="px-4 py-3">Audit</th><th className="px-4 py-3">Action</th></tr></thead><tbody className="divide-y divide-slate-100">{records.map(({ record, student }) => <tr key={record._id}><td className="px-4 py-3 font-semibold">{student?.name || "Unknown"}<span className="block text-[10px] font-normal text-slate-400">{student?.rollNo}</span></td><td className="px-4 py-3">{record.classId}</td><td className="px-4 py-3 capitalize">{record.session}</td><td className="px-4 py-3 capitalize">{record.status}</td><td className="px-4 py-3">{record.auditHistory?.length || 0}</td><td className="px-4 py-3"><button onClick={() => setCorrection({ id: record._id, status: record.status === "present" ? "absent" : "present", reason: "" })} className="rounded-lg border border-primary/15 px-3 py-1 text-[10px] font-bold text-primary">Correct</button></td></tr>)}</tbody></table>
       </div>
-      {correction && <form onSubmit={correct} className="rounded-2xl border border-amber-200 bg-amber-50 p-5"><h3 className="text-sm font-bold text-slate-800">Locked-record correction</h3><div className="mt-3 flex flex-col gap-3 md:flex-row"><select value={correction.status} onChange={(e) => setCorrection({ ...correction, status: e.target.value })} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs"><option value="present">Present</option><option value="absent">Absent</option><option value="leave">Leave</option></select><input required minLength={3} aria-label="Mandatory correction reason" placeholder="Mandatory reason" value={correction.reason} onChange={(e) => setCorrection({ ...correction, reason: e.target.value })} className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-xs" /><button className="rounded-lg bg-amber-600 px-4 py-2 text-xs font-bold text-white">Save audited correction</button><button type="button" onClick={() => setCorrection(null)} className="px-3 py-2 text-xs font-bold text-slate-600">Cancel</button></div></form>}
+      {correction && <form onSubmit={correct} className="rounded-2xl border border-amber-200 bg-amber-50 p-5"><h3 className="text-sm font-bold text-slate-800">Locked-record correction</h3><div className="mt-3 flex flex-col gap-3 md:flex-row"><select disabled={correcting} value={correction.status} onChange={(e) => setCorrection({ ...correction, status: e.target.value })} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs"><option value="present">Present</option><option value="absent">Absent</option><option value="leave">Leave</option></select><input disabled={correcting} required minLength={3} aria-label="Mandatory correction reason" placeholder="Mandatory reason" value={correction.reason} onChange={(e) => setCorrection({ ...correction, reason: e.target.value })} className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-xs" /><button disabled={correcting} className="rounded-lg bg-amber-600 px-4 py-2 text-xs font-bold text-white disabled:opacity-60">{correcting ? "Saving…" : "Save audited correction"}</button><button disabled={correcting} type="button" onClick={() => setCorrection(null)} className="px-3 py-2 text-xs font-bold text-slate-600 disabled:opacity-50">Cancel</button></div></form>}
     </div>
   );
 }

@@ -16,7 +16,7 @@ public sealed record PushRequest(string UserId, string IdempotencyKey, string Ti
 public interface IEduGuardClient
 {
     Task<EduGuardIdentity> IdentityAsync(string id, CancellationToken token);
-    Task<IReadOnlyList<EduGuardIdentity>> SearchStudentsAsync(string collegeId, string search, CancellationToken token);
+    Task<IReadOnlyList<EduGuardIdentity>> SearchStudentsAsync(string collegeId, string? search, string? course, string? className, CancellationToken token);
     Task<LmsActor> ValidateSsoAsync(string tokenValue, CancellationToken token);
     Task<LmsActor> LibrarianLoginAsync(string email, string password, CancellationToken token);
     Task NotifyAsync(PushRequest request, CancellationToken token);
@@ -40,9 +40,10 @@ public sealed class EduGuardClient : IEduGuardClient
         var response = await _http.GetAsync($"/api/integrations/lms/identities/{id}", token); response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<EduGuardIdentity>(cancellationToken: token))!;
     }
-    public async Task<IReadOnlyList<EduGuardIdentity>> SearchStudentsAsync(string collegeId, string search, CancellationToken token)
+    public async Task<IReadOnlyList<EduGuardIdentity>> SearchStudentsAsync(string collegeId, string? search, string? course, string? className, CancellationToken token)
     {
-        var response = await _http.GetAsync($"/api/integrations/lms/colleges/{collegeId}/students?search={Uri.EscapeDataString(search)}", token); response.EnsureSuccessStatusCode();
+        var query = $"search={Uri.EscapeDataString(search ?? "")}&course={Uri.EscapeDataString(course ?? "")}&className={Uri.EscapeDataString(className ?? "")}";
+        var response = await _http.GetAsync($"/api/integrations/lms/colleges/{collegeId}/students?{query}", token); response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<StudentEnvelope>(cancellationToken: token))?.Data ?? [];
     }
     public async Task<LmsActor> ValidateSsoAsync(string tokenValue, CancellationToken token)
@@ -80,6 +81,7 @@ public interface ICatalogService
 {
     Task<CatalogPage> SearchAsync(string collegeId, CatalogQuery query, CancellationToken token);
     Task<Book> SaveAsync(LmsActor actor, Book book, CancellationToken token);
+    Task DeleteAsync(LmsActor actor, string id, CancellationToken token);
     Task<IReadOnlyList<Book>> ImportAsync(LmsActor actor, Stream excel, CancellationToken token);
 }
 
@@ -120,6 +122,15 @@ public sealed class CatalogService : ICatalogService
         var saved = await _books.SaveAsync(book, token); await BumpCatalogAsync(actor.CollegeId, token);
         await _circulation.AddAuditAsync(new() { CollegeId = actor.CollegeId, ActorId = actor.Id, Action = isNew ? "book.add" : "book.edit", EntityType = "book", EntityId = saved.Id! }, token);
         return saved;
+    }
+
+    public async Task DeleteAsync(LmsActor actor, string id, CancellationToken token)
+    {
+        RequireLibraryWrite(actor);
+        if ((await _circulation.ListIssuancesAsync(actor.CollegeId, "active", null, token)).Any(x => x.BookId == id)) throw new InvalidOperationException("Return all issued copies before deleting this book.");
+        if (!await _books.DeactivateAsync(actor.CollegeId, id, token)) throw new KeyNotFoundException("Book not found.");
+        await BumpCatalogAsync(actor.CollegeId, token);
+        await _circulation.AddAuditAsync(new() { CollegeId = actor.CollegeId, ActorId = actor.Id, Action = "book.delete", EntityType = "book", EntityId = id }, token);
     }
 
     public async Task<IReadOnlyList<Book>> ImportAsync(LmsActor actor, Stream excel, CancellationToken token)

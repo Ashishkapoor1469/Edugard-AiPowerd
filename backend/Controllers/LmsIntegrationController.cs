@@ -50,14 +50,20 @@ public sealed class LmsIntegrationController : ControllerBase
     }
 
     [HttpGet("colleges/{collegeId}/students")]
-    public async Task<IActionResult> SearchStudents(string collegeId, [FromQuery] string search, CancellationToken token)
+    public async Task<IActionResult> SearchStudents(string collegeId, [FromQuery] string? search, [FromQuery] string? course, [FromQuery] string? className, CancellationToken token)
     {
         if (!Authorized()) return Unauthorized();
-        if (string.IsNullOrWhiteSpace(search) || search.Trim().Length < 2) return BadRequest(new { success = false, message = "Enter at least 2 characters." });
-        var regex = new BsonRegularExpression(Regex.Escape(search.Trim()), "i");
         var filter = Builders<Student>.Filter.Eq(x => x.CollegeId, collegeId)
-            & Builders<Student>.Filter.Eq(x => x.VerificationStatus, "approved")
-            & (Builders<Student>.Filter.Regex(x => x.Name, regex) | Builders<Student>.Filter.Regex(x => x.RollNo, regex) | Builders<Student>.Filter.Regex(x => x.Email, regex));
+            & Builders<Student>.Filter.Eq(x => x.VerificationStatus, "approved");
+        if (string.IsNullOrWhiteSpace(search) && string.IsNullOrWhiteSpace(course) && string.IsNullOrWhiteSpace(className)) return BadRequest(new { success = false, message = "Enter a search, course, or class." });
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            if (search.Trim().Length < 2) return BadRequest(new { success = false, message = "Enter at least 2 characters." });
+            var regex = new BsonRegularExpression(Regex.Escape(search.Trim()), "i");
+            filter &= Builders<Student>.Filter.Regex(x => x.Name, regex) | Builders<Student>.Filter.Regex(x => x.RollNo, regex) | Builders<Student>.Filter.Regex(x => x.Email, regex);
+        }
+        if (!string.IsNullOrWhiteSpace(course)) filter &= Builders<Student>.Filter.Regex(x => x.Course, new BsonRegularExpression(Regex.Escape(course.Trim()), "i"));
+        if (!string.IsNullOrWhiteSpace(className)) filter &= Builders<Student>.Filter.Regex(x => x.Class, new BsonRegularExpression(Regex.Escape(className.Trim()), "i"));
         var data = await _mongo.Students.Find(filter).Limit(20).Project(x => new { id = x.Id, x.Name, x.Email, x.RollNo, x.PhoneNo, degreeId = x.CourseId, x.Course, className = x.Class, x.Semester, x.CollegeId, role = "student", status = x.VerificationStatus }).ToListAsync(token);
         return Ok(new { success = true, data });
     }

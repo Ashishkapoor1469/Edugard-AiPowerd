@@ -69,6 +69,7 @@ public interface IBookRepository
     Task<CatalogPage> SearchAsync(string collegeId, CatalogQuery query, CancellationToken token);
     Task<Book?> GetAsync(string collegeId, string id, CancellationToken token);
     Task<Book> SaveAsync(Book book, CancellationToken token);
+    Task<bool> DeactivateAsync(string collegeId, string id, CancellationToken token);
     Task<IReadOnlyList<Book>> ImportAsync(string collegeId, IReadOnlyList<Book> books, CancellationToken token);
     Task<IReadOnlyList<Book>> LowStockCandidatesAsync(CancellationToken token);
 }
@@ -101,6 +102,12 @@ public sealed class MongoBookRepository : IBookRepository
         if (string.IsNullOrEmpty(book.Id)) await _db.Books.InsertOneAsync(book, cancellationToken: token);
         else await _db.Books.ReplaceOneAsync(x => x.Id == book.Id && x.CollegeId == book.CollegeId, book, cancellationToken: token);
         return book;
+    }
+
+    public async Task<bool> DeactivateAsync(string collegeId, string id, CancellationToken token)
+    {
+        var result = await _db.Books.UpdateOneAsync(x => x.Id == id && x.CollegeId == collegeId && x.IsActive, Builders<Book>.Update.Set(x => x.IsActive, false).Set(x => x.UpdatedAt, DateTime.UtcNow), cancellationToken: token);
+        return result.ModifiedCount == 1;
     }
 
     public async Task<IReadOnlyList<Book>> ImportAsync(string collegeId, IReadOnlyList<Book> books, CancellationToken token)

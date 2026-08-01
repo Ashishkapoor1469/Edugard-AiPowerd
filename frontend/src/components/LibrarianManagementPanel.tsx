@@ -10,8 +10,10 @@ export default function LibrarianManagementPanel() {
   const [form, setForm] = useState(empty);
   const [editing, setEditing] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [listLoading, setListLoading] = useState(true);
+  const [actionId, setActionId] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
-  const load = async () => { const response = await axios.get("/api/librarians"); setLibrarians(response.data.data || []); };
+  const load = async () => { setListLoading(true); try { const response = await axios.get("/api/librarians"); setLibrarians(response.data.data || []); } finally { setListLoading(false); } };
   useEffect(() => { load().catch(() => toast.error("Could not load librarians")); }, []);
 
   const save = async (event: React.FormEvent) => {
@@ -27,13 +29,13 @@ export default function LibrarianManagementPanel() {
   const edit = (item: Librarian) => { setEditing(item._id); setForm({ name: item.name, email: item.email, password: "", status: item.status }); setShowPassword(false); };
   const generatePassword = () => { setForm({ ...form, password: `Aa1!${crypto.randomUUID().replaceAll("-", "")}` }); setShowPassword(true); };
   const copyPassword = async () => { try { await navigator.clipboard.writeText(form.password); toast.success("Password copied"); } catch { toast.error("Could not copy password"); } };
-  const changeStatus = async (item: Librarian) => { await axios.put(`/api/librarians/${item._id}`, { name: item.name, email: item.email, password: "", status: item.status === "active" ? "disabled" : "active" }); await load(); };
-  const remove = async (item: Librarian) => { if (!window.confirm(`Delete librarian ${item.name}?`)) return; await axios.delete(`/api/librarians/${item._id}`); toast.success("Librarian deleted"); if (editing === item._id) { setEditing(null); setForm(empty); } await load(); };
+  const changeStatus = async (item: Librarian) => { setActionId(`status:${item._id}`); try { await axios.put(`/api/librarians/${item._id}`, { name: item.name, email: item.email, password: "", status: item.status === "active" ? "disabled" : "active" }); await load(); } catch { toast.error("Could not update librarian status"); } finally { setActionId(null); } };
+  const remove = async (item: Librarian) => { if (!window.confirm(`Delete librarian ${item.name}?`)) return; setActionId(`delete:${item._id}`); try { await axios.delete(`/api/librarians/${item._id}`); toast.success("Librarian deleted"); if (editing === item._id) { setEditing(null); setForm(empty); } await load(); } catch { toast.error("Could not delete librarian"); } finally { setActionId(null); } };
 
   return <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
     <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs">
       <div className="mb-4 flex items-center justify-between"><div><h2 className="text-sm font-bold text-slate-800">Librarian accounts</h2><p className="mt-1 text-[10px] text-slate-500">Accounts are restricted to your college.</p></div><span className="rounded-lg bg-slate-50 px-3 py-1 text-[10px] font-bold text-slate-500">{librarians.length}</span></div>
-      {librarians.length === 0 ? <p className="py-8 text-center text-xs text-slate-500">No librarians created.</p> : librarians.map(item => <div key={item._id} className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 py-3"><div><p className="text-xs font-bold text-slate-800">{item.name}</p><p className="text-[10px] text-slate-500">{item.email} · {item.status}</p></div><div className="flex gap-2"><button onClick={() => edit(item)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-[10px] font-bold">Edit</button><button onClick={() => changeStatus(item)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-[10px] font-bold">{item.status === "active" ? "Disable" : "Enable"}</button><button onClick={() => remove(item)} className="rounded-lg bg-red-50 px-3 py-1.5 text-[10px] font-bold text-red-700">Delete</button></div></div>)}
+      {listLoading ? <p className="py-8 text-center text-xs text-slate-500">Loading librarians…</p> : librarians.length === 0 ? <p className="py-8 text-center text-xs text-slate-500">No librarians created.</p> : librarians.map(item => <div key={item._id} className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 py-3"><div><p className="text-xs font-bold text-slate-800">{item.name}</p><p className="text-[10px] text-slate-500">{item.email} · {item.status}</p></div><div className="flex gap-2"><button disabled={actionId !== null} onClick={() => edit(item)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-[10px] font-bold disabled:opacity-50">Edit</button><button disabled={actionId !== null} onClick={() => changeStatus(item)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-[10px] font-bold disabled:opacity-50">{actionId === `status:${item._id}` ? "Updating…" : item.status === "active" ? "Disable" : "Enable"}</button><button disabled={actionId !== null} onClick={() => remove(item)} className="rounded-lg bg-red-50 px-3 py-1.5 text-[10px] font-bold text-red-700 disabled:opacity-50">{actionId === `delete:${item._id}` ? "Deleting…" : "Delete"}</button></div></div>)}
     </section>
     <form onSubmit={save} className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs">
       <h2 className="mb-4 text-sm font-bold text-slate-800">{editing ? "Update librarian" : "Create librarian"}</h2>

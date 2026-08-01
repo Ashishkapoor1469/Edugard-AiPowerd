@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.RateLimiting;
 using MongoDB.Driver;
 using System.IdentityModel.Tokens.Jwt;
 using Microsoft.IdentityModel.Tokens;
+using MongoDB.Bson;
 
 namespace Lms.Api.Controllers;
 
@@ -67,9 +68,28 @@ public sealed class CatalogController : ControllerBase
     public async Task<IActionResult> Add([FromBody] Book book, CancellationToken token)
     { book.Id = null; return StatusCode(201, new { success = true, data = await _catalog.SaveAsync(AuthController.Actor(User), book, token) }); }
 
+    [HttpPost("starter"), Authorize(Roles = "librarian")]
+    public async Task<IActionResult> AddStarterBooks(CancellationToken token)
+    {
+        var actor = AuthController.Actor(User);
+        if ((await _catalog.SearchAsync(actor.CollegeId, new(null, null, null, 1, 1), token)).Total > 0) return Conflict(new { success = false, message = "Starter books can only be added to an empty catalog." });
+        var books = new[]
+        {
+            new Book { Isbn = "9780262046305", Title = "Introduction to Algorithms", Author = "Thomas H. Cormen, Charles E. Leiserson, Ronald L. Rivest, Clifford Stein", Category = "Computer Science", TotalCopies = 3, ShelfLocation = "CS-A1" },
+            new Book { Isbn = "9780078022159", Title = "Database System Concepts", Author = "Abraham Silberschatz, Henry F. Korth, S. Sudarshan", Category = "Databases", TotalCopies = 3, ShelfLocation = "CS-B1" },
+            new Book { Isbn = "9780132350884", Title = "Clean Code", Author = "Robert C. Martin", Category = "Software Engineering", TotalCopies = 2, ShelfLocation = "CS-C1" }
+        };
+        foreach (var book in books) await _catalog.SaveAsync(actor, book, token);
+        return StatusCode(201, new { success = true, data = books });
+    }
+
     [HttpPut("{id}"), Authorize(Roles = "librarian")]
     public async Task<IActionResult> Edit(string id, [FromBody] Book book, CancellationToken token)
     { book.Id = id; return Ok(new { success = true, data = await _catalog.SaveAsync(AuthController.Actor(User), book, token) }); }
+
+    [HttpDelete("{id}"), Authorize(Roles = "librarian")]
+    public async Task<IActionResult> Delete(string id, CancellationToken token)
+    { await _catalog.DeleteAsync(AuthController.Actor(User), id, token); return Ok(new { success = true }); }
 
     [HttpPost("import"), Authorize(Roles = "librarian"), RequestSizeLimit(10_000_000)]
     public async Task<IActionResult> Import(IFormFile file, CancellationToken token)
@@ -132,11 +152,10 @@ public sealed class LibraryStudentsController : ControllerBase
     }
 
     [HttpGet("search-eduguard"), Authorize(Roles = "librarian")]
-    public async Task<IActionResult> SearchEduGuard([FromQuery] string search, CancellationToken token)
+    public async Task<IActionResult> SearchEduGuard([FromQuery] string? search, [FromQuery] string? course, [FromQuery] string? className, CancellationToken token)
     {
         var actor = AuthController.Actor(User);
-        if (string.IsNullOrWhiteSpace(search) || search.Trim().Length < 2) return BadRequest(new { success = false, message = "Enter at least 2 characters." });
-        var data = await _eduguard.SearchStudentsAsync(actor.CollegeId, search.Trim(), token);
+        var data = await _eduguard.SearchStudentsAsync(actor.CollegeId, search?.Trim(), course?.Trim(), className?.Trim(), token);
         var ids = data.Select(x => x.Id).ToList();
         var registered = await _db.Students.Find(Builders<LibraryStudent>.Filter.Eq(x => x.CollegeId, actor.CollegeId) & Builders<LibraryStudent>.Filter.In(x => x.EduGuardStudentId, ids)).Project(x => x.EduGuardStudentId).ToListAsync(token);
         return Ok(new { success = true, data = data.Select(x => new { x.Id, x.Name, x.Email, x.RollNo, x.PhoneNo, x.DegreeId, x.Course, x.ClassName, x.Semester, registered = registered.Contains(x.Id) }) });
@@ -156,6 +175,20 @@ public sealed class LibraryStudentsController : ControllerBase
         return Ok(new { success = true, data = student });
     }
 
+    [HttpPost("manual"), Authorize(Roles = "librarian")]
+    public async Task<IActionResult> RegisterManual([FromBody] ManualLibraryStudentRequest request, CancellationToken token)
+    {
+        var actor = AuthController.Actor(User);
+        if (string.IsNullOrWhiteSpace(request.Name) || string.IsNullOrWhiteSpace(request.RollNo) || string.IsNullOrWhiteSpace(request.Email)) return BadRequest(new { success = false, message = "Name, roll number, and email are required." });
+        if (request.Semester is < 1 or > 12) return BadRequest(new { success = false, message = "Semester must be between 1 and 12." });
+        var rollNo = request.RollNo.Trim(); var email = request.Email.Trim().ToLowerInvariant();
+        if (await _db.Students.Find(x => x.CollegeId == actor.CollegeId && (x.RollNo == rollNo || x.Email == email)).AnyAsync(token)) return Conflict(new { success = false, message = "A student with this roll number or email is already registered." });
+        var student = new LibraryStudent { CollegeId = actor.CollegeId, EduGuardStudentId = ObjectId.GenerateNewId().ToString(), Name = request.Name.Trim(), RollNo = rollNo, Email = email, PhoneNo = request.PhoneNo?.Trim(), Course = request.Course?.Trim() ?? "", ClassName = request.ClassName?.Trim() ?? "", Semester = request.Semester, RegisteredBy = actor.Id };
+        await _db.Students.InsertOneAsync(student, cancellationToken: token);
+        await _circulation.AddAuditAsync(new() { CollegeId = actor.CollegeId, ActorId = actor.Id, Action = "student.register.manual", EntityType = "student", EntityId = student.EduGuardStudentId }, token);
+        return StatusCode(201, new { success = true, data = student });
+    }
+
     [HttpGet("{studentId}/history"), Authorize(Roles = "librarian,college-admin")]
     public async Task<IActionResult> History(string studentId, CancellationToken token)
     {
@@ -167,6 +200,8 @@ public sealed class LibraryStudentsController : ControllerBase
         return Ok(new { success = true, data = new { issuances, reservations, fines } });
     }
 }
+
+public sealed record ManualLibraryStudentRequest(string Name, string RollNo, string Email, string? PhoneNo, string? Course, string? ClassName, int Semester);
 
 [ApiController, Authorize, Route("api/library-admin")]
 public sealed class LibraryAdminController : ControllerBase
