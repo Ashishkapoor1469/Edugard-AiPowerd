@@ -20,7 +20,7 @@ api.interceptors.request.use((config) => {
 });
 api.interceptors.response.use(response => {
   if (isCatalogGet(response.config)) try { sessionStorage.setItem(catalogCacheKey(response.config), JSON.stringify({ expiresAt: Date.now() + CATALOG_CACHE_TTL, data: response.data, status: response.status, statusText: response.statusText, headers: response.headers } satisfies CachedCatalog)); } catch { /* Cache is optional. */ }
-  else if (response.config.url?.startsWith("/api/catalog") && response.config.method?.toLowerCase() !== "get") clearCatalogCache();
+  else if (response.config.method?.toLowerCase() !== "get" && (response.config.url?.startsWith("/api/catalog") || response.config.url?.startsWith("/api/circulation"))) clearCatalogCache();
   return response;
 });
 export const idempotency = () => ({ headers: { "Idempotency-Key": crypto.randomUUID() } });
