@@ -16,6 +16,7 @@ import {
 import ReactMarkdown from "react-markdown";
 import StudentAttendancePanel from "../components/StudentAttendancePanel.js";
 import CRBadge from "../components/CRBadge.js";
+import { ErrorState, LoadingState } from "../components/AsyncState.js";
 import { downloadFile } from "../utils/downloadFile.js";
 
 interface ClassTest {
@@ -117,6 +118,7 @@ const StudentProfile: React.FC = () => {
   // States
   const [student, setStudent] = useState<Student | null>(null);
   const [loading, setLoading] = useState(true);
+  const [profileError, setProfileError] = useState("");
   const [selectedMentor, setSelectedMentor] = useState("");
   const [mentorsList, setMentorsList] = useState<any[]>([]);
   const [, setLoadingMentors] = useState(false);
@@ -128,6 +130,7 @@ const StudentProfile: React.FC = () => {
   const [aiThinkingStep, setAiThinkingStep] = useState(0);
   const [chatTotalPages, setChatTotalPages] = useState(1);
   const [loadingOlderChat, setLoadingOlderChat] = useState(false);
+  const [chatError, setChatError] = useState("");
   const chatPageRef = useRef(1);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const chatScrollRef = useRef<HTMLDivElement>(null);
@@ -138,18 +141,25 @@ const StudentProfile: React.FC = () => {
   const [alerts, setAlerts] = useState<any[]>([]);
   const [issuedBooks, setIssuedBooks] = useState<IssuedBook[]>([]);
   const [booksLoading, setBooksLoading] = useState(false);
+  const [booksError, setBooksError] = useState("");
   const [reportCards, setReportCards] = useState<ReportCardJob[]>([]);
+  const [reportCardsLoading, setReportCardsLoading] = useState(false);
+  const [reportCardsError, setReportCardsError] = useState("");
   const [downloadingReportCard, setDownloadingReportCard] = useState<string | null>(null);
   const [attendanceHistory, setAttendanceHistory] = useState<AttendanceHistoryRecord[]>([]);
   const [attendancePercentage, setAttendancePercentage] = useState<number | null>(null);
+  const [attendanceChartLoading, setAttendanceChartLoading] = useState(false);
+  const [attendanceChartError, setAttendanceChartError] = useState("");
   const [chartMode, setChartMode] = useState<"marks" | "attendance">("marks");
+  const [savingOverride, setSavingOverride] = useState(false);
 
   useEffect(() => {
     if (activeTab !== "books" || user?.role !== "student" || !studentId) return;
     setBooksLoading(true);
+    setBooksError("");
     axios.get(`/api/library/students/${studentId}/books`)
       .then((response) => setIssuedBooks(response.data.data ?? []))
-      .catch((error) => toast.error(error.response?.data?.message || "Could not load issued books"))
+      .catch((error) => { const message = error.response?.data?.message || "Could not load issued books"; setBooksError(message); toast.error(message); })
       .finally(() => setBooksLoading(false));
   }, [activeTab, studentId, user?.role]);
 
@@ -280,6 +290,7 @@ const StudentProfile: React.FC = () => {
     const oldHeight = scrollBox?.scrollHeight || 0;
     if (keepScroll) suppressChatAutoScrollRef.current = true;
     setLoadingOlderChat(true);
+    setChatError("");
     try {
       const res = await axios.get(`/api/chat/${student._id}`, {
         params: { page, limit: 20 },
@@ -299,6 +310,7 @@ const StudentProfile: React.FC = () => {
       }
     } catch (err) {
       console.error("Failed to load chat history:", err);
+      setChatError("Failed to load chat history.");
     } finally {
       setLoadingOlderChat(false);
     }
@@ -306,6 +318,7 @@ const StudentProfile: React.FC = () => {
 
   const fetchStudent = async (resetOverrideInputs = false) => {
     if (!studentId) return;
+    setProfileError("");
 
     // Load from sessionStorage if available
     const cacheKey = `student_profile_${studentId}`;
@@ -402,6 +415,7 @@ const StudentProfile: React.FC = () => {
     } catch (err) {
       console.error(err);
       if (!cachedData) {
+        setProfileError("Failed to load student profile.");
         toast.error("Failed to load student profile");
       }
     } finally {
@@ -485,9 +499,11 @@ const StudentProfile: React.FC = () => {
     if (user?.role === "student") {
       fetchMentors(signal);
       fetchNotifications(signal);
+      setReportCardsLoading(true); setReportCardsError("");
       axios.get("/api/students/me/report-card/jobs", { signal })
         .then((response) => setReportCards(response.data.data || []))
-        .catch((error) => { if (!axios.isCancel(error)) console.error(error); });
+        .catch((error) => { if (!axios.isCancel(error)) { console.error(error); setReportCardsError("Failed to load report cards."); } })
+        .finally(() => setReportCardsLoading(false));
     }
 
     return () => {
@@ -498,13 +514,14 @@ const StudentProfile: React.FC = () => {
   // Socket communication
   useEffect(() => {
     if (!student) return;
-
+    setAttendanceChartLoading(true); setAttendanceChartError("");
     axios.get(`/api/attendance/student/${student._id}/history`)
       .then((response) => {
         setAttendanceHistory(response.data.data || []);
         setAttendancePercentage(response.data.attendancePercentage ?? null);
       })
-      .catch((error) => console.error("Failed to load attendance chart", error));
+      .catch((error) => { console.error("Failed to load attendance chart", error); setAttendanceChartError("Failed to load attendance history."); })
+      .finally(() => setAttendanceChartLoading(false));
 
     // Join room
     socket.connect();
@@ -767,6 +784,7 @@ const StudentProfile: React.FC = () => {
       marks: updatedMarks,
     };
 
+    setSavingOverride(true);
     try {
       const res = await axios.patch(`/api/students/${studentId}`, payload);
       if (res.data.success) {
@@ -782,7 +800,7 @@ const StudentProfile: React.FC = () => {
       }
     } catch (err) {
       toast.error("Failed to update records");
-    }
+    } finally { setSavingOverride(false); }
   };
 
   // Export functions
@@ -825,31 +843,8 @@ ${student.aiImprovementPlan || "No plan generated."}
     }
   };
 
-  if (loading || !student) {
-    return (
-      <div className="flex h-full w-full items-center justify-center bg-[#f8f9fa] animate-pulse">
-        <svg
-          className="h-10 w-10 animate-spin text-[#12274E]"
-          fill="none"
-          viewBox="0 0 24 24"
-        >
-          <circle
-            className="opacity-25"
-            cx="12"
-            cy="12"
-            r="10"
-            stroke="currentColor"
-            strokeWidth="4"
-          />
-          <path
-            className="opacity-75"
-            fill="currentColor"
-            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-          />
-        </svg>
-      </div>
-    );
-  }
+  if (loading) return <LoadingState label="Loading student profile…" />;
+  if (profileError || !student) return <ErrorState message={profileError || "Student profile not found."} onRetry={() => fetchStudent(true)} />;
 
   // Map marks data to Recharts format
   const chartData: ProfileChartPoint[] = student.marks.map((sub) => {
@@ -1111,7 +1106,9 @@ ${student.aiImprovementPlan || "No plan generated."}
                 </div>
               </div>
 
-              {user?.role === "student" && reportCards.some((job) => job.status === "completed") && (
+              {user?.role === "student" && reportCardsLoading && <LoadingState label="Loading report cards…" compact />}
+              {user?.role === "student" && reportCardsError && <ErrorState message={reportCardsError} compact />}
+              {user?.role === "student" && !reportCardsLoading && !reportCardsError && reportCards.some((job) => job.status === "completed") && (
                 <section className="rounded-2xl border border-[#dadce0] bg-white p-5 shadow-sm">
                   <h3 className="text-sm font-semibold text-[#202124]">Report Cards</h3>
                   <p className="mb-4 mt-1 text-xs text-[#5f6368]">Report cards generated by your mentor.</p>
@@ -1123,7 +1120,7 @@ ${student.aiImprovementPlan || "No plan generated."}
               <div className="bg-white border border-[#dadce0] rounded-2xl p-6 shadow-sm">
                 <div className="mb-4 flex flex-wrap items-center justify-between gap-3"><h3 className="text-sm font-semibold text-[#202124]">{chartMode === "marks" ? "Subject Performance Analysis" : "Attendance History"}</h3><button type="button" onClick={() => setChartMode((mode) => mode === "marks" ? "attendance" : "marks")} className="rounded-lg border border-primary/20 bg-primary/5 px-3 py-1.5 text-xs font-bold text-primary">Show {chartMode === "marks" ? "Attendance" : "Marks"}</button></div>
                 <div className="h-64">
-                  <ResponsiveContainer width="100%" height="100%">
+                  {chartMode === "attendance" && attendanceChartLoading ? <LoadingState label="Loading attendance history…" compact /> : chartMode === "attendance" && attendanceChartError ? <ErrorState message={attendanceChartError} compact /> : <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={chartMode === "marks" ? chartData : attendanceChartData}>
                       <XAxis
                         dataKey={chartMode === "marks" ? "name" : "date"}
@@ -1150,7 +1147,7 @@ ${student.aiImprovementPlan || "No plan generated."}
                         radius={[4, 4, 0, 0]}
                       /></> : <Bar dataKey="attendance" name="Attendance (%)" fill="#10b981" radius={[4, 4, 0, 0]} />}
                     </BarChart>
-                  </ResponsiveContainer>
+                  </ResponsiveContainer>}
                 </div>
               </div>
 
@@ -1424,9 +1421,10 @@ ${student.aiImprovementPlan || "No plan generated."}
                       </button>
                       <button
                         type="submit"
+                        disabled={savingOverride}
                         className="bg-[#12274E] text-white px-4 py-2 rounded-lg text-xs font-semibold hover:bg-[#0B1830]"
                       >
-                        Save Modifications & Recalculate
+                        {savingOverride ? "Saving…" : "Save Modifications & Recalculate"}
                       </button>
                     </div>
                   </form>
@@ -1447,7 +1445,9 @@ ${student.aiImprovementPlan || "No plan generated."}
                 <span className="rounded-full bg-primary/10 px-2.5 py-1 text-xs font-bold text-primary">{issuedBooks.length}/2</span>
               </div>
               {booksLoading ? (
-                <p className="py-8 text-center text-xs text-slate-500">Loading books...</p>
+                <LoadingState label="Loading issued books…" compact />
+              ) : booksError ? (
+                <ErrorState message={booksError} compact />
               ) : issuedBooks.length === 0 ? (
                 <p className="py-8 text-center text-xs italic text-slate-500">No books are currently issued.</p>
               ) : (
@@ -1497,10 +1497,9 @@ ${student.aiImprovementPlan || "No plan generated."}
                 className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50/20"
               >
                 {loadingOlderChat && (
-                  <div className="text-center text-[10px] font-semibold text-slate-400">
-                    Loading older messages...
-                  </div>
+                  <LoadingState label={messages.length ? "Loading older messages…" : "Loading chat history…"} compact />
                 )}
+                {chatError && <ErrorState message={chatError} compact />}
                 {messages.map((msg, index) => {
                   const isMe =
                     user?.role === "student"

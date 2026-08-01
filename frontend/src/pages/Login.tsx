@@ -58,32 +58,40 @@ const Login: React.FC = () => {
   const [selectedMentor, setSelectedMentor] = useState("");
   const [mentorsLoading, setMentorsLoading] = useState(false);
   const [mentorLookupMessage, setMentorLookupMessage] = useState("");
+  const [collegesLoading, setCollegesLoading] = useState(false);
+  const [degreesLoading, setDegreesLoading] = useState(false);
+  const [signupListsError, setSignupListsError] = useState("");
 
   // Fetch signup lists
   useEffect(() => {
     if (isRegisterMode && (roleMode === "student" || roleMode === "mentor")) {
+      setCollegesLoading(true); setSignupListsError("");
       axios.get("/api/admin/colleges").then((res) => {
         if (res.data.success) setColleges(res.data.data);
-      });
+      }).catch(() => setSignupListsError("Failed to load colleges. Please try again."))
+        .finally(() => setCollegesLoading(false));
     }
   }, [isRegisterMode, roleMode]);
 
   // Fetch degrees when college changes
   useEffect(() => {
     if (selectedCollege) {
+      setDegreesLoading(true); setSignupListsError("");
       setSelectedDegree("");
       setSelectedMentor("");
       setMentors([]);
       setMentorLookupMessage("");
       axios.get("/api/admin/degrees", { params: { collegeId: selectedCollege } }).then((res) => {
         if (res.data.success) setDegrees(res.data.data);
-      });
+      }).catch(() => setSignupListsError("Failed to load degree programs. Please try again."))
+        .finally(() => setDegreesLoading(false));
     } else {
       setDegrees([]);
       setSelectedDegree("");
       setSelectedMentor("");
       setMentors([]);
       setMentorLookupMessage("");
+      setDegreesLoading(false);
     }
   }, [selectedCollege]);
 
@@ -367,7 +375,7 @@ const Login: React.FC = () => {
                         onChange={(e) => setSelectedCollege(e.target.value)}
                         className="w-full rounded-lg border border-[#dadce0] px-3.5 py-2 text-sm focus:border-primary focus:outline-none bg-white"
                       >
-                        <option value="">Choose College...</option>
+                        <option value="">{collegesLoading ? "Loading colleges..." : "Choose College..."}</option>
                         {colleges.map((c) => (
                           <option key={c._id} value={c._id}>{c.name}</option>
                         ))}
@@ -381,7 +389,7 @@ const Login: React.FC = () => {
                         onChange={(e) => setSelectedDegree(e.target.value)}
                         className="w-full rounded-lg border border-[#dadce0] px-3.5 py-2 text-sm focus:border-primary focus:outline-none bg-white"
                       >
-                        <option value="">Choose Degree...</option>
+                        <option value="">{degreesLoading ? "Loading degrees..." : "Choose Degree..."}</option>
                         {degrees.map((d) => (
                           <option key={d._id} value={d._id}>{d.name}</option>
                         ))}
@@ -428,7 +436,7 @@ const Login: React.FC = () => {
                         onChange={(e) => setSelectedCollege(e.target.value)}
                         className="w-full rounded-lg border border-[#dadce0] px-3.5 py-2 text-sm focus:border-primary focus:outline-none bg-white"
                       >
-                        <option value="">Choose College...</option>
+                        <option value="">{collegesLoading ? "Loading colleges..." : "Choose College..."}</option>
                         {colleges.map((c) => (
                           <option key={c._id} value={c._id}>{c.name}</option>
                         ))}
@@ -443,7 +451,7 @@ const Login: React.FC = () => {
                         disabled={!selectedCollege}
                         className="w-full rounded-lg border border-[#dadce0] px-3.5 py-2 text-sm focus:border-primary focus:outline-none bg-white disabled:bg-slate-50"
                       >
-                        <option value="">{selectedCollege ? "Choose Degree..." : "Choose college first..."}</option>
+                        <option value="">{degreesLoading ? "Loading degrees..." : selectedCollege ? "Choose Degree..." : "Choose college first..."}</option>
                         {degrees.map((d) => (
                           <option key={d._id} value={d._id}>{d.name}</option>
                         ))}
@@ -472,6 +480,7 @@ const Login: React.FC = () => {
                   </>
                 )}
 
+                {signupListsError && isRegisterMode && <p role="alert" className="text-xs font-medium text-red-600">{signupListsError}</p>}
                 <button
                   type="submit"
                   disabled={isSubmitting}

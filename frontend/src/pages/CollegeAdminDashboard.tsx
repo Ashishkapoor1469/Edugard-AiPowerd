@@ -5,6 +5,7 @@ import toast from "react-hot-toast";
 import { useAuth } from "../context/AuthContext.js";
 import AdminAttendancePanel from "../components/AdminAttendancePanel.js";
 import LibrarianManagementPanel from "../components/LibrarianManagementPanel.js";
+import { ErrorState, LoadingState } from "../components/AsyncState.js";
 
 interface Mentor {
   _id: string;
@@ -47,6 +48,9 @@ const CollegeAdminDashboard: React.FC = () => {
   const [riskStudents, setRiskStudents] = useState<RiskStudent[]>([]);
   const [loading, setLoading] = useState(false);
   const [riskLoading, setRiskLoading] = useState(false);
+  const [mentorError, setMentorError] = useState("");
+  const [riskError, setRiskError] = useState("");
+  const [mentorActionId, setMentorActionId] = useState("");
 
   // Announcement Form State
   const [annTitle, setAnnTitle] = useState("");
@@ -69,9 +73,12 @@ const CollegeAdminDashboard: React.FC = () => {
   const [syllabusFile, setSyllabusFile] = useState<File | null>(null);
   const [uploadingSyllabus, setUploadingSyllabus] = useState(false);
   const [showSyllabusHelp, setShowSyllabusHelp] = useState(false);
+  const [degreesLoading, setDegreesLoading] = useState(false);
+  const [degreesError, setDegreesError] = useState("");
 
   const fetchMentors = async () => {
     setLoading(true);
+    setMentorError("");
     try {
       const res = await axios.get("/api/admin/mentors");
       if (res.data.success) {
@@ -79,6 +86,7 @@ const CollegeAdminDashboard: React.FC = () => {
       }
     } catch (err) {
       console.error(err);
+      setMentorError("Failed to load mentors.");
       toast.error("Failed to load mentors");
     } finally {
       setLoading(false);
@@ -87,6 +95,7 @@ const CollegeAdminDashboard: React.FC = () => {
 
   const fetchRiskStudents = async () => {
     setRiskLoading(true);
+    setRiskError("");
     try {
       const loadRisk = async (riskLevel: RiskStudent["riskLevel"]) => {
         const first = await axios.get("/api/students", { params: { riskLevel, limit: 100, collegeId: user?.collegeId } });
@@ -102,6 +111,7 @@ const CollegeAdminDashboard: React.FC = () => {
       setRiskStudents([...(await loadRisk("critical")), ...(await loadRisk("high"))]);
     } catch (err) {
       console.error(err);
+      setRiskError("Failed to load risk students.");
       toast.error("Failed to load risk students");
     } finally {
       setRiskLoading(false);
@@ -119,25 +129,27 @@ const CollegeAdminDashboard: React.FC = () => {
 
   useEffect(() => {
     if (activeTab !== "syllabus" || !user?.collegeId) return;
-
+    setDegreesLoading(true); setDegreesError("");
     axios.get("/api/admin/degrees", { params: { collegeId: user.collegeId } }).then((res) => {
       const list = res.data.success ? res.data.data || [] : [];
       setDegrees(list);
       setSyllabusCourse((current) => list.some((d: Degree) => d.name === current) ? current : list[0]?.name || "");
-    });
+    }).catch(() => setDegreesError("Failed to load degree programs."))
+      .finally(() => setDegreesLoading(false));
   }, [activeTab, user?.collegeId]);
 
   const handleUpdateStatus = async (id: string, status: "approved" | "rejected" | "disabled", successLabel?: string) => {
+    setMentorActionId(id);
     try {
       const res = await axios.post(`/api/admin/mentors/${id}/status`, { status });
       if (res.data.success) {
         const label = successLabel || (status === "disabled" ? "blocked" : status);
         toast.success(`Mentor successfully ${label}!`);
-        fetchMentors();
+        await fetchMentors();
       }
     } catch (err) {
       toast.error("Action failed");
-    }
+    } finally { setMentorActionId(""); }
   };
 
   const getStatusBadge = (status: string) => {
@@ -308,12 +320,9 @@ const CollegeAdminDashboard: React.FC = () => {
               </span>
             </div>
             {loading ? (
-              <div className="flex justify-center py-8">
-                <svg className="h-6 w-6 animate-spin text-primary" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                </svg>
-              </div>
+              <LoadingState label="Loading mentors…" compact />
+            ) : mentorError ? (
+              <ErrorState message={mentorError} onRetry={fetchMentors} compact />
             ) : mentors.length === 0 ? (
               <p className="text-xs text-slate-500 py-10 text-center italic border border-dashed border-slate-200 rounded-xl bg-slate-50/50">
                 No mentors found for your college.
@@ -354,31 +363,35 @@ const CollegeAdminDashboard: React.FC = () => {
                               <>
                                 <button
                                   onClick={() => handleUpdateStatus(m._id, "approved", "approved")}
+                                  disabled={!!mentorActionId}
                                   className="bg-emerald-50 text-emerald-700 border border-emerald-100 px-3 py-1 rounded-lg font-bold text-[10px] hover:bg-emerald-100 transition-colors"
                                 >
-                                  Approve
+                                  {mentorActionId === m._id ? "Updating…" : "Approve"}
                                 </button>
                                 <button
                                   onClick={() => handleUpdateStatus(m._id, "rejected", "rejected")}
+                                  disabled={!!mentorActionId}
                                   className="bg-red-50 text-red-700 border border-red-100 px-3 py-1 rounded-lg font-bold text-[10px] hover:bg-red-100 transition-colors"
                                 >
-                                  Reject
+                                  {mentorActionId === m._id ? "Updating…" : "Reject"}
                                 </button>
                               </>
                             )}
                             {m.status === "disabled" ? (
                               <button
                                 onClick={() => handleUpdateStatus(m._id, "approved", "unblocked")}
+                                disabled={!!mentorActionId}
                                 className="bg-emerald-50 text-emerald-700 border border-emerald-100 px-3 py-1 rounded-lg font-bold text-[10px] hover:bg-emerald-100 transition-colors"
                               >
-                                Unblock
+                                {mentorActionId === m._id ? "Updating…" : "Unblock"}
                               </button>
                             ) : m.status !== "pending_verification" && (
                               <button
                                 onClick={() => handleUpdateStatus(m._id, "disabled", "blocked")}
+                                disabled={!!mentorActionId}
                                 className="bg-slate-100 text-slate-700 border border-slate-200 px-3 py-1 rounded-lg font-bold text-[10px] hover:bg-slate-200 transition-colors"
                               >
-                                Block
+                                {mentorActionId === m._id ? "Updating…" : "Block"}
                               </button>
                             )}
                           </div>
@@ -406,12 +419,9 @@ const CollegeAdminDashboard: React.FC = () => {
             </div>
 
             {riskLoading ? (
-              <div className="flex justify-center py-8">
-                <svg className="h-6 w-6 animate-spin text-primary" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                </svg>
-              </div>
+              <LoadingState label="Loading risk students…" compact />
+            ) : riskError ? (
+              <ErrorState message={riskError} onRetry={fetchRiskStudents} compact />
             ) : riskStudents.length === 0 ? (
               <p className="text-xs text-slate-500 py-10 text-center italic border border-dashed border-slate-200 rounded-xl bg-slate-50/50">
                 No high or critical risk students found for this college.
@@ -709,6 +719,7 @@ const CollegeAdminDashboard: React.FC = () => {
             )}
 
             <form onSubmit={handleSyllabusSubmit} className="space-y-4">
+              {degreesLoading ? <LoadingState label="Loading degree programs…" compact /> : degreesError ? <ErrorState message={degreesError} compact /> : null}
               <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Degree Course</label>
                 <select

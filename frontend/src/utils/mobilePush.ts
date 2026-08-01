@@ -1,9 +1,20 @@
 import { Capacitor } from "@capacitor/core";
 import { PushNotifications } from "@capacitor/push-notifications";
+import { LocalNotifications } from "@capacitor/local-notifications";
 import axios from "axios";
 import toast from "react-hot-toast";
 
 let initialized = false;
+const openNotification = (data?: Record<string, unknown>) => {
+  const path = data?.path;
+  if (typeof path === "string" && path.startsWith("/")) window.location.assign(path);
+};
+
+const saveDeviceToken = async (token: string) => {
+  localStorage.setItem("pushDeviceToken", token);
+  try { await axios.put("/api/push/devices", { token, platform: Capacitor.getPlatform() }); }
+  catch (error) { console.warn("Push token could not be saved", error); }
+};
 
 export async function initializeMobilePush() {
   if (!Capacitor.isNativePlatform() || import.meta.env.VITE_PUSH_ENABLED !== "true") return;
@@ -13,9 +24,10 @@ export async function initializeMobilePush() {
       initialized = true;
       await PushNotifications.createChannel({ id: "eduguard_normal", name: "EduGuard", importance: 3, visibility: 1 });
       await PushNotifications.createChannel({ id: "eduguard_important", name: "Important EduGuard alerts", importance: 5, visibility: 1, sound: "default" });
+      await LocalNotifications.createChannel({ id: "eduguard_normal", name: "EduGuard", importance: 3, visibility: 1, sound: "default" });
+      await LocalNotifications.createChannel({ id: "eduguard_important", name: "Important EduGuard alerts", importance: 5, visibility: 1, sound: "default" });
       await PushNotifications.addListener("registration", ({ value }) => {
-        localStorage.setItem("pushDeviceToken", value);
-        void axios.put("/api/push/devices", { token: value, platform: Capacitor.getPlatform() });
+        void saveDeviceToken(value);
       });
       await PushNotifications.addListener("registrationError", (error) => console.error("Push registration failed", error));
       await PushNotifications.addListener("pushNotificationReceived", (notification) => {
@@ -23,16 +35,28 @@ export async function initializeMobilePush() {
           icon: notification.data?.priority === "important" ? "!" : undefined,
           duration: notification.data?.priority === "important" ? 8000 : 4000,
         });
+        void LocalNotifications.schedule({ notifications: [{
+          id: Date.now() % 2147483647,
+          title: notification.title || "EduGuard",
+          body: notification.body || "You have a new notification",
+          channelId: notification.data?.priority === "important" ? "eduguard_important" : "eduguard_normal",
+          extra: notification.data,
+          schedule: { at: new Date(Date.now() + 100) },
+        }] });
       });
       await PushNotifications.addListener("pushNotificationActionPerformed", ({ notification }) => {
-        const path = notification.data?.path;
-        if (typeof path === "string" && path.startsWith("/")) window.location.assign(path);
+        openNotification(notification.data);
       });
+      await LocalNotifications.addListener("localNotificationActionPerformed", ({ notification }) => openNotification(notification.extra));
     }
 
     let permission = await PushNotifications.checkPermissions();
     if (permission.receive === "prompt") permission = await PushNotifications.requestPermissions();
-    if (permission.receive === "granted") await PushNotifications.register();
+    if (permission.receive === "granted") {
+      const savedToken = localStorage.getItem("pushDeviceToken");
+      if (savedToken) await saveDeviceToken(savedToken);
+      await PushNotifications.register();
+    }
   } catch (error) {
     initialized = false;
     console.warn("Push notifications unavailable; login will continue", error);

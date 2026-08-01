@@ -8,6 +8,7 @@ import Catalog from "./pages/Catalog";
 import CollegeAdminLibrary from "./pages/CollegeAdminLibrary";
 import type { User } from "./types";
 import eduGuardLogo from "./assets/e.png";
+import { LoadingState } from "./components/AsyncState";
 import "./brand.css";
 
 export default function App() {
@@ -27,7 +28,7 @@ export default function App() {
     catch (error: any) { setLoginError(error.response?.data?.message || "Invalid librarian email or password."); }
     finally { setSigningIn(false); }
   };
-  if (loading) return <div className="center-card">Opening EduGuard Library...</div>;
+  if (loading) return <LoadingState label="Opening EduGuard Library…" />;
   if (!user) return <div className="center-card"><img className="login-logo" src={eduGuardLogo} alt="EduGuard" /><h1>EduGuard Library</h1><p>College administrators open Library from EduGuard. Librarians can sign in directly with the account created by their college administrator.</p><form className="form-stack login-form" onSubmit={librarianLogin}><label>Email<input disabled={signingIn} type="email" required autoComplete="username" value={login.email} onChange={e => setLogin({ ...login, email: e.target.value })} /></label><label>Password<input disabled={signingIn} type={showPassword ? "text" : "password"} required autoComplete="current-password" value={login.password} onChange={e => setLogin({ ...login, password: e.target.value })} /></label><button disabled={signingIn} type="button" className="secondary" onClick={() => setShowPassword(value => !value)}>{showPassword ? "Hide password" : "Show password"}</button><small>{login.password.length} characters entered</small>{loginError && <p className="form-error">{loginError}</p>}<button disabled={signingIn}>{signingIn ? "Signing in…" : "Sign in as librarian"}</button></form><a className="return-link" href={import.meta.env.VITE_EDUGUARD_URL || "https://edugard-ai-powerd.vercel.app"}>Return to EduGuard</a></div>;
   const home = user.role === "librarian" ? "/dashboard" : "/admin";
   return <Layout user={user}><Routes>

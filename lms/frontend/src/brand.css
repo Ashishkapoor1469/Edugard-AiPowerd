@@ -1,2 +1,7 @@
 .brand-logo { width: 38px; height: 38px; object-fit: contain; }
 .login-logo { width: 82px; height: 82px; object-fit: contain; margin-bottom: 12px; }
+.async-state { min-height: 160px; display: flex; align-items: center; justify-content: center; gap: 8px; color: #64748b; font-size: 12px; }
+.async-state.compact { min-height: 0; padding: 20px; }
+.async-state.error { flex-direction: column; color: #b91c1c; }
+.async-spinner { width: 16px; height: 16px; border: 2px solid #d7dee8; border-top-color: #12274e; border-radius: 50%; animation: async-spin .7s linear infinite; }
+@keyframes async-spin { to { transform: rotate(360deg); } }

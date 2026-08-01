@@ -59,7 +59,7 @@ namespace EduGuard.Controllers
             model.UpdatedAt = DateTime.UtcNow;
 
             await _mongoService.Announcements.InsertOneAsync(model);
-            await _push.NotifyStudentsAsync(collegeId, model.TargetAudience is "class" or "batch" ? model.TargetId : null,
+            await _push.NotifyCollegeAsync(collegeId, model.TargetAudience, model.TargetAudience is "class" or "batch" ? model.TargetId : null,
                 $"announcement:{model.Id}", new PushMessage(model.Title, model.Description, "normal",
                     new Dictionary<string, string> { ["type"] = "announcement", ["path"] = "/?tab=notifications" }));
             return Ok(new { success = true, data = model });
@@ -86,7 +86,7 @@ namespace EduGuard.Controllers
             model.UpdatedAt = DateTime.UtcNow;
 
             await _mongoService.Events.InsertOneAsync(model);
-            await _push.NotifyStudentsAsync(collegeId, null, $"event:{model.Id}",
+            await _push.NotifyCollegeAsync(collegeId, "all", null, $"event:{model.Id}",
                 new PushMessage(model.EventName, model.Description, "normal",
                     new Dictionary<string, string> { ["type"] = "event", ["path"] = "/?tab=notifications" }));
             return Ok(new { success = true, data = model });

@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import toast from "react-hot-toast";
 import { listLoadError } from "../utils/apiErrors.js";
+import { ErrorState, LoadingState } from "../components/AsyncState.js";
 
 interface Notification {
   _id: string;
@@ -31,6 +32,7 @@ const NotificationsPage: React.FC = () => {
   const [collegeAlerts, setCollegeAlerts] = useState<any[]>([]);
   const [loadingBroadcasts, setLoadingBroadcasts] = useState(false);
   const [broadcastsError, setBroadcastsError] = useState("");
+  const [action, setAction] = useState("");
 
   const abortRef = useRef<AbortController | null>(null);
 
@@ -111,6 +113,7 @@ const NotificationsPage: React.FC = () => {
   }, [activeTab]);
 
   const handleMarkAsRead = async (id: string) => {
+    setAction(`read:${id}`);
     try {
       const res = await axios.patch(`/api/notifications/${id}/read`);
       if (res.data.success) {
@@ -120,11 +123,12 @@ const NotificationsPage: React.FC = () => {
         );
       }
     } catch (err) {
-      console.error(err);
-    }
+      console.error(err); toast.error("Could not mark notification as read");
+    } finally { setAction(""); }
   };
 
   const handleMarkAllRead = async () => {
+    setAction("read-all");
     try {
       const res = await axios.patch("/api/notifications/read-all");
       if (res.data.success) {
@@ -132,11 +136,12 @@ const NotificationsPage: React.FC = () => {
         setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
       }
     } catch (err) {
-      console.error(err);
-    }
+      console.error(err); toast.error("Could not mark notifications as read");
+    } finally { setAction(""); }
   };
 
   const handleDelete = async (id: string) => {
+    setAction(`delete:${id}`);
     try {
       const res = await axios.delete(`/api/notifications/${id}`);
       if (res.data.success) {
@@ -144,8 +149,8 @@ const NotificationsPage: React.FC = () => {
         setNotifications((prev) => prev.filter((n) => n._id !== id));
       }
     } catch (err) {
-      console.error(err);
-    }
+      console.error(err); toast.error("Could not delete notification");
+    } finally { setAction(""); }
   };
 
   // Color mappings based on priority/level
@@ -191,9 +196,10 @@ const NotificationsPage: React.FC = () => {
         {notifications.some(n => !n.isRead) && (
           <button
             onClick={handleMarkAllRead}
+            disabled={!!action}
             className="mt-3 rounded-lg border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-secondary hover:bg-slate-50 shadow-xs transition-all sm:mt-0"
           >
-            Mark all as read
+            {action === "read-all" ? "Marking…" : "Mark all as read"}
           </button>
         )}
       </div>
@@ -221,11 +227,9 @@ const NotificationsPage: React.FC = () => {
       {activeTab === "broadcasts" ? (
         <div className="flex flex-col gap-4">
           {loadingBroadcasts ? (
-            Array.from({ length: 3 }).map((_, idx) => (
-              <div key={idx} className="h-20 w-full animate-pulse rounded-xl bg-slate-200" />
-            ))
+            <LoadingState label="Loading college broadcasts…" />
           ) : broadcastsError ? (
-            <div role="alert" className="rounded-xl border border-amber-200 bg-amber-50 py-12 text-center text-xs text-amber-800">{broadcastsError}</div>
+            <ErrorState message={broadcastsError} onRetry={() => fetchCollegeAlerts()} />
           ) : collegeAlerts.length === 0 ? (
             <div className="rounded-xl border border-slate-200 bg-white py-12 text-center text-xs text-slate-400">
               No college broadcasts found. Your college admin hasn't posted any announcements or events yet.
@@ -265,11 +269,9 @@ const NotificationsPage: React.FC = () => {
       ) : (
       <div className="flex flex-col gap-4">
         {loading ? (
-          Array.from({ length: 4 }).map((_, idx) => (
-            <div key={idx} className="h-24 w-full animate-pulse rounded-xl bg-slate-200" />
-          ))
+          <LoadingState label="Loading notifications…" />
         ) : notificationsError ? (
-          <div role="alert" className="rounded-xl border border-amber-200 bg-amber-50 py-12 text-center text-xs text-amber-800">{notificationsError}</div>
+          <ErrorState message={notificationsError} onRetry={() => fetchNotifications()} />
         ) : notifications.length === 0 ? (
           <div className="rounded-xl border border-slate-200 bg-white py-12 text-center text-xs text-slate-400">
             No notifications found.
@@ -323,23 +325,25 @@ const NotificationsPage: React.FC = () => {
                 {!notif.isRead && (
                   <button
                     onClick={() => handleMarkAsRead(notif._id)}
+                    disabled={!!action}
                     className="rounded-lg border border-slate-200 bg-white p-1.5 text-slate-400 hover:bg-slate-100 hover:text-primary transition-all focus:outline-hidden"
                     title="Mark as read"
                   >
-                    <svg className="h-4.5 w-4.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    {action === `read:${notif._id}` ? <span className="text-[10px] font-bold">Reading…</span> : <svg className="h-4.5 w-4.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
-                    </svg>
+                    </svg>}
                   </button>
                 )}
 
                 <button
                   onClick={() => handleDelete(notif._id)}
+                  disabled={!!action}
                   className="rounded-lg border border-slate-200 bg-white p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600 transition-all focus:outline-hidden"
                   title="Delete notification"
                 >
-                  <svg className="h-4.5 w-4.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  {action === `delete:${notif._id}` ? <span className="text-[10px] font-bold">Deleting…</span> : <svg className="h-4.5 w-4.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-16v1a3 3 0 003 3h10a3 3 0 003-3v-1M7 7h10" />
-                  </svg>
+                  </svg>}
                 </button>
               </div>
             </div>

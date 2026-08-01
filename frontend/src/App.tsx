@@ -13,11 +13,11 @@ import AdminDashboard from "./pages/AdminDashboard";
 import { Toaster } from "react-hot-toast";
 
 import CollegeAdminDashboard from "./pages/CollegeAdminDashboard";
-import eduGuardLogo from "./assets/e.png";
 import StudentAssignmentsPage from "./pages/StudentAssignmentsPage";
 import MyBadgesModal from "./components/MyBadgesModal";
 import ReportCard from "./pages/ReportCard";
 import axios from "axios";
+import { ErrorState, LoadingState } from "./components/AsyncState";
 
 // Error Boundary to catch page crashes without losing the navbar/sidebar
 class RouteErrorBoundary extends React.Component<
@@ -112,12 +112,14 @@ const MentorApprovalStatus: React.FC = () => {
 
 const LmsRedirect: React.FC = () => {
   const [error, setError] = React.useState("");
-  React.useEffect(() => {
+  const openLms = React.useCallback(() => {
+    setError("");
     axios.post("/api/auth/lms-sso").then(({ data }) => {
       window.location.assign(`${data.lmsUrl.replace(/\/$/, "")}/#token=${encodeURIComponent(data.token)}`);
     }).catch((err) => setError(err.response?.data?.message || "Could not open the Library service"));
   }, []);
-  return <div className="flex flex-1 items-center justify-center p-6 text-sm text-slate-600">{error || "Opening EduGuard Library…"}</div>;
+  React.useEffect(openLms, [openLms]);
+  return error ? <ErrorState message={error} onRetry={openLms} /> : <LoadingState label="Opening EduGuard Library…" />;
 };
 
 // Bottom Navigation Bar for mobile devices
@@ -280,12 +282,7 @@ const ProtectedLayout: React.FC = () => {
   const { token, loading, user } = useAuth();
 
   if (loading) {
-    return (
-      <div className="flex min-h-dvh flex-col items-center justify-center bg-[#f8f9fa] animate-pulse-slow">
-        <img src={eduGuardLogo} alt="EduGuard" className="h-20 w-20 animate-pulse rounded-[22%] object-cover" />
-        <p className="mt-1 text-xs text-[#5f6368] font-medium tracking-wide">Workspace loading...</p>
-      </div>
-    );
+    return <LoadingState label="Loading EduGuard workspace…" />;
   }
 
   if (!token) {

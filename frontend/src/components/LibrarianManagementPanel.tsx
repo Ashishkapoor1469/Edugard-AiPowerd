@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import axios from "axios";
 import toast from "react-hot-toast";
+import { ErrorState, LoadingState } from "./AsyncState.js";
 
 type Librarian = { _id: string; name: string; email: string; status: string };
 const empty = { name: "", email: "", password: "", status: "active" };
@@ -13,8 +14,9 @@ export default function LibrarianManagementPanel() {
   const [listLoading, setListLoading] = useState(true);
   const [actionId, setActionId] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
-  const load = async () => { setListLoading(true); try { const response = await axios.get("/api/librarians"); setLibrarians(response.data.data || []); } finally { setListLoading(false); } };
-  useEffect(() => { load().catch(() => toast.error("Could not load librarians")); }, []);
+  const [listError, setListError] = useState("");
+  const load = async () => { setListLoading(true); setListError(""); try { const response = await axios.get("/api/librarians"); setLibrarians(response.data.data || []); } catch { setListError("Could not load librarians."); toast.error("Could not load librarians"); } finally { setListLoading(false); } };
+  useEffect(() => { load(); }, []);
 
   const save = async (event: React.FormEvent) => {
     event.preventDefault(); setLoading(true);
@@ -35,7 +37,7 @@ export default function LibrarianManagementPanel() {
   return <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
     <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs">
       <div className="mb-4 flex items-center justify-between"><div><h2 className="text-sm font-bold text-slate-800">Librarian accounts</h2><p className="mt-1 text-[10px] text-slate-500">Accounts are restricted to your college.</p></div><span className="rounded-lg bg-slate-50 px-3 py-1 text-[10px] font-bold text-slate-500">{librarians.length}</span></div>
-      {listLoading ? <p className="py-8 text-center text-xs text-slate-500">Loading librarians…</p> : librarians.length === 0 ? <p className="py-8 text-center text-xs text-slate-500">No librarians created.</p> : librarians.map(item => <div key={item._id} className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 py-3"><div><p className="text-xs font-bold text-slate-800">{item.name}</p><p className="text-[10px] text-slate-500">{item.email} · {item.status}</p></div><div className="flex gap-2"><button disabled={actionId !== null} onClick={() => edit(item)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-[10px] font-bold disabled:opacity-50">Edit</button><button disabled={actionId !== null} onClick={() => changeStatus(item)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-[10px] font-bold disabled:opacity-50">{actionId === `status:${item._id}` ? "Updating…" : item.status === "active" ? "Disable" : "Enable"}</button><button disabled={actionId !== null} onClick={() => remove(item)} className="rounded-lg bg-red-50 px-3 py-1.5 text-[10px] font-bold text-red-700 disabled:opacity-50">{actionId === `delete:${item._id}` ? "Deleting…" : "Delete"}</button></div></div>)}
+      {listLoading ? <LoadingState label="Loading librarians…" compact /> : listError ? <ErrorState message={listError} onRetry={load} compact /> : librarians.length === 0 ? <p className="py-8 text-center text-xs text-slate-500">No librarians created.</p> : librarians.map(item => <div key={item._id} className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 py-3"><div><p className="text-xs font-bold text-slate-800">{item.name}</p><p className="text-[10px] text-slate-500">{item.email} · {item.status}</p></div><div className="flex gap-2"><button disabled={actionId !== null} onClick={() => edit(item)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-[10px] font-bold disabled:opacity-50">Edit</button><button disabled={actionId !== null} onClick={() => changeStatus(item)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-[10px] font-bold disabled:opacity-50">{actionId === `status:${item._id}` ? "Updating…" : item.status === "active" ? "Disable" : "Enable"}</button><button disabled={actionId !== null} onClick={() => remove(item)} className="rounded-lg bg-red-50 px-3 py-1.5 text-[10px] font-bold text-red-700 disabled:opacity-50">{actionId === `delete:${item._id}` ? "Deleting…" : "Delete"}</button></div></div>)}
     </section>
     <form onSubmit={save} className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs">
       <h2 className="mb-4 text-sm font-bold text-slate-800">{editing ? "Update librarian" : "Create librarian"}</h2>

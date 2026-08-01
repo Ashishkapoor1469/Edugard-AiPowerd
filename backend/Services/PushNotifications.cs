@@ -1,5 +1,8 @@
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 using EduGuard.Models;
 using MongoDB.Driver;
 
@@ -21,25 +24,30 @@ public sealed class FirebasePushNotificationSender : IPushNotificationSender
 {
     private readonly HttpClient _http;
     private readonly string _projectId;
-    private readonly string _accessToken;
+    private readonly string _staticAccessToken;
+    private readonly string _serviceAccountJson;
+    private readonly SemaphoreSlim _tokenLock = new(1, 1);
+    private string _cachedAccessToken = string.Empty;
+    private DateTime _accessTokenExpiresAt = DateTime.MinValue;
     private readonly ILogger<FirebasePushNotificationSender> _logger;
 
     public FirebasePushNotificationSender(HttpClient http, IConfiguration config, ILogger<FirebasePushNotificationSender> logger)
     {
         (_http, _logger) = (http, logger);
-        _projectId = config["FCM_PROJECT_ID"] ?? string.Empty;
-        _accessToken = config["FCM_ACCESS_TOKEN"] ?? string.Empty;
+        _serviceAccountJson = config["FCM_SERVICE_ACCOUNT_JSON"] ?? string.Empty;
+        _staticAccessToken = config["FCM_ACCESS_TOKEN"] ?? string.Empty;
+        _projectId = config["FCM_PROJECT_ID"] ?? ReadServiceAccountValue("project_id");
     }
 
     public async Task SendAsync(string deviceToken, PushMessage message, CancellationToken token = default)
     {
-        if (string.IsNullOrEmpty(_projectId) || string.IsNullOrEmpty(_accessToken))
+        if (string.IsNullOrEmpty(_projectId))
         {
-            throw new InvalidOperationException("FCM_PROJECT_ID and FCM_ACCESS_TOKEN must be configured before push jobs can be delivered.");
+            throw new InvalidOperationException("FCM_PROJECT_ID or FCM_SERVICE_ACCOUNT_JSON must be configured before push jobs can be delivered.");
         }
 
         using var request = new HttpRequestMessage(HttpMethod.Post, $"https://fcm.googleapis.com/v1/projects/{_projectId}/messages:send");
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _accessToken);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", await GetAccessTokenAsync(token));
         request.Content = JsonContent.Create(new
         {
             message = new
@@ -58,6 +66,63 @@ public sealed class FirebasePushNotificationSender : IPushNotificationSender
         if (!response.IsSuccessStatusCode)
             throw new HttpRequestException($"FCM returned {(int)response.StatusCode}: {await response.Content.ReadAsStringAsync(token)}");
     }
+
+    private string ReadServiceAccountValue(string name)
+    {
+        if (string.IsNullOrWhiteSpace(_serviceAccountJson)) return string.Empty;
+        using var document = JsonDocument.Parse(_serviceAccountJson);
+        return document.RootElement.TryGetProperty(name, out var value) ? value.GetString() ?? string.Empty : string.Empty;
+    }
+
+    private async Task<string> GetAccessTokenAsync(CancellationToken token)
+    {
+        if (string.IsNullOrWhiteSpace(_serviceAccountJson))
+            return !string.IsNullOrWhiteSpace(_staticAccessToken)
+                ? _staticAccessToken
+                : throw new InvalidOperationException("FCM_SERVICE_ACCOUNT_JSON is required for renewable Firebase credentials.");
+        if (_accessTokenExpiresAt > DateTime.UtcNow.AddMinutes(5)) return _cachedAccessToken;
+
+        await _tokenLock.WaitAsync(token);
+        try
+        {
+            if (_accessTokenExpiresAt > DateTime.UtcNow.AddMinutes(5)) return _cachedAccessToken;
+            var email = ReadServiceAccountValue("client_email");
+            var privateKey = ReadServiceAccountValue("private_key");
+            var tokenUri = ReadServiceAccountValue("token_uri");
+            if (string.IsNullOrWhiteSpace(tokenUri)) tokenUri = "https://oauth2.googleapis.com/token";
+            if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(privateKey))
+                throw new InvalidOperationException("FCM_SERVICE_ACCOUNT_JSON is missing client_email or private_key.");
+
+            var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            var header = Base64Url(JsonSerializer.SerializeToUtf8Bytes(new { alg = "RS256", typ = "JWT" }));
+            var payload = Base64Url(JsonSerializer.SerializeToUtf8Bytes(new
+            {
+                iss = email,
+                scope = "https://www.googleapis.com/auth/firebase.messaging",
+                aud = tokenUri,
+                iat = now,
+                exp = now + 3600
+            }));
+            var unsigned = $"{header}.{payload}";
+            using var rsa = RSA.Create();
+            rsa.ImportFromPem(privateKey);
+            var assertion = $"{unsigned}.{Base64Url(rsa.SignData(Encoding.UTF8.GetBytes(unsigned), HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1))}";
+            using var response = await _http.PostAsync(tokenUri, new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["grant_type"] = "urn:ietf:params:oauth:grant-type:jwt-bearer",
+                ["assertion"] = assertion
+            }), token);
+            response.EnsureSuccessStatusCode();
+            using var result = JsonDocument.Parse(await response.Content.ReadAsStringAsync(token));
+            _cachedAccessToken = result.RootElement.GetProperty("access_token").GetString() ?? throw new InvalidOperationException("Google OAuth returned no access token.");
+            var expiresIn = result.RootElement.TryGetProperty("expires_in", out var expiry) ? expiry.GetInt32() : 3600;
+            _accessTokenExpiresAt = DateTime.UtcNow.AddSeconds(expiresIn);
+            return _cachedAccessToken;
+        }
+        finally { _tokenLock.Release(); }
+    }
+
+    private static string Base64Url(byte[] value) => Convert.ToBase64String(value).TrimEnd('=').Replace('+', '-').Replace('/', '_');
 }
 
 public sealed class PushNotificationQueue : BackgroundService, IPushNotificationQueue

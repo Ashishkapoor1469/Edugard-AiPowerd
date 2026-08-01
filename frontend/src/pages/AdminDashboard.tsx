@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import axios from "axios";
 import toast from "react-hot-toast";
+import { ErrorState, LoadingState } from "../components/AsyncState.js";
 
 interface College {
   _id: string;
@@ -28,6 +29,8 @@ const AdminDashboard: React.FC = () => {
   const [colleges, setColleges] = useState<College[]>([]);
   const [stats, setStats] = useState<CollegeStats[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState("");
+  const [action, setAction] = useState("");
 
   // College Form State
   const [collegeName, setCollegeName] = useState("");
@@ -47,6 +50,7 @@ const AdminDashboard: React.FC = () => {
 
   const fetchData = async () => {
     setLoading(true);
+    setLoadError("");
     try {
       const cRes = await axios.get("/api/admin/colleges");
       if (cRes.data.success) setColleges(cRes.data.data);
@@ -55,6 +59,7 @@ const AdminDashboard: React.FC = () => {
       if (sRes.data.success) setStats(sRes.data.data);
     } catch (err) {
       console.error(err);
+      setLoadError("Failed to load administration data.");
       toast.error("Failed to load administration data");
     } finally {
       setLoading(false);
@@ -67,6 +72,7 @@ const AdminDashboard: React.FC = () => {
 
   const handleCreateCollege = async (e: React.FormEvent) => {
     e.preventDefault();
+    setAction("create-college");
     try {
       const res = await axios.post("/api/admin/colleges", {
         name: collegeName,
@@ -82,40 +88,42 @@ const AdminDashboard: React.FC = () => {
         setCollegeAddress("");
         setCollegeWebsite("");
         setCollegeContact("");
-        fetchData();
+        await fetchData();
       }
     } catch (err) {
       toast.error("Registration failed");
-    }
+    } finally { setAction(""); }
   };
 
   const handleUpdateCollege = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingCollege) return;
+    setAction("update-college");
     try {
       const res = await axios.put(`/api/admin/colleges/${editingCollege._id}`, editingCollege);
       if (res.data.success) {
         toast.success("College details updated successfully!");
         setEditingCollege(null);
-        fetchData();
+        await fetchData();
       }
     } catch (err) {
       toast.error("Failed to update college details");
-    }
+    } finally { setAction(""); }
   };
 
   const handleToggleBlockCollege = async (id: string, currentlyBlocked: boolean) => {
+    setAction(`block:${id}`);
     try {
       const res = await axios.post(`/api/admin/colleges/${id}/block`, null, {
         params: { block: !currentlyBlocked }
       });
       if (res.data.success) {
         toast.success(`College successfully ${!currentlyBlocked ? "blocked" : "unblocked"}!`);
-        fetchData();
+        await fetchData();
       }
     } catch (err) {
       toast.error("Failed to update block status");
-    }
+    } finally { setAction(""); }
   };
 
   const handleRegisterCollegeAdmin = async (e: React.FormEvent) => {
@@ -124,6 +132,7 @@ const AdminDashboard: React.FC = () => {
       toast.error("Please select a college");
       return;
     }
+    setAction("create-admin");
     try {
       const res = await axios.post("/api/admin/college-admins", {
         name: adminName,
@@ -137,12 +146,12 @@ const AdminDashboard: React.FC = () => {
         setAdminEmail("");
         setAdminPassword("");
         setAdminCollegeId("");
-        fetchData();
+        await fetchData();
       }
     } catch (err: any) {
       const msg = err.response?.data?.message || "Failed to register College Admin";
       toast.error(msg);
-    }
+    } finally { setAction(""); }
   };
 
   return (
@@ -181,12 +190,9 @@ const AdminDashboard: React.FC = () => {
 
       {/* Main Content Panels */}
       {loading ? (
-        <div className="flex items-center justify-center py-12">
-          <svg className="h-8 w-8 animate-spin text-primary" fill="none" viewBox="0 0 24 24">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-          </svg>
-        </div>
+        <LoadingState label="Loading administration data…" />
+      ) : loadError ? (
+        <ErrorState message={loadError} onRetry={fetchData} />
       ) : (
         <div className="grid grid-cols-1 gap-6">
           {/* TAB 1: COLLEGES DIRECTORY */}
@@ -250,9 +256,10 @@ const AdminDashboard: React.FC = () => {
                     <div className="flex gap-2 pt-2">
                       <button
                         type="submit"
+                        disabled={!!action}
                         className="flex-1 bg-primary text-white py-1.5 rounded-lg text-xs font-bold hover:bg-primary-hover transition-colors"
                       >
-                        Save Changes
+                        {action === "update-college" ? "Saving…" : "Save Changes"}
                       </button>
                       <button
                         type="button"
@@ -320,9 +327,10 @@ const AdminDashboard: React.FC = () => {
                     </div>
                     <button
                       type="submit"
+                      disabled={!!action}
                       className="w-full bg-primary text-white py-1.5 rounded-lg text-xs font-bold hover:bg-primary-hover transition-colors pt-2"
                     >
-                      Register College
+                      {action === "create-college" ? "Registering…" : "Register College"}
                     </button>
                   </form>
                 )}
@@ -357,13 +365,14 @@ const AdminDashboard: React.FC = () => {
                           </button>
                           <button
                             onClick={() => handleToggleBlockCollege(c._id, c.isBlocked || false)}
+                            disabled={!!action}
                             className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-colors ${
                               c.isBlocked
                                 ? "bg-emerald-50 text-emerald-600 border border-emerald-100 hover:bg-emerald-100"
                                 : "bg-red-50 text-red-600 border border-red-100 hover:bg-red-100"
                             }`}
                           >
-                            {c.isBlocked ? "Unblock" : "Block"}
+                            {action === `block:${c._id}` ? "Updating…" : c.isBlocked ? "Unblock" : "Block"}
                           </button>
                         </div>
                       </div>
@@ -432,9 +441,10 @@ const AdminDashboard: React.FC = () => {
                 </div>
                 <button
                   type="submit"
+                  disabled={!!action}
                   className="w-full bg-primary text-white py-2 rounded-lg text-xs font-bold hover:bg-primary-hover transition-colors"
                 >
-                  Create Admin Account
+                  {action === "create-admin" ? "Creating…" : "Create Admin Account"}
                 </button>
               </form>
             </div>

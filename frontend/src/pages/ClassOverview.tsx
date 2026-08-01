@@ -5,6 +5,7 @@ import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
 import toast from "react-hot-toast";
 import { useAuth } from "../context/AuthContext.js";
 import { listLoadError } from "../utils/apiErrors.js";
+import { ErrorState, LoadingState } from "../components/AsyncState.js";
 
 interface Student {
   _id: string;
@@ -52,16 +53,8 @@ const ClassOverview: React.FC = () => {
 
   const [loading, setLoading] = useState(true);
   const [generatingSummary, setGeneratingSummary] = useState(false);
-  const [loadingMessageIndex, setLoadingMessageIndex] = useState(0);
   const [rosterError, setRosterError] = useState("");
 
-  const loadingMessages = [
-    `Analyzing ${activeClass} class performance...`,
-    "Building class detailed report...",
-    "Calculating subject averages...",
-    "Reviewing student risk distribution...",
-    "Preparing cohort roster...",
-  ];
 
   const calculateSubjectAverage = (subject: SubjectMarks) => {
     let obtained = 0;
@@ -221,19 +214,6 @@ const ClassOverview: React.FC = () => {
     fetchClassDetails();
   }, [activeClass]);
 
-  useEffect(() => {
-    if (!loading) {
-      setLoadingMessageIndex(0);
-      return;
-    }
-
-    const timer = window.setInterval(() => {
-      setLoadingMessageIndex((current) => (current + 1) % loadingMessages.length);
-    }, 1800);
-
-    return () => window.clearInterval(timer);
-  }, [loading, loadingMessages.length]);
-
   // Sync activeClass state with URL param when URL changes
   useEffect(() => {
     if (className && className !== activeClass) {
@@ -300,32 +280,9 @@ const ClassOverview: React.FC = () => {
 
 
   if (loading && !classStats) {
-    return (
-      <div className="flex-1 space-y-6 bg-bg-base p-6">
-        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-xs">
-          <div className="flex items-center gap-3">
-            <div className="relative flex h-10 w-10 items-center justify-center rounded-lg bg-primary/5 text-primary">
-              <svg className="h-5 w-5 animate-spin" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-20" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-80" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-              </svg>
-            </div>
-            <div className="min-w-0">
-              <h1 className="text-sm font-bold text-text-primary">{loadingMessages[loadingMessageIndex]}</h1>
-              <p className="mt-1 text-xs font-medium text-secondary">This may take a moment while EduGuard prepares class analytics.</p>
-            </div>
-          </div>
-        </div>
-        <div className="grid grid-cols-1 gap-5 sm:grid-cols-4">
-          {[1, 2, 3, 4].map(n => <div key={n} className="h-28 animate-pulse rounded-xl bg-slate-200" />)}
-        </div>
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-          <div className="h-80 animate-pulse rounded-xl bg-slate-200" />
-          <div className="h-80 animate-pulse rounded-xl bg-slate-200" />
-        </div>
-      </div>
-    );
+    return <LoadingState label={`Loading ${activeClass} class analytics…`} />;
   }
+  if (rosterError && !classStats) return <ErrorState message={rosterError} onRetry={fetchClassDetails} />;
 
   return (
     <div className="main-content flex-1 overflow-y-auto bg-bg-base p-4 md:p-6">

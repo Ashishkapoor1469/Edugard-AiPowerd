@@ -2,12 +2,15 @@ import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import { api } from "../api";
 import type { Book } from "../types";
+import { ErrorState, LoadingState } from "../components/AsyncState";
 
 export default function Catalog({ canManage = false }: { canManage?: boolean }) {
-  const [books, setBooks] = useState<Book[]>([]); const [search, setSearch] = useState(""); const [category, setCategory] = useState(""); const [available, setAvailable] = useState(""); const [loading, setLoading] = useState(true); const [seeding, setSeeding] = useState(false);
-  const load = async () => { setLoading(true); try { const r = await api.get("/api/catalog", { params: { search: search || undefined, category: category || undefined, available: available || undefined, limit: 60 } }); setBooks(r.data.data.items); } catch { toast.error("Catalog could not be loaded"); } finally { setLoading(false); } };
+  const [books, setBooks] = useState<Book[]>([]); const [search, setSearch] = useState(""); const [category, setCategory] = useState(""); const [available, setAvailable] = useState(""); const [loading, setLoading] = useState(true); const [seeding, setSeeding] = useState(false); const [error, setError] = useState("");
+  const load = async () => { setLoading(true); setError(""); try { const r = await api.get("/api/catalog", { params: { search: search || undefined, category: category || undefined, available: available || undefined, limit: 60 } }); setBooks(r.data.data.items); } catch { setError("Catalog could not be loaded."); toast.error("Catalog could not be loaded"); } finally { setLoading(false); } };
   useEffect(() => { const timer = setTimeout(load, 250); return () => clearTimeout(timer); }, [search, category, available]);
   const addStarterBooks = async () => { setSeeding(true); try { await api.post("/api/catalog/starter"); toast.success("Starter books added to the database"); await load(); } catch (error: any) { toast.error(error.response?.data?.message || "Starter books could not be added"); } finally { setSeeding(false); } };
+  if (loading) return <LoadingState label="Loading catalog…" />;
+  if (!loading && error) return <section><div className="page-heading"><div><h1>Library catalog</h1><p>Search your college collection.</p></div></div><ErrorState message={error} onRetry={load} /></section>;
   const categories = [...new Set(books.map(x => x.category).filter(Boolean))].sort();
   return <section><div className="page-heading"><div><h1>Library catalog</h1><p>Search your college collection.</p></div></div>
     <div className="filters"><input aria-label="Search catalog" placeholder="Title, author, ISBN or category" value={search} onChange={e => setSearch(e.target.value)} /><select value={category} onChange={e => setCategory(e.target.value)}><option value="">All categories</option>{categories.map(x => <option key={x}>{x}</option>)}</select><select value={available} onChange={e => setAvailable(e.target.value)}><option value="">Any availability</option><option value="true">Available</option><option value="false">Unavailable</option></select></div>

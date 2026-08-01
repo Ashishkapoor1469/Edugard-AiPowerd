@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import axios from "axios";
 import toast from "react-hot-toast";
 import { downloadFile } from "../utils/downloadFile.js";
+import { ErrorState, LoadingState } from "../components/AsyncState.js";
 
 const Spinner = () => (
   <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24" aria-hidden="true">
@@ -67,11 +68,11 @@ const ReportCard = () => {
 
       <div className="min-h-0 flex-1 overflow-auto rounded-xl border border-slate-200 bg-white shadow-sm">
         {error ? (
-          <div className="flex h-full min-h-64 items-center justify-center p-6 text-sm font-medium text-red-600">{error}</div>
+          <ErrorState message={error} />
         ) : html ? (
           <iframe title="Student report card" srcDoc={html} sandbox="" className="h-full min-h-[70dvh] w-full border-0" />
         ) : (
-          <div className="flex h-full min-h-64 items-center justify-center gap-3 text-sm text-slate-500"><Spinner /> Loading report card...</div>
+          <LoadingState label="Loading report card…" />
         )}
       </div>
     </main>

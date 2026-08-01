@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import toast from "react-hot-toast";
+import { ErrorState, LoadingState } from "./AsyncState.js";
 
 interface Student { _id: string; name: string; rollNo: string; classId: string; }
 interface RecordRow { record: { _id: string; studentId: string; date: string; session: string; status: string; classId: string; auditHistory: unknown[] }; student: { name: string; rollNo: string } | null; }
@@ -22,6 +23,10 @@ export default function AdminAttendancePanel({ view }: { view: "attendance" | "l
   const [correcting, setCorrecting] = useState(false);
   const [revokingId, setRevokingId] = useState<string | null>(null);
   const [correction, setCorrection] = useState<{ id: string; status: string; reason: string } | null>(null);
+  const [rosterLoading, setRosterLoading] = useState(true);
+  const [rosterError, setRosterError] = useState("");
+  const [summaryError, setSummaryError] = useState("");
+  const [leadersError, setLeadersError] = useState("");
 
   const classes = useMemo(() => [...new Set(roster.map((student) => student.classId).filter(Boolean))].sort(), [roster]);
   const studentsForClass = roster.filter((student) => !classId || student.classId === classId);
@@ -33,30 +38,34 @@ export default function AdminAttendancePanel({ view }: { view: "attendance" | "l
   };
 
   const loadRoster = async () => {
-    const response = await axios.get("/api/attendance/admin/roster");
-    setRoster(response.data.data || []);
+    setRosterLoading(true); setRosterError("");
+    try { const response = await axios.get("/api/attendance/admin/roster"); setRoster(response.data.data || []); }
+    catch { setRosterError("Failed to load roster."); toast.error("Failed to load roster"); }
+    finally { setRosterLoading(false); }
   };
   const loadSummary = async () => {
     setLoadingSummary(true);
+    setSummaryError("");
     try {
       const response = await axios.get("/api/attendance/admin/summary", { params: { classId: classId || undefined, date, session: session || undefined } });
       setSummary(response.data.summary);
       setRecords(response.data.data || []);
-    } catch { toast.error("Failed to load attendance summary"); }
+    } catch { setSummaryError("Failed to load attendance summary."); toast.error("Failed to load attendance summary"); }
     finally { setLoadingSummary(false); }
   };
   const loadLeaders = async () => {
     setLoadingLeaders(true);
+    setLeadersError("");
     try {
       const response = await axios.get("/api/attendance/admin/leaders");
       setLeaders(response.data.data || []);
-    } catch { toast.error("Failed to load student leaders"); }
+    } catch { setLeadersError("Failed to load student leaders."); toast.error("Failed to load student leaders"); }
     finally { setLoadingLeaders(false); }
   };
 
   // Fetch when the selected dashboard view mounts.
   // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => { loadRoster().catch(() => toast.error("Failed to load roster")); }, []);
+  useEffect(() => { loadRoster(); }, []);
   // eslint-disable-next-line react-hooks/set-state-in-effect, react-hooks/exhaustive-deps
   useEffect(() => { if (view === "attendance") loadSummary(); else loadLeaders(); }, [view]);
 
@@ -96,6 +105,8 @@ export default function AdminAttendancePanel({ view }: { view: "attendance" | "l
 
   if (view === "leaders") return (
     <div className="space-y-6">
+      {rosterLoading ? <LoadingState label="Loading student roster…" /> : rosterError ? <ErrorState message={rosterError} onRetry={loadRoster} /> : null}
+      {!loadingLeaders && leadersError && <ErrorState message={leadersError} onRetry={loadLeaders} />}
       <form onSubmit={assign} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs">
         <h2 className="text-sm font-bold text-slate-800">Assign student leader</h2>
         <p className="mb-4 mt-1 text-[10px] text-slate-500">CR remains a student account; authority is checked from the active assignment on every request.</p>
@@ -117,6 +128,8 @@ export default function AdminAttendancePanel({ view }: { view: "attendance" | "l
 
   return (
     <div className="space-y-6">
+      {rosterLoading ? <LoadingState label="Loading student roster…" /> : rosterError ? <ErrorState message={rosterError} onRetry={loadRoster} /> : null}
+      {!loadingSummary && summaryError && <ErrorState message={summaryError} onRetry={loadSummary} />}
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs">
         <div className="grid gap-3 md:grid-cols-4">
           <select aria-label="Class filter" value={classId} onChange={(e) => setClassId(e.target.value)} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs"><option value="">All classes</option>{classes.map((name) => <option key={name}>{name}</option>)}</select>

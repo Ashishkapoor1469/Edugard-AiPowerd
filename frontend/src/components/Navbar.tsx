@@ -6,6 +6,7 @@ import socket from "../utils/socket.js";
 import toast from "react-hot-toast";
 import eduGuardBrand from "../assets/e-witheduguardtext.png";
 import { listLoadError } from "../utils/apiErrors.js";
+import { LoadingState } from "./AsyncState.js";
 
 interface SearchStudent {
   _id: string;
@@ -39,6 +40,8 @@ const Navbar: React.FC = () => {
   const [showBellDropdown, setShowBellDropdown] = useState(false);
   const [showProfileDropdown, setShowProfileDropdown] = useState(false);
   const [notificationsError, setNotificationsError] = useState("");
+  const [notificationsLoading, setNotificationsLoading] = useState(false);
+  const [markingAll, setMarkingAll] = useState(false);
 
   const bellRef = useRef<HTMLDivElement>(null);
   const profileRef = useRef<HTMLDivElement>(null);
@@ -81,6 +84,7 @@ const Navbar: React.FC = () => {
 
   // Fetch notifications
   const fetchNotifications = async () => {
+    setNotificationsLoading(true);
     setNotificationsError("");
     try {
       const res = await axios.get("/api/notifications");
@@ -91,7 +95,7 @@ const Navbar: React.FC = () => {
     } catch (err: unknown) {
       console.error("Failed to fetch notifications:", err);
       setNotificationsError(listLoadError(err, "Failed to load notifications."));
-    }
+    } finally { setNotificationsLoading(false); }
   };
 
   useEffect(() => {
@@ -191,14 +195,15 @@ const Navbar: React.FC = () => {
   };
 
   const markAllAsRead = async () => {
+    setMarkingAll(true);
     try {
       await axios.patch("/api/notifications/read-all");
-      fetchNotifications();
+      await fetchNotifications();
       setShowBellDropdown(false);
       toast.success("All marked as read");
     } catch (err) {
       console.error(err);
-    }
+    } finally { setMarkingAll(false); }
   };
 
   const riskBadgeClass = (level: string) => {
@@ -338,14 +343,17 @@ const Navbar: React.FC = () => {
                 {unreadCount > 0 && (
                   <button
                     onClick={markAllAsRead}
+                    disabled={markingAll}
                     className="text-[11px] font-semibold text-primary hover:underline"
                   >
-                    Mark all read
+                    {markingAll ? "Marking…" : "Mark all read"}
                   </button>
                 )}
               </div>
               <div className="max-h-64 overflow-y-auto">
-                {notificationsError ? (
+                {notificationsLoading ? (
+                  <LoadingState label="Loading notifications…" compact />
+                ) : notificationsError ? (
                   <div role="alert" className="px-4 py-6 text-center text-xs text-amber-700">{notificationsError}</div>
                 ) : notifications.length === 0 ? (
                   <div className="px-4 py-6 text-center text-xs text-slate-400">No alerts found</div>

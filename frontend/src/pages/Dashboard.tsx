@@ -5,6 +5,7 @@ import { useDropzone } from "react-dropzone";
 import toast from "react-hot-toast";
 import { listLoadError } from "../utils/apiErrors.js";
 import { downloadFile } from "../utils/downloadFile.js";
+import { ErrorState, LoadingState } from "../components/AsyncState.js";
 
 interface Student {
   _id: string;
@@ -58,7 +59,10 @@ const Dashboard: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [studentsError, setStudentsError] = useState("");
   const [pendingError, setPendingError] = useState("");
+  const [pendingLoading, setPendingLoading] = useState(true);
   const [assignmentsError, setAssignmentsError] = useState("");
+  const [assignmentsLoading, setAssignmentsLoading] = useState(false);
+  const [approvingId, setApprovingId] = useState("");
   const studentsRequestId = useRef(0);
   
   // Table Filters
@@ -67,7 +71,7 @@ const Dashboard: React.FC = () => {
   const [totalPages, setTotalPages] = useState(1);
 
   // Upload State
-  const [, setUploading] = useState(false);
+  const [uploading, setUploading] = useState(false);
 
   // Assignments States
   const [assignments, setAssignments] = useState<Assignment[]>([]);
@@ -82,6 +86,9 @@ const Dashboard: React.FC = () => {
   const [gradeScore, setGradeScore] = useState("");
   const [gradeFeedback, setGradeFeedback] = useState("");
   const [gradingSubId, setGradingSubId] = useState("");
+  const [creatingAssignment, setCreatingAssignment] = useState(false);
+  const [loadingSubmissions, setLoadingSubmissions] = useState(false);
+  const [grading, setGrading] = useState(false);
 
   // AI Study Planner States
   const [plannerStudentId, setPlannerStudentId] = useState("");
@@ -90,6 +97,7 @@ const Dashboard: React.FC = () => {
   const [plannerExams, setPlannerExams] = useState("");
   const [generatedPlan, setGeneratedPlan] = useState("");
   const [generatingPlan, setGeneratingPlan] = useState(false);
+  const [sendingPlan, setSendingPlan] = useState(false);
   const [showExcelHelp, setShowExcelHelp] = useState(false);
 
   // Report Card states
@@ -97,6 +105,7 @@ const Dashboard: React.FC = () => {
   const [rcGenerating, setRcGenerating] = useState(false);
   const [rcJobs, setRcJobs] = useState<any[]>([]);
   const [rcLoadingJobs, setRcLoadingJobs] = useState(false);
+  const [rcJobsError, setRcJobsError] = useState("");
   const STATS_CACHE_KEY = "eduguard_dashboard_stats";
   const STATS_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
@@ -158,6 +167,7 @@ const Dashboard: React.FC = () => {
   };
 
   const fetchPendingStudents = async () => {
+    setPendingLoading(true);
     setPendingError("");
     try {
       // Fetch students pending mentor verification
@@ -172,10 +182,11 @@ const Dashboard: React.FC = () => {
     } catch (err: unknown) {
       console.error(err);
       setPendingError(listLoadError(err, "Failed to load pending enrollments."));
-    }
+    } finally { setPendingLoading(false); }
   };
 
   const fetchAssignments = async () => {
+    setAssignmentsLoading(true);
     setAssignmentsError("");
     try {
       const res = await axios.get("/api/students/assignments", {
@@ -185,7 +196,7 @@ const Dashboard: React.FC = () => {
     } catch (err: unknown) {
       console.error(err);
       setAssignmentsError(listLoadError(err, "Failed to load assignments."));
-    }
+    } finally { setAssignmentsLoading(false); }
   };
 
   useEffect(() => {
@@ -203,15 +214,16 @@ const Dashboard: React.FC = () => {
 
   // Actions
   const handleApproveStudent = async (id: string, approve: boolean) => {
+    setApprovingId(id);
     try {
       const res = await axios.post(`/api/students/${id}/verify`, { approve });
       if (res.data.success) {
         toast.success(approve ? "Student enrollment approved!" : "Enrollment rejected.");
-        fetchPendingStudents();
+        await fetchPendingStudents();
       }
     } catch (err) {
       toast.error("Action failed");
-    }
+    } finally { setApprovingId(""); }
   };
 
   // Dropzone Excel upload
@@ -241,6 +253,7 @@ const Dashboard: React.FC = () => {
 
   const { getRootProps, getInputProps } = useDropzone({
     onDrop,
+    disabled: uploading,
     accept: { "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [".xlsx"] },
     multiple: false,
   });
@@ -248,6 +261,7 @@ const Dashboard: React.FC = () => {
   // Assignments Actions
   const handleCreateAssignment = async (e: React.FormEvent) => {
     e.preventDefault();
+    setCreatingAssignment(true);
     try {
       const res = await axios.post("/api/students/assignments", {
         title: newAsgnTitle,
@@ -262,25 +276,27 @@ const Dashboard: React.FC = () => {
         setNewAsgnTitle("");
         setNewAsgnDesc("");
         setNewAsgnInstructions("");
-        fetchAssignments();
+        await fetchAssignments();
       }
     } catch (err) {
       toast.error("Failed to create assignment");
-    }
+    } finally { setCreatingAssignment(false); }
   };
 
   const fetchSubmissions = async (asgnId: string) => {
     setSelectedAsgnId(asgnId);
+    setLoadingSubmissions(true);
     try {
       const res = await axios.get(`/api/students/assignments/${asgnId}/submissions`);
       if (res.data.success) setSubmissions(res.data.data);
     } catch (err) {
       toast.error("Failed to retrieve submissions");
-    }
+    } finally { setLoadingSubmissions(false); }
   };
 
   const handleGradeSubmission = async (e: React.FormEvent) => {
     e.preventDefault();
+    setGrading(true);
     try {
       const res = await axios.post(`/api/students/submissions/${gradingSubId}/grade`, {
         grade: gradeScore,
@@ -291,11 +307,11 @@ const Dashboard: React.FC = () => {
         setGradingSubId("");
         setGradeScore("");
         setGradeFeedback("");
-        fetchSubmissions(selectedAsgnId);
+        await fetchSubmissions(selectedAsgnId);
       }
     } catch (err) {
       toast.error("Grading failed");
-    }
+    } finally { setGrading(false); }
   };
 
   // AI Study Planner Actions
@@ -326,6 +342,7 @@ const Dashboard: React.FC = () => {
 
   const handleSendPlannerToStudent = async () => {
     // Mentors can edit generated plan before saving
+    setSendingPlan(true);
     try {
       await axios.patch(`/api/students/${plannerStudentId}`, {
         aiImprovementPlan: generatedPlan,
@@ -335,7 +352,7 @@ const Dashboard: React.FC = () => {
       setPlannerStudentId("");
     } catch (err) {
       toast.error("Failed to save plan");
-    }
+    } finally { setSendingPlan(false); }
   };
 
   return (
@@ -349,9 +366,9 @@ const Dashboard: React.FC = () => {
 
         {/* Excel Import Card */}
         <div className="flex items-center gap-2 max-w-xs w-full">
-          <div {...getRootProps()} className="flex-1 border border-dashed border-[#dadce0] rounded-xl px-4 py-3 bg-slate-50/50 hover:bg-slate-50 cursor-pointer transition-colors text-center">
+          <div {...getRootProps()} aria-busy={uploading} className="flex-1 border border-dashed border-[#dadce0] rounded-xl px-4 py-3 bg-slate-50/50 hover:bg-slate-50 cursor-pointer transition-colors text-center">
             <input {...getInputProps()} />
-            <span className="text-xs font-semibold text-[#12274E]">Upload Student Excel Roster</span>
+            <span className="text-xs font-semibold text-[#12274E]">{uploading ? "Uploading roster…" : "Upload Student Excel Roster"}</span>
             <p className="text-[10px] text-[#5f6368] mt-0.5">Drag and drop .xlsx file to import / merge grades</p>
           </div>
           <button
@@ -525,46 +542,9 @@ const Dashboard: React.FC = () => {
             </div>
 
             {loading ? (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse text-sm min-w-[700px]">
-                  <thead>
-                    <tr className="border-b border-[#dadce0] text-[#5f6368] font-medium">
-                      <th className="py-3 px-4 whitespace-nowrap">Roll No</th>
-                      <th className="py-3 px-4 whitespace-nowrap">Name</th>
-                      <th className="py-3 px-4 whitespace-nowrap">Class</th>
-                      <th className="py-3 px-4 whitespace-nowrap">Attendance</th>
-                      <th className="py-3 px-4 whitespace-nowrap">Risk Status</th>
-                      <th className="py-3 px-4 text-right whitespace-nowrap">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {[1, 2, 3, 4, 5, 6].map((row) => (
-                      <tr key={row} className="border-b border-slate-50">
-                        <td className="py-3 px-4 whitespace-nowrap">
-                          <div className="h-4 w-16 animate-pulse rounded bg-slate-100" />
-                        </td>
-                        <td className="py-3 px-4 whitespace-nowrap">
-                          <div className="h-4 w-36 animate-pulse rounded bg-slate-100" />
-                        </td>
-                        <td className="py-3 px-4 whitespace-nowrap">
-                          <div className="h-4 w-20 animate-pulse rounded bg-slate-100" />
-                        </td>
-                        <td className="py-3 px-4 whitespace-nowrap">
-                          <div className="h-4 w-14 animate-pulse rounded bg-slate-100" />
-                        </td>
-                        <td className="py-3 px-4 whitespace-nowrap">
-                          <div className="h-5 w-20 animate-pulse rounded-full bg-slate-100" />
-                        </td>
-                        <td className="py-3 px-4 whitespace-nowrap">
-                          <div className="ml-auto h-4 w-24 animate-pulse rounded bg-slate-100" />
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <LoadingState label="Loading students…" />
             ) : studentsError ? (
-              <div role="alert" className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-6 text-center text-sm text-amber-800">{studentsError}<button type="button" onClick={() => fetchStudents()} className="ml-2 font-bold underline">Try again</button></div>
+              <ErrorState message={studentsError} onRetry={() => fetchStudents()} />
             ) : students.length === 0 ? (
               <p className="text-sm text-center py-10 text-[#5f6368] italic">No matching student records found.</p>
             ) : (
@@ -637,8 +617,10 @@ const Dashboard: React.FC = () => {
         {activeTab === "enrollments" && (
           <div className="rounded-2xl border border-[#dadce0] bg-white p-6 shadow-sm">
             <h2 className="text-lg font-semibold text-[#202124] mb-4">Pending Student Registrations</h2>
-            {pendingError ? (
-              <div role="alert" className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-6 text-center text-sm text-amber-800">{pendingError}<button type="button" onClick={fetchPendingStudents} className="ml-2 font-bold underline">Try again</button></div>
+            {pendingLoading ? (
+              <LoadingState label="Loading pending enrollments…" compact />
+            ) : pendingError ? (
+              <ErrorState message={pendingError} onRetry={fetchPendingStudents} compact />
             ) : pendingStudents.length === 0 ? (
               <p className="text-sm text-[#5f6368] py-8 text-center italic">No pending enrollment requests.</p>
             ) : (
@@ -661,15 +643,17 @@ const Dashboard: React.FC = () => {
                         <td className="py-3.5 px-4 text-right flex justify-end gap-2">
                           <button
                             onClick={() => handleApproveStudent(s._id, true)}
+                            disabled={!!approvingId}
                             className="bg-[#12274E] text-white px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-[#0B1830] transition-colors"
                           >
-                            Approve
+                            {approvingId === s._id ? "Updating…" : "Approve"}
                           </button>
                           <button
                             onClick={() => handleApproveStudent(s._id, false)}
+                            disabled={!!approvingId}
                             className="bg-white border border-[#dadce0] text-[#d93025] px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-red-50 transition-colors"
                           >
-                            Reject
+                            {approvingId === s._id ? "Updating…" : "Reject"}
                           </button>
                         </td>
                       </tr>
@@ -742,8 +726,8 @@ const Dashboard: React.FC = () => {
                     className="w-full rounded-lg border border-[#dadce0] px-3.5 py-2 text-sm focus:border-primary focus:outline-none"
                   />
                 </div>
-                <button type="submit" className="w-full bg-[#12274E] text-white py-2.5 rounded-lg text-sm font-semibold hover:bg-[#0B1830] transition-colors">
-                  Publish Assignment Link
+                <button type="submit" disabled={creatingAssignment} className="w-full bg-[#12274E] text-white py-2.5 rounded-lg text-sm font-semibold hover:bg-[#0B1830] transition-colors">
+                  {creatingAssignment ? "Publishing…" : "Publish Assignment Link"}
                 </button>
               </form>
             </div>
@@ -752,8 +736,10 @@ const Dashboard: React.FC = () => {
             <div className="rounded-2xl border border-[#dadce0] bg-white p-6 shadow-sm flex flex-col gap-6">
               <div>
                 <h2 className="text-lg font-semibold text-[#202124] mb-3">Evaluate Submissions</h2>
-                {assignmentsError ? (
-                  <p role="alert" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">{assignmentsError}</p>
+                {assignmentsLoading ? (
+                  <LoadingState label="Loading assignments…" compact />
+                ) : assignmentsError ? (
+                  <ErrorState message={assignmentsError} onRetry={fetchAssignments} compact />
                 ) : assignments.length === 0 ? (
                   <p className="text-xs text-[#5f6368] italic">No assignments active.</p>
                 ) : (
@@ -778,7 +764,7 @@ const Dashboard: React.FC = () => {
               {selectedAsgnId && (
                 <div className="flex-1">
                   <h3 className="text-sm font-bold text-[#202124] mb-2">Student Submissions</h3>
-                  {submissions.length === 0 ? (
+                  {loadingSubmissions ? <LoadingState label="Loading submissions…" compact /> : submissions.length === 0 ? (
                     <p className="text-xs text-[#5f6368] py-4 italic">No uploads received yet.</p>
                   ) : (
                     <div className="space-y-4">
@@ -830,8 +816,8 @@ const Dashboard: React.FC = () => {
                                   className="col-span-2 border rounded-lg px-2.5 py-1 text-xs focus:outline-none"
                                 />
                               </div>
-                              <button type="submit" className="bg-[#12274E] text-white px-3 py-1 rounded-lg text-[10px] font-bold hover:bg-[#0B1830]">
-                                Submit Score
+                              <button type="submit" disabled={grading} className="bg-[#12274E] text-white px-3 py-1 rounded-lg text-[10px] font-bold hover:bg-[#0B1830]">
+                                {grading ? "Submitting…" : "Submit Score"}
                               </button>
                             </form>
                           )}
@@ -918,9 +904,10 @@ const Dashboard: React.FC = () => {
                     <span className="text-xs font-bold text-[#202124]">Review and Edit Study Plan (Markdown Box)</span>
                     <button
                       onClick={handleSendPlannerToStudent}
+                      disabled={sendingPlan}
                       className="bg-green-700 text-white px-3.5 py-1.5 rounded-lg text-xs font-semibold hover:bg-green-800 transition-colors"
                     >
-                      Deliver Plan to Student Profile
+                      {sendingPlan ? "Delivering…" : "Deliver Plan to Student Profile"}
                     </button>
                   </div>
                   <textarea
@@ -949,13 +936,14 @@ const Dashboard: React.FC = () => {
                   onChange={(e) => {
                     setRcStudentId(e.target.value);
                     if (e.target.value) {
-                      setRcLoadingJobs(true);
+                      setRcLoadingJobs(true); setRcJobsError("");
                       axios.get(`/api/students/${e.target.value}/report-card/jobs`)
                         .then(res => { if (res.data.success) setRcJobs(res.data.data); })
-                        .catch(console.error)
+                        .catch((error) => { console.error(error); setRcJobsError("Failed to load report card history."); })
                         .finally(() => setRcLoadingJobs(false));
                     } else {
                       setRcJobs([]);
+                      setRcJobsError("");
                     }
                   }}
                   className="flex-1 rounded-lg border border-[#dadce0] px-3 py-2.5 text-xs focus:border-[#12274E] focus:outline-hidden bg-white font-medium"
@@ -1015,9 +1003,9 @@ const Dashboard: React.FC = () => {
               <div className="bg-white border border-[#dadce0] rounded-2xl p-6 shadow-sm">
                 <h3 className="text-sm font-semibold text-[#202124] mb-4">Report Card History</h3>
                 {rcLoadingJobs ? (
-                  <div className="space-y-3">
-                    {[1,2].map(i => <div key={i} className="h-14 rounded-xl bg-slate-100 animate-pulse" />)}
-                  </div>
+                  <LoadingState label="Loading report card history…" compact />
+                ) : rcJobsError ? (
+                  <ErrorState message={rcJobsError} compact />
                 ) : rcJobs.length === 0 ? (
                   <p className="text-xs text-[#5f6368] italic text-center py-8">No report cards generated for this student yet.</p>
                 ) : (

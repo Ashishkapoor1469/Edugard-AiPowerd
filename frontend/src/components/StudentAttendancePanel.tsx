@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import toast from "react-hot-toast";
 import CRBadge from "./CRBadge.js";
+import { ErrorState, LoadingState } from "./AsyncState.js";
 
 type Status = "present" | "absent" | "leave";
 interface RosterStudent { _id: string; name: string; rollNo: string; classId: string; }
@@ -26,6 +27,7 @@ export default function StudentAttendancePanel() {
   const [statuses, setStatuses] = useState<Record<string, Status | "">>({});
   const [submitting, setSubmitting] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
   const [refreshing, setRefreshing] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [month, setMonth] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
@@ -38,6 +40,7 @@ export default function StudentAttendancePanel() {
 
   const load = async (force = false) => {
     setLoading(true);
+    setError("");
     try {
       const cached = force ? null : readCache();
       const [contextResponse, historyResponse] = await Promise.all([axios.get("/api/attendance/context"), cached ? Promise.resolve(null) : axios.get("/api/attendance/history")]);
@@ -47,7 +50,7 @@ export default function StudentAttendancePanel() {
       setHistory(nextHistory);
       setPercentage(nextPercentage);
       if (!cached) localStorage.setItem(CACHE_KEY, JSON.stringify({ expiresAt: Date.now() + ONE_DAY, history: nextHistory, percentage: nextPercentage, refreshes: readCache()?.refreshes || 0 }));
-    } catch { toast.error("Failed to load attendance"); }
+    } catch { setError("Failed to load attendance."); toast.error("Failed to load attendance"); }
     finally { setLoading(false); }
   };
 
@@ -106,7 +109,8 @@ export default function StudentAttendancePanel() {
     }
   };
 
-  if (loading && !context) return <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-xs text-slate-500">Loading attendance…</div>;
+  if (loading && !context) return <LoadingState label="Loading attendance…" />;
+  if (error && !context) return <ErrorState message={error} onRetry={() => load(true)} />;
 
   return (
     <div className="space-y-6">
@@ -142,7 +146,7 @@ export default function StudentAttendancePanel() {
           <div className="overflow-x-auto rounded-xl border border-slate-100"><table className="w-full text-left text-xs"><thead className="bg-slate-50 text-[10px] uppercase tracking-wider text-slate-500"><tr><th className="px-4 py-3">Student</th><th className="px-4 py-3">Roll no.</th><th className="px-4 py-3">Status</th></tr></thead><tbody className="divide-y divide-slate-100">
             {context.roster.map((student) => <tr key={student._id}><td className="px-4 py-3 font-semibold text-slate-800">{student.name}</td><td className="px-4 py-3 text-slate-500">{student.rollNo}</td><td className="px-4 py-3"><div className="flex items-center gap-2"><select aria-label={`Attendance status for ${student.name}`} disabled={!(context.canMark || context.canUpdate) || submitting} required value={statuses[student._id] || ""} onChange={(event) => setStatuses((current) => ({ ...current, [student._id]: event.target.value as Status }))} className="rounded-lg border border-slate-200 bg-white px-3 py-1.5"><option value="">Select</option><option value="present">Present</option><option value="absent">Absent</option><option value="leave">Leave</option></select>{syncing && <span className="text-[10px] font-semibold text-amber-600">Syncing…</span>}</div></td></tr>)}
           </tbody></table></div>
-          <div className="mt-4 flex flex-wrap gap-2">{context.canMark && <button type="button" onClick={() => save(false)} disabled={!complete || submitting} className="rounded-lg bg-primary px-4 py-2 text-xs font-bold text-white disabled:bg-slate-300">{submitting ? "Finalizing…" : "Finalize full roster"}</button>}{context.canUpdate && <button type="button" onClick={() => save(true)} disabled={!complete || submitting} className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-xs font-bold text-amber-800 disabled:opacity-50">{submitting ? "Updating…" : "Update / Change"}</button>}</div>
+          <div className="mt-4 flex flex-wrap gap-2">{context.canMark && <button type="button" onClick={() => save(false)} disabled={!complete || submitting} className="rounded-lg bg-primary px-4 py-2 text-xs font-bold text-white disabled:bg-slate-300">Finalize full roster</button>}{context.canUpdate && <button type="button" onClick={() => save(true)} disabled={!complete || submitting} className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-xs font-bold text-amber-800 disabled:opacity-50">{submitting ? "Updating…" : "Update / Change"}</button>}</div>
         </form>
       )}
     </div>
