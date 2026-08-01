@@ -157,8 +157,11 @@ public sealed class LmsIntegrationController : ControllerBase
         return CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(supplied), Encoding.UTF8.GetBytes(_serviceKey));
     }
 
-    private async Task<bool> IsCollegeAdminAsync(string actorId, string collegeId, CancellationToken token) =>
-        await _mongo.Admins.Find(x => x.Id == actorId && x.CollegeId == collegeId && x.Role == "college-admin" && x.Status == "active").AnyAsync(token);
+    private async Task<bool> IsCollegeAdminAsync(string actorId, string collegeId, CancellationToken token)
+    {
+        var admin = await _mongo.Admins.Find(x => x.Id == actorId).FirstOrDefaultAsync(token);
+        return admin is { Role: "college-admin", Status: "active" } && admin.CollegeId == collegeId;
+    }
 }
 
 public sealed record CreateLibrarianRequest(string ActorId, string Name, string Email, string Password);

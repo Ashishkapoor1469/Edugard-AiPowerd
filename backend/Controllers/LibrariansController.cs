@@ -63,10 +63,12 @@ public sealed class LibrariansController : ControllerBase
         return null;
     }
 
-    private Task<Admin?> CurrentAdmin(CancellationToken token)
+    private async Task<Admin?> CurrentAdmin(CancellationToken token)
     {
         var id = User.FindFirst("id")?.Value;
-        return _mongo.Admins.Find(x => x.Id == id && x.Role == "college-admin" && x.Status == "active").FirstOrDefaultAsync(token)!;
+        if (string.IsNullOrEmpty(id)) return null;
+        var admin = await _mongo.Admins.Find(x => x.Id == id).FirstOrDefaultAsync(token);
+        return admin is { Role: "college-admin", Status: "active" } ? admin : null;
     }
 }
 

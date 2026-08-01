@@ -594,7 +594,8 @@ namespace EduGuard.Controllers
             if (string.IsNullOrEmpty(userId) || string.IsNullOrEmpty(role)) return Unauthorized();
 
             string? collegeId = null, name = null, email = null;
-            var user = await _mongoService.Admins.Find(x => x.Id == userId && x.Role == role && x.Status == "active").FirstOrDefaultAsync();
+            var user = await _mongoService.Admins.Find(x => x.Id == userId).FirstOrDefaultAsync();
+            if (user is null || user.Role != role || user.Status != "active") return Unauthorized();
             (collegeId, name, email) = (user?.CollegeId, user?.Name, user?.Email);
             if (string.IsNullOrEmpty(collegeId) || string.IsNullOrEmpty(name) || string.IsNullOrEmpty(email))
                 return BadRequest(new { success = false, message = "A college-scoped EduGuard account is required for LMS access." });
