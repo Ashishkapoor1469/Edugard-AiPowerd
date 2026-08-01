@@ -1,8 +1,9 @@
 import axios, { type AxiosResponse, type InternalAxiosRequestConfig } from "axios";
 
 const TTL_MS = 60 * 1000;
+const PROFILE_TTL_MS = 5 * 60 * 1000;
 const PREFIX = "eduguard:http-cache:";
-const SAFE_GETS = ["/api/admin/colleges", "/api/admin/degrees", "/api/college-admin/syllabus"];
+const SAFE_GETS = ["/api/admin/colleges", "/api/admin/degrees", "/api/college-admin/syllabus", "/api/library/students/", "/api/attendance/student/"];
 let installed = false;
 
 type CachedResponse = {
@@ -23,7 +24,10 @@ const stableStringify = (value: unknown): string => {
 };
 
 const cacheKey = (config: InternalAxiosRequestConfig) =>
-  `${PREFIX}${config.url || ""}:${stableStringify(config.params)}`;
+  `${PREFIX}${(localStorage.getItem("token") || "none").slice(-12)}:${config.url || ""}:${stableStringify(config.params)}`;
+
+const ttl = (config: InternalAxiosRequestConfig) =>
+  config.url?.startsWith("/api/library/students/") || config.url?.startsWith("/api/attendance/student/") ? PROFILE_TTL_MS : TTL_MS;
 
 const isCacheable = (config: InternalAxiosRequestConfig) =>
   config.method?.toLowerCase() === "get" &&
@@ -42,7 +46,7 @@ export const installHttpCache = () => {
 
     try {
       const parsed: CachedResponse = JSON.parse(cached);
-      if (Date.now() - parsed.timestamp > TTL_MS) {
+      if (Date.now() - parsed.timestamp > ttl(config)) {
         sessionStorage.removeItem(cacheKey(config));
         return config;
       }
