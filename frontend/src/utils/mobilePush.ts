@@ -17,7 +17,7 @@ const saveDeviceToken = async (token: string) => {
 };
 
 export async function initializeMobilePush() {
-  if (!Capacitor.isNativePlatform() || import.meta.env.VITE_PUSH_ENABLED !== "true") return;
+  if (!Capacitor.isNativePlatform()) return;
 
   try {
     if (!initialized) {

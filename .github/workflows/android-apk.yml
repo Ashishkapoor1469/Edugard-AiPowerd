@@ -39,7 +39,6 @@ jobs:
         run: npm run build
         env:
           VITE_API_URL: https://edugard-aipowerd.onrender.com
-          VITE_PUSH_ENABLED: ${{ secrets.FIREBASE_GOOGLE_SERVICES_JSON != '' }}
 
       - name: Configure Firebase
         env:
@@ -48,7 +47,8 @@ jobs:
           if [ -n "$GOOGLE_SERVICES_JSON" ]; then
             printf '%s' "$GOOGLE_SERVICES_JSON" > android/app/google-services.json
           else
-            echo "::warning::FIREBASE_GOOGLE_SERVICES_JSON is not configured; APK push registration will be disabled."
+            echo "::error::FIREBASE_GOOGLE_SERVICES_JSON is required; refusing to publish an APK with push disabled."
+            exit 1
           fi
 
       - name: Sync Capacitor
