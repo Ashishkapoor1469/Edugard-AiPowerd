@@ -7,7 +7,7 @@ using MongoDB.Driver;
 
 namespace EduGuard.Controllers;
 
-[ApiController, Authorize(Roles = "college-admin"), Route("api/librarians")]
+[ApiController, Authorize, Route("api/librarians")]
 public sealed class LibrariansController : ControllerBase
 {
     private readonly MongoService _mongo;
