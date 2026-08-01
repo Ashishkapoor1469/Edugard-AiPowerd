@@ -32,7 +32,7 @@ export default function App() {
   const home = user.role === "librarian" ? "/dashboard" : "/admin";
   return <Layout user={user}><Routes>
     <Route path="/" element={<Navigate to={home} replace />} />
-    <Route path="/catalog" element={<Catalog />} />
+    <Route path="/catalog" element={<Catalog canManage={user.role === "librarian"} />} />
     <Route path="/dashboard" element={user.role === "librarian" ? <LibrarianDashboard user={user} /> : <Navigate to={home} />} />
     <Route path="/admin" element={user.role === "college-admin" ? <CollegeAdminLibrary user={user} /> : <Navigate to={home} />} />
     <Route path="*" element={<Navigate to={home} />} />
