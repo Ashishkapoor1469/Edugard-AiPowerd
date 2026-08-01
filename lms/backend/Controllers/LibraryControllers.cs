@@ -121,7 +121,7 @@ public sealed class CirculationController : ControllerBase
     { var actor = AuthController.Actor(User); var data = (await _repo.ListIssuancesAsync(actor.CollegeId, "active", null, token)).Where(x => x.DueDate.Date < DateTime.UtcNow.Date); return Ok(new { success = true, data }); }
 
     [HttpPost("issue"), Authorize(Roles = "librarian")]
-    public async Task<IActionResult> Issue([FromBody] IssueRequest request, CancellationToken token) => Ok(new { success = true, data = await _service.IssueAsync(AuthController.Actor(User), request.StudentId, request.BookId, Key, token) });
+    public async Task<IActionResult> Issue([FromBody] IssueRequest request, CancellationToken token) => Ok(new { success = true, data = await _service.IssueAsync(AuthController.Actor(User), request.StudentId, request.BookId, request.LoanDays, Key, token) });
     [HttpPost("{id}/return"), Authorize(Roles = "librarian")]
     public async Task<IActionResult> Return(string id, CancellationToken token) => Ok(new { success = true, data = await _service.ReturnAsync(AuthController.Actor(User), id, Key, token) });
     [HttpPost("{id}/renew"), Authorize(Roles = "librarian")]
@@ -129,13 +129,13 @@ public sealed class CirculationController : ControllerBase
 
     [HttpPost("reservations"), Authorize(Roles = "librarian")]
     public async Task<IActionResult> Reserve([FromBody] ReserveRequest request, CancellationToken token)
-    { var actor = AuthController.Actor(User); return Ok(new { success = true, data = await _service.ReserveAsync(actor, request.StudentId, request.BookId, Key, token) }); }
+    { var actor = AuthController.Actor(User); return Ok(new { success = true, data = await _service.ReserveAsync(actor, request.StudentId, request.BookId, request.LoanDays, Key, token) }); }
     [HttpGet("reservations"), Authorize(Roles = "librarian,college-admin")]
     public async Task<IActionResult> Reservations([FromQuery] string? status, CancellationToken token)
     { var actor = AuthController.Actor(User); return Ok(new { success = true, data = await _repo.ReservationsAsync(actor.CollegeId, null, null, status, token) }); }
     [HttpDelete("reservations/{id}"), Authorize(Roles = "librarian")]
     public async Task<IActionResult> Cancel(string id, CancellationToken token)
-    { var actor = AuthController.Actor(User); await _repo.CancelReservationAsync(actor.CollegeId, id, token); return Ok(new { success = true }); }
+    { if (!ObjectId.TryParse(id, out _)) return BadRequest(new { success = false, message = "Invalid reservation ID." }); var actor = AuthController.Actor(User); await _repo.CancelReservationAsync(actor.CollegeId, id, token); return Ok(new { success = true }); }
 }
 
 [ApiController, Authorize, Route("api/students")]
@@ -257,15 +257,15 @@ public sealed class EduGuardCompatibilityController : ControllerBase
     { if (!Authorized()) return Unauthorized(); var identity = await _eduguard.IdentityAsync(studentId, token); var actor = new LmsActor("eduguard", "college-admin", identity.CollegeId, "EduGuard", ""); var issued = await _service.IssuedAsync(actor, studentId, true, token); return Ok(new { data = issued.Select(x => new { bookId = x.BookId, title = x.BookTitle, issueDate = x.IssueDate, dueDate = x.DueDate, status = x.Status }) }); }
     [HttpPost("students/{studentId}/issue")]
     public async Task<IActionResult> Issue(string studentId, [FromBody] CompatibilityBook book, CancellationToken token)
-    { if (!Authorized()) return Unauthorized(); var identity = await _eduguard.IdentityAsync(studentId, token); var actor = new LmsActor("eduguard", "librarian", identity.CollegeId, "EduGuard", ""); var issued = await _service.IssueAsync(actor, studentId, book.BookId, $"compat-issue:{studentId}:{book.BookId}:{book.IssueDate.Ticks}", token); return Ok(new { data = new { bookId = issued.BookId, title = issued.BookTitle, issueDate = issued.IssueDate, dueDate = issued.DueDate, status = issued.Status } }); }
+    { if (!Authorized()) return Unauthorized(); var identity = await _eduguard.IdentityAsync(studentId, token); var actor = new LmsActor("eduguard", "librarian", identity.CollegeId, "EduGuard", ""); var issued = await _service.IssueAsync(actor, studentId, book.BookId, 15, $"compat-issue:{studentId}:{book.BookId}:{book.IssueDate.Ticks}", token); return Ok(new { data = new { bookId = issued.BookId, title = issued.BookTitle, issueDate = issued.IssueDate, dueDate = issued.DueDate, status = issued.Status } }); }
     [HttpPost("students/{studentId}/return")]
     public async Task<IActionResult> Return(string studentId, [FromBody] CompatibilityReturn request, CancellationToken token)
     { if (!Authorized()) return Unauthorized(); var identity = await _eduguard.IdentityAsync(studentId, token); var actor = new LmsActor("eduguard", "librarian", identity.CollegeId, "EduGuard", ""); var issuance = (await _repo.StudentIssuedAsync(studentId, true, token)).FirstOrDefault(x => x.BookId == request.BookId) ?? throw new KeyNotFoundException(); var returned = await _service.ReturnAsync(actor, issuance.Id!, $"compat-return:{studentId}:{request.BookId}", token); return Ok(new { data = returned }); }
     private bool Authorized() { var supplied = Request.Headers["X-EduGuard-Service-Key"].FirstOrDefault() ?? ""; return _key.Length > 0 && supplied.Length == _key.Length && CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(supplied), Encoding.UTF8.GetBytes(_key)); }
 }
 
-public sealed record IssueRequest(string StudentId, string BookId);
-public sealed record ReserveRequest(string StudentId, string BookId);
+public sealed record IssueRequest(string StudentId, string BookId, int LoanDays = 15);
+public sealed record ReserveRequest(string StudentId, string BookId, int LoanDays = 15);
 public sealed record FineActionRequest(decimal Amount, string? Reason);
 public sealed record LibrarianRequest(string Name, string Email, string Password);
 public sealed record LibrarianStatusRequest(string Status, string? Name = null, string? Email = null, string? Password = null);

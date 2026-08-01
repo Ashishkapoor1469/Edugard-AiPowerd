@@ -56,6 +56,7 @@ public sealed class Issuance
     [BsonElement("status")] public string Status { get; set; } = "active";
     [BsonElement("issueDate")] public DateTime IssueDate { get; set; } = DateTime.UtcNow;
     [BsonElement("dueDate")] public DateTime DueDate { get; set; }
+    [BsonElement("loanDays")] public int LoanDays { get; set; } = 15;
     [BsonElement("returnedAt"), BsonIgnoreIfNull] public DateTime? ReturnedAt { get; set; }
     [BsonElement("renewalCount")] public int RenewalCount { get; set; }
     [BsonElement("activeSlot"), BsonIgnoreIfNull] public int? ActiveSlot { get; set; }
@@ -76,6 +77,7 @@ public sealed class Reservation
     [BsonElement("bookId"), BsonRepresentation(BsonType.ObjectId)] public string BookId { get; set; } = string.Empty;
     [BsonElement("studentId"), BsonRepresentation(BsonType.ObjectId)] public string StudentId { get; set; } = string.Empty;
     [BsonElement("bookTitle")] public string BookTitle { get; set; } = string.Empty;
+    [BsonElement("loanDays")] public int LoanDays { get; set; } = 15;
     [BsonElement("status")] public string Status { get; set; } = "queued";
     [BsonElement("idempotencyKey")] public string IdempotencyKey { get; set; } = string.Empty;
     [BsonElement("readyAt"), BsonIgnoreIfNull] public DateTime? ReadyAt { get; set; }

@@ -4,6 +4,7 @@ using ExcelDataReader;
 using Lms.Api.Data;
 using Lms.Api.Models;
 using Microsoft.Extensions.Caching.Distributed;
+using MongoDB.Bson;
 using MongoDB.Driver;
 
 namespace Lms.Api.Services;
@@ -162,10 +163,10 @@ public sealed class CatalogService : ICatalogService
 public interface ILibraryCirculationService
 {
     Task<IReadOnlyList<Issuance>> IssuedAsync(LmsActor actor, string studentId, bool activeOnly, CancellationToken token);
-    Task<Issuance> IssueAsync(LmsActor actor, string studentId, string bookId, string key, CancellationToken token);
+    Task<Issuance> IssueAsync(LmsActor actor, string studentId, string bookId, int loanDays, string key, CancellationToken token);
     Task<Issuance> ReturnAsync(LmsActor actor, string issuanceId, string key, CancellationToken token);
     Task<Issuance> RenewAsync(LmsActor actor, string issuanceId, string key, CancellationToken token);
-    Task<Reservation> ReserveAsync(LmsActor actor, string studentId, string bookId, string key, CancellationToken token);
+    Task<Reservation> ReserveAsync(LmsActor actor, string studentId, string bookId, int loanDays, string key, CancellationToken token);
 }
 
 public sealed class LibraryCirculationService : ILibraryCirculationService
@@ -176,39 +177,39 @@ public sealed class LibraryCirculationService : ILibraryCirculationService
     public async Task<IReadOnlyList<Issuance>> IssuedAsync(LmsActor actor, string studentId, bool activeOnly, CancellationToken token)
     { await VerifyStudentAccessAsync(actor, studentId, token); return await _repo.StudentIssuedAsync(studentId, activeOnly, token); }
 
-    public async Task<Issuance> IssueAsync(LmsActor actor, string studentId, string bookId, string key, CancellationToken token)
+    public async Task<Issuance> IssueAsync(LmsActor actor, string studentId, string bookId, int loanDays, string key, CancellationToken token)
     {
-        RequireStaff(actor); RequireKey(key); var student = await VerifyStudentAccessAsync(actor, studentId, token);
+        RequireStaff(actor); RequireKey(key); RequireObjectIds(studentId, bookId); loanDays = RequireLoanDays(loanDays); var student = await VerifyStudentAccessAsync(actor, studentId, token);
         var book = await _books.GetAsync(actor.CollegeId, bookId, token) ?? throw new KeyNotFoundException("Book not found.");
         var settings = await _repo.GetSettingsAsync(actor.CollegeId, token);
         const int limit = 2;
         if (await _repo.ActiveCountAsync(studentId, token) >= limit) throw new InvalidOperationException($"Student has reached the active issue limit of {limit}.");
-        var issuance = await _repo.IssueAsync(new Issuance { CollegeId = actor.CollegeId, BookId = book.Id!, StudentId = studentId, DegreeId = student.DegreeId, ClassName = student.ClassName ?? "", BookTitle = book.Title, IssueDate = DateTime.UtcNow, DueDate = DateTime.UtcNow.Date.AddDays(settings.LoanDays), IssueIdempotencyKey = $"{actor.CollegeId}:{key}", IssuedBy = actor.Id }, limit, token);
+        var issuance = await _repo.IssueAsync(new Issuance { CollegeId = actor.CollegeId, BookId = book.Id!, StudentId = studentId, DegreeId = student.DegreeId, ClassName = student.ClassName ?? "", BookTitle = book.Title, IssueDate = DateTime.UtcNow, DueDate = DateTime.UtcNow.Date.AddDays(loanDays), LoanDays = loanDays, IssueIdempotencyKey = $"{actor.CollegeId}:{key}", IssuedBy = actor.Id }, limit, token);
         settings.CatalogVersion++; await _repo.SaveSettingsAsync(settings, token);
         await AuditAsync(actor, "issuance.issue", issuance.Id!, new() { ["studentId"] = studentId, ["bookId"] = bookId }, token); return issuance;
     }
 
     public async Task<Issuance> ReturnAsync(LmsActor actor, string issuanceId, string key, CancellationToken token)
     {
-        RequireStaff(actor); RequireKey(key); var issuance = await _repo.ReturnAsync(actor.CollegeId, issuanceId, actor.Id, $"{actor.CollegeId}:{key}", token);
+        RequireStaff(actor); RequireKey(key); RequireObjectIds(issuanceId); var issuance = await _repo.ReturnAsync(actor.CollegeId, issuanceId, actor.Id, $"{actor.CollegeId}:{key}", token);
         var settings = await _repo.GetSettingsAsync(actor.CollegeId, token); settings.CatalogVersion++; await _repo.SaveSettingsAsync(settings, token);
         await AuditAsync(actor, "issuance.return", issuance.Id!, new() { ["studentId"] = issuance.StudentId, ["bookId"] = issuance.BookId }, token); return issuance;
     }
 
     public async Task<Issuance> RenewAsync(LmsActor actor, string issuanceId, string key, CancellationToken token)
     {
-        RequireStaff(actor); RequireKey(key); var settings = await _repo.GetSettingsAsync(actor.CollegeId, token);
+        RequireStaff(actor); RequireKey(key); RequireObjectIds(issuanceId); var settings = await _repo.GetSettingsAsync(actor.CollegeId, token);
         var issuance = (await _repo.ListIssuancesAsync(actor.CollegeId, null, null, token)).FirstOrDefault(x => x.Id == issuanceId) ?? throw new KeyNotFoundException("Issuance not found.");
         if ((await _repo.ReservationsAsync(actor.CollegeId, null, issuance.BookId, "queued", token)).Count > 0) throw new InvalidOperationException("Book has queued reservations and cannot be renewed.");
-        var renewed = await _repo.RenewAsync(actor.CollegeId, issuanceId, actor.Id, $"{actor.CollegeId}:{key}", settings.LoanDays, token);
+        var renewed = await _repo.RenewAsync(actor.CollegeId, issuanceId, actor.Id, $"{actor.CollegeId}:{key}", issuance.LoanDays is 10 or 15 or 30 ? issuance.LoanDays : settings.LoanDays, token);
         await AuditAsync(actor, "issuance.renew", renewed.Id!, new(), token); return renewed;
     }
 
-    public async Task<Reservation> ReserveAsync(LmsActor actor, string studentId, string bookId, string key, CancellationToken token)
+    public async Task<Reservation> ReserveAsync(LmsActor actor, string studentId, string bookId, int loanDays, string key, CancellationToken token)
     {
-        RequireStaff(actor); RequireKey(key); await VerifyStudentAccessAsync(actor, studentId, token); var book = await _books.GetAsync(actor.CollegeId, bookId, token) ?? throw new KeyNotFoundException("Book not found.");
+        RequireStaff(actor); RequireKey(key); RequireObjectIds(studentId, bookId); loanDays = RequireLoanDays(loanDays); await VerifyStudentAccessAsync(actor, studentId, token); var book = await _books.GetAsync(actor.CollegeId, bookId, token) ?? throw new KeyNotFoundException("Book not found.");
         if (book.AvailableCopies > 0) throw new InvalidOperationException("A copy is available; reservation is not required.");
-        var reservation = await _repo.ReserveAsync(new() { CollegeId = actor.CollegeId, BookId = bookId, StudentId = studentId, BookTitle = book.Title, IdempotencyKey = $"{actor.CollegeId}:{key}" }, token);
+        var reservation = await _repo.ReserveAsync(new() { CollegeId = actor.CollegeId, BookId = bookId, StudentId = studentId, BookTitle = book.Title, LoanDays = loanDays, IdempotencyKey = $"{actor.CollegeId}:{key}" }, token);
         await AuditAsync(actor, "reservation.create", reservation.Id!, new() { ["studentId"] = studentId, ["bookId"] = bookId }, token); return reservation;
     }
 
@@ -222,4 +223,6 @@ public sealed class LibraryCirculationService : ILibraryCirculationService
     private Task AuditAsync(LmsActor actor, string action, string id, Dictionary<string, string> details, CancellationToken token) => _repo.AddAuditAsync(new() { CollegeId = actor.CollegeId, ActorId = actor.Id, Action = action, EntityType = action.Split('.')[0], EntityId = id, Details = details }, token);
     private static void RequireStaff(LmsActor actor) { if (actor.Role != "librarian") throw new UnauthorizedAccessException(); }
     private static void RequireKey(string key) { if (string.IsNullOrWhiteSpace(key) || key.Length > 200) throw new ArgumentException("An Idempotency-Key header is required."); }
+    private static void RequireObjectIds(params string[] ids) { if (ids.Any(id => !ObjectId.TryParse(id, out _))) throw new ArgumentException("Select a valid student and book."); }
+    private static int RequireLoanDays(int days) => days is 10 or 15 or 30 ? days : throw new ArgumentException("Loan period must be 10, 15, or 30 days.");
 }
