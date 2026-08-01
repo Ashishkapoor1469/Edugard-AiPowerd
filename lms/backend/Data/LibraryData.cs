@@ -7,6 +7,7 @@ namespace Lms.Api.Data;
 public sealed class LmsMongoContext
 {
     public IMongoClient Client { get; }
+    public IMongoCollection<LibraryStudent> Students { get; }
     public IMongoCollection<Book> Books { get; }
     public IMongoCollection<Issuance> Issuances { get; }
     public IMongoCollection<Reservation> Reservations { get; }
@@ -20,6 +21,7 @@ public sealed class LmsMongoContext
         var url = new MongoUrl(config["LMS_MONGO_URI"] ?? "mongodb://127.0.0.1:27017/eduguard_lms");
         Client = new MongoClient(MongoClientSettings.FromConnectionString(url.Url));
         var database = Client.GetDatabase(url.DatabaseName ?? "eduguard_lms");
+        Students = database.GetCollection<LibraryStudent>("students");
         Books = database.GetCollection<Book>("books");
         Issuances = database.GetCollection<Issuance>("issuances");
         Reservations = database.GetCollection<Reservation>("reservations");
@@ -31,6 +33,10 @@ public sealed class LmsMongoContext
 
     public async Task EnsureIndexesAsync(CancellationToken token = default)
     {
+        await Students.Indexes.CreateManyAsync([
+            new(Builders<LibraryStudent>.IndexKeys.Ascending(x => x.CollegeId).Ascending(x => x.EduGuardStudentId), new CreateIndexOptions { Unique = true }),
+            new(Builders<LibraryStudent>.IndexKeys.Ascending(x => x.CollegeId).Ascending(x => x.RollNo))
+        ], token);
         await Books.Indexes.CreateManyAsync([
             new(Builders<Book>.IndexKeys.Ascending(x => x.CollegeId).Ascending(x => x.Isbn), new CreateIndexOptions { Unique = true }),
             new(Builders<Book>.IndexKeys.Text(x => x.Title).Text(x => x.Author).Text(x => x.Isbn).Text(x => x.Category)),

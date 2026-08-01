@@ -2,10 +2,12 @@ using System.Security.Cryptography;
 using System.Security.Claims;
 using System.Text;
 using System.IdentityModel.Tokens.Jwt;
+using System.Text.RegularExpressions;
 using EduGuard.Models;
 using EduGuard.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.IdentityModel.Tokens;
+using MongoDB.Bson;
 using MongoDB.Driver;
 
 namespace EduGuard.Controllers;
@@ -43,8 +45,21 @@ public sealed class LmsIntegrationController : ControllerBase
         var mentor = await _mongo.Mentors.Find(x => x.Id == id).FirstOrDefaultAsync(token);
         if (mentor != null) return Ok(new { id = mentor.Id, mentor.Name, mentor.Email, role = "mentor", mentor.CollegeId, status = mentor.Status, degreeId = mentor.AssignedCourseId, classes = mentor.AssignedClasses });
         var student = await _mongo.Students.Find(x => x.Id == id).FirstOrDefaultAsync(token);
-        if (student != null) return Ok(new { id = student.Id, student.Name, student.Email, role = "student", student.CollegeId, status = student.VerificationStatus, degreeId = student.CourseId, className = student.Class, student.RollNo });
+        if (student != null) return Ok(new { id = student.Id, student.Name, student.Email, role = "student", student.CollegeId, status = student.VerificationStatus, degreeId = student.CourseId, student.Course, className = student.Class, student.RollNo, student.PhoneNo, student.Semester });
         return NotFound();
+    }
+
+    [HttpGet("colleges/{collegeId}/students")]
+    public async Task<IActionResult> SearchStudents(string collegeId, [FromQuery] string search, CancellationToken token)
+    {
+        if (!Authorized()) return Unauthorized();
+        if (string.IsNullOrWhiteSpace(search) || search.Trim().Length < 2) return BadRequest(new { success = false, message = "Enter at least 2 characters." });
+        var regex = new BsonRegularExpression(Regex.Escape(search.Trim()), "i");
+        var filter = Builders<Student>.Filter.Eq(x => x.CollegeId, collegeId)
+            & Builders<Student>.Filter.Eq(x => x.VerificationStatus, "approved")
+            & (Builders<Student>.Filter.Regex(x => x.Name, regex) | Builders<Student>.Filter.Regex(x => x.RollNo, regex) | Builders<Student>.Filter.Regex(x => x.Email, regex));
+        var data = await _mongo.Students.Find(filter).Limit(20).Project(x => new { id = x.Id, x.Name, x.Email, x.RollNo, x.PhoneNo, degreeId = x.CourseId, x.Course, className = x.Class, x.Semester, x.CollegeId, role = "student", status = x.VerificationStatus }).ToListAsync(token);
+        return Ok(new { success = true, data });
     }
 
     [HttpGet("colleges/{collegeId}/librarians")]

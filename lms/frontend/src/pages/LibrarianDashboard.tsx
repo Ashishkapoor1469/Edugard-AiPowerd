@@ -1,15 +1,23 @@
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import { api, idempotency } from "../api";
-import type { Book, Fine, Issuance, Reservation, User } from "../types";
+import type { Book, EduGuardStudent, Fine, Issuance, LibraryStudent, Reservation, User } from "../types";
 
-type Tab = "catalog" | "circulation" | "reservations" | "overdue" | "settings";
+type Tab = "students" | "catalog" | "circulation" | "reservations" | "overdue" | "settings";
 export default function LibrarianDashboard({ user }: { user: User }) {
-  const [tab, setTab] = useState<Tab>("catalog");
+  const [tab, setTab] = useState<Tab>("students");
   return <section><div className="page-heading"><div><h1>Library desk</h1><p>Catalog, circulation, reservations, overdue follow-up, and fines for your college.</p></div><span className="role-pill">Librarian</span></div>
-    <div className="tabs">{(["catalog", "circulation", "reservations", "overdue", "settings"] as Tab[]).map(x => <button key={x} className={tab === x ? "active" : ""} onClick={() => setTab(x)}>{x}</button>)}</div>
-    {tab === "catalog" && <CatalogManager />}{tab === "circulation" && <Circulation />}{tab === "reservations" && <Reservations />}{tab === "overdue" && <OverdueFines />}{tab === "settings" && <Preferences user={user} />}
+    <div className="tabs">{(["students", "catalog", "circulation", "reservations", "overdue", "settings"] as Tab[]).map(x => <button key={x} className={tab === x ? "active" : ""} onClick={() => setTab(x)}>{x}</button>)}</div>
+    {tab === "students" && <Students />}{tab === "catalog" && <CatalogManager />}{tab === "circulation" && <Circulation />}{tab === "reservations" && <Reservations />}{tab === "overdue" && <OverdueFines />}{tab === "settings" && <Preferences user={user} />}
   </section>;
+}
+
+function Students() {
+  const [students, setStudents] = useState<LibraryStudent[]>([]); const [results, setResults] = useState<EduGuardStudent[]>([]); const [search, setSearch] = useState("");
+  const load = () => api.get("/api/students").then(r => setStudents(r.data.data)); useEffect(() => { void load(); }, []);
+  const find = async (event: React.FormEvent) => { event.preventDefault(); try { const r = await api.get("/api/students/search-eduguard", { params: { search } }); setResults(r.data.data); } catch (e: any) { toast.error(e.response?.data?.message || "Student search failed"); } };
+  const register = async (student: EduGuardStudent) => { try { await api.post(`/api/students/${student.id}`); toast.success(`${student.name} registered in LMS`); setResults(items => items.map(x => x.id === student.id ? { ...x, registered: true } : x)); load(); } catch (e: any) { toast.error(e.response?.data?.message || "Student registration failed"); } };
+  return <div className="two-columns"><div className="panel"><h2>Add from EduGuard</h2><form className="form-stack" onSubmit={find}><label>Name, roll number, or email<input required minLength={2} value={search} onChange={e => setSearch(e.target.value)} /></label><button>Search EduGuard</button></form>{results.map(x => <div className="list-row" key={x.id}><div><strong>{x.name}</strong><small>{x.rollNo} · {x.course} · {x.className} · semester {x.semester}</small><small>{x.email}{x.phoneNo ? ` · ${x.phoneNo}` : ""}</small></div><button disabled={x.registered} onClick={() => register(x)}>{x.registered ? "Registered" : "Register in LMS"}</button></div>)}</div><div className="panel"><h2>Registered LMS students</h2>{students.length === 0 ? <p className="empty small">No students registered.</p> : students.map(x => <div className="list-row" key={x._id}><div><strong>{x.name}</strong><small>{x.rollNo} · {x.course} · {x.className} · semester {x.semester}</small><small>{x.email}{x.phoneNo ? ` · ${x.phoneNo}` : ""}</small></div></div>)}</div></div>;
 }
 
 const blankBook = { _id: "", isbn: "", title: "", author: "", category: "", totalCopies: 1, availableCopies: 0, shelfLocation: "", coverImage: "", borrowCount: 0 };
@@ -23,19 +31,19 @@ function CatalogManager() {
 }
 
 function Circulation() {
-  const [issues, setIssues] = useState<Issuance[]>([]); const [studentId, setStudentId] = useState(""); const [bookId, setBookId] = useState("");
-  const load = () => api.get("/api/circulation/issuances", { params: { status: "active" } }).then(r => setIssues(r.data.data)); useEffect(() => { void load(); }, []);
+  const [issues, setIssues] = useState<Issuance[]>([]); const [students, setStudents] = useState<LibraryStudent[]>([]); const [studentId, setStudentId] = useState(""); const [bookId, setBookId] = useState("");
+  const load = () => Promise.all([api.get("/api/circulation/issuances", { params: { status: "active" } }), api.get("/api/students")]).then(([a, b]) => { setIssues(a.data.data); setStudents(b.data.data); }); useEffect(() => { void load(); }, []);
   const issue = async (e: React.FormEvent) => { e.preventDefault(); try { await api.post("/api/circulation/issue", { studentId, bookId }, idempotency()); toast.success("Book issued"); setStudentId(""); setBookId(""); load(); } catch (e: any) { toast.error(e.response?.data?.message || "Issue failed"); } };
   const action = async (id: string, kind: "return" | "renew") => { try { await api.post(`/api/circulation/${id}/${kind}`, {}, idempotency()); toast.success(kind === "return" ? "Book returned" : "Loan renewed"); load(); } catch (e: any) { toast.error(e.response?.data?.message || `${kind} failed`); } };
-  return <div className="two-columns"><form className="panel form-stack" onSubmit={issue}><h2>Issue a book</h2><label>Student ID<input required value={studentId} onChange={e => setStudentId(e.target.value)} /></label><label>Book ID<input required value={bookId} onChange={e => setBookId(e.target.value)} /></label><button>Issue book</button><p className="hint">Both identities are server-verified against EduGuard and college scope.</p></form><div className="panel"><h2>Active issuances</h2>{issues.length === 0 ? <p className="empty small">No active issuances.</p> : issues.map(x => <div className="list-row" key={x._id}><div><strong>{x.bookTitle}</strong><small>Student {x.studentId} · due {new Date(x.dueDate).toLocaleDateString()}</small></div><div><button className="secondary" onClick={() => action(x._id, "renew")}>Renew</button><button onClick={() => action(x._id, "return")}>Return</button></div></div>)}</div></div>;
+  return <div className="two-columns"><form className="panel form-stack" onSubmit={issue}><h2>Issue a book</h2><label>Registered student<select required value={studentId} onChange={e => setStudentId(e.target.value)}><option value="">Select student</option>{students.map(x => <option key={x._id} value={x.eduguardStudentId}>{x.name} · {x.rollNo}</option>)}</select></label><label>Book ID<input required value={bookId} onChange={e => setBookId(e.target.value)} /></label><button>Issue book</button><p className="hint">Register students from EduGuard before issuing books.</p></form><div className="panel"><h2>Active issuances</h2>{issues.length === 0 ? <p className="empty small">No active issuances.</p> : issues.map(x => { const student = students.find(s => s.eduguardStudentId === x.studentId); return <div className="list-row" key={x._id}><div><strong>{x.bookTitle}</strong><small>{student ? `${student.name} · ${student.rollNo}` : x.studentId} · due {new Date(x.dueDate).toLocaleDateString()}</small></div><div><button className="secondary" onClick={() => action(x._id, "renew")}>Renew</button><button onClick={() => action(x._id, "return")}>Return</button></div></div>; })}</div></div>;
 }
 
 function Reservations() {
-  const [items, setItems] = useState<Reservation[]>([]); const [studentId, setStudentId] = useState(""); const [bookId, setBookId] = useState("");
-  const load = () => api.get("/api/circulation/reservations").then(r => setItems(r.data.data)); useEffect(() => { void load(); }, []);
+  const [items, setItems] = useState<Reservation[]>([]); const [students, setStudents] = useState<LibraryStudent[]>([]); const [studentId, setStudentId] = useState(""); const [bookId, setBookId] = useState("");
+  const load = () => Promise.all([api.get("/api/circulation/reservations"), api.get("/api/students")]).then(([a, b]) => { setItems(a.data.data); setStudents(b.data.data); }); useEffect(() => { void load(); }, []);
   const reserve = async (event: React.FormEvent) => { event.preventDefault(); try { await api.post("/api/circulation/reservations", { studentId, bookId }, idempotency()); setStudentId(""); setBookId(""); toast.success("Reservation created"); load(); } catch (e: any) { toast.error(e.response?.data?.message || "Reservation failed"); } };
   const cancel = async (id: string) => { try { await api.delete(`/api/circulation/reservations/${id}`); toast.success("Reservation cancelled"); load(); } catch (e: any) { toast.error(e.response?.data?.message || "Cancellation failed"); } };
-  return <div className="two-columns"><form className="panel form-stack" onSubmit={reserve}><h2>Create reservation</h2><label>Student ID<input required value={studentId} onChange={e => setStudentId(e.target.value)} /></label><label>Book ID<input required value={bookId} onChange={e => setBookId(e.target.value)} /></label><button>Create reservation</button></form><div className="panel"><h2>Reservations</h2>{items.length === 0 ? <p className="empty small">No reservations.</p> : items.map(x => <div className="list-row" key={x._id}><div><strong>{x.bookTitle}</strong><small>Student {x.studentId} · {x.status}</small></div><button className="secondary" onClick={() => cancel(x._id)}>Cancel</button></div>)}</div></div>;
+  return <div className="two-columns"><form className="panel form-stack" onSubmit={reserve}><h2>Create reservation</h2><label>Registered student<select required value={studentId} onChange={e => setStudentId(e.target.value)}><option value="">Select student</option>{students.map(x => <option key={x._id} value={x.eduguardStudentId}>{x.name} · {x.rollNo}</option>)}</select></label><label>Book ID<input required value={bookId} onChange={e => setBookId(e.target.value)} /></label><button>Create reservation</button></form><div className="panel"><h2>Reservations</h2>{items.length === 0 ? <p className="empty small">No reservations.</p> : items.map(x => { const student = students.find(s => s.eduguardStudentId === x.studentId); return <div className="list-row" key={x._id}><div><strong>{x.bookTitle}</strong><small>{student ? `${student.name} · ${student.rollNo}` : x.studentId} · {x.status}</small></div><button className="secondary" onClick={() => cancel(x._id)}>Cancel</button></div>; })}</div></div>;
 }
 
 function OverdueFines() {

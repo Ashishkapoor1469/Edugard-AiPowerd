@@ -5,6 +5,25 @@ using System.Text.Json.Serialization;
 namespace Lms.Api.Models;
 
 [BsonIgnoreExtraElements]
+public sealed class LibraryStudent
+{
+    [BsonId, BsonRepresentation(BsonType.ObjectId), JsonPropertyName("_id")] public string? Id { get; set; }
+    [BsonElement("collegeId"), BsonRepresentation(BsonType.ObjectId)] public string CollegeId { get; set; } = string.Empty;
+    [BsonElement("eduguardStudentId"), BsonRepresentation(BsonType.ObjectId)] public string EduGuardStudentId { get; set; } = string.Empty;
+    [BsonElement("name")] public string Name { get; set; } = string.Empty;
+    [BsonElement("rollNo")] public string RollNo { get; set; } = string.Empty;
+    [BsonElement("email")] public string Email { get; set; } = string.Empty;
+    [BsonElement("phoneNo")] public string? PhoneNo { get; set; }
+    [BsonElement("courseId"), BsonRepresentation(BsonType.ObjectId), BsonIgnoreIfNull] public string? CourseId { get; set; }
+    [BsonElement("course")] public string Course { get; set; } = string.Empty;
+    [BsonElement("className")] public string ClassName { get; set; } = string.Empty;
+    [BsonElement("semester")] public int Semester { get; set; }
+    [BsonElement("registeredBy")] public string RegisteredBy { get; set; } = string.Empty;
+    [BsonElement("registeredAt")] public DateTime RegisteredAt { get; set; } = DateTime.UtcNow;
+    [BsonElement("updatedAt")] public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+}
+
+[BsonIgnoreExtraElements]
 public sealed class Book
 {
     [BsonId, BsonRepresentation(BsonType.ObjectId), JsonPropertyName("_id")]

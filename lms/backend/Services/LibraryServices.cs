@@ -8,7 +8,7 @@ using MongoDB.Driver;
 
 namespace Lms.Api.Services;
 
-public sealed record EduGuardIdentity(string Id, string Name, string Email, string Role, string CollegeId, string Status, string? DegreeId, string? ClassName, string? RollNo);
+public sealed record EduGuardIdentity(string Id, string Name, string Email, string Role, string CollegeId, string Status, string? DegreeId, string? Course, string? ClassName, string? RollNo, string? PhoneNo, int Semester);
 public sealed record LibrarianIdentity(string Id, string Name, string Email);
 public sealed record LmsActor(string Id, string Role, string CollegeId, string Name, string Email);
 public sealed record PushRequest(string UserId, string IdempotencyKey, string Title, string Body, string Priority, Dictionary<string, string> Data);
@@ -16,6 +16,7 @@ public sealed record PushRequest(string UserId, string IdempotencyKey, string Ti
 public interface IEduGuardClient
 {
     Task<EduGuardIdentity> IdentityAsync(string id, CancellationToken token);
+    Task<IReadOnlyList<EduGuardIdentity>> SearchStudentsAsync(string collegeId, string search, CancellationToken token);
     Task<LmsActor> ValidateSsoAsync(string tokenValue, CancellationToken token);
     Task<LmsActor> LibrarianLoginAsync(string email, string password, CancellationToken token);
     Task NotifyAsync(PushRequest request, CancellationToken token);
@@ -38,6 +39,11 @@ public sealed class EduGuardClient : IEduGuardClient
     {
         var response = await _http.GetAsync($"/api/integrations/lms/identities/{id}", token); response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<EduGuardIdentity>(cancellationToken: token))!;
+    }
+    public async Task<IReadOnlyList<EduGuardIdentity>> SearchStudentsAsync(string collegeId, string search, CancellationToken token)
+    {
+        var response = await _http.GetAsync($"/api/integrations/lms/colleges/{collegeId}/students?search={Uri.EscapeDataString(search)}", token); response.EnsureSuccessStatusCode();
+        return (await response.Content.ReadFromJsonAsync<StudentEnvelope>(cancellationToken: token))?.Data ?? [];
     }
     public async Task<LmsActor> ValidateSsoAsync(string tokenValue, CancellationToken token)
     {
@@ -67,6 +73,7 @@ public sealed class EduGuardClient : IEduGuardClient
         var envelope = await response.Content.ReadFromJsonAsync<LibrarianEnvelope>(cancellationToken: token); return envelope?.Data ?? [];
     }
     private sealed record LibrarianEnvelope(List<LibrarianIdentity> Data);
+    private sealed record StudentEnvelope(List<EduGuardIdentity> Data);
 }
 
 public interface ICatalogService
@@ -149,8 +156,8 @@ public interface ILibraryCirculationService
 
 public sealed class LibraryCirculationService : ILibraryCirculationService
 {
-    private readonly IBookRepository _books; private readonly ICirculationRepository _repo; private readonly IEduGuardClient _eduguard;
-    public LibraryCirculationService(IBookRepository books, ICirculationRepository repo, IEduGuardClient eduguard) => (_books, _repo, _eduguard) = (books, repo, eduguard);
+    private readonly IBookRepository _books; private readonly ICirculationRepository _repo; private readonly LmsMongoContext _db;
+    public LibraryCirculationService(IBookRepository books, ICirculationRepository repo, LmsMongoContext db) => (_books, _repo, _db) = (books, repo, db);
 
     public async Task<IReadOnlyList<Issuance>> IssuedAsync(LmsActor actor, string studentId, bool activeOnly, CancellationToken token)
     { await VerifyStudentAccessAsync(actor, studentId, token); return await _repo.StudentIssuedAsync(studentId, activeOnly, token); }
@@ -193,9 +200,10 @@ public sealed class LibraryCirculationService : ILibraryCirculationService
 
     private async Task<EduGuardIdentity> VerifyStudentAccessAsync(LmsActor actor, string studentId, CancellationToken token)
     {
-        var student = await _eduguard.IdentityAsync(studentId, token);
-        if (student.Role != "student" || student.CollegeId != actor.CollegeId || student.Status != "approved") throw new UnauthorizedAccessException();
-        if (actor.Role is not ("librarian" or "college-admin")) throw new UnauthorizedAccessException(); return student;
+        if (actor.Role is not ("librarian" or "college-admin")) throw new UnauthorizedAccessException();
+        var student = await _db.Students.Find(x => x.CollegeId == actor.CollegeId && x.EduGuardStudentId == studentId).FirstOrDefaultAsync(token)
+            ?? throw new InvalidOperationException("Register this EduGuard student in LMS before circulation.");
+        return new(student.EduGuardStudentId, student.Name, student.Email, "student", student.CollegeId, "approved", student.CourseId, student.Course, student.ClassName, student.RollNo, student.PhoneNo, student.Semester);
     }
     private Task AuditAsync(LmsActor actor, string action, string id, Dictionary<string, string> details, CancellationToken token) => _repo.AddAuditAsync(new() { CollegeId = actor.CollegeId, ActorId = actor.Id, Action = action, EntityType = action.Split('.')[0], EntityId = id, Details = details }, token);
     private static void RequireStaff(LmsActor actor) { if (actor.Role != "librarian") throw new UnauthorizedAccessException(); }

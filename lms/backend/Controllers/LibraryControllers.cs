@@ -118,6 +118,56 @@ public sealed class CirculationController : ControllerBase
     { var actor = AuthController.Actor(User); await _repo.CancelReservationAsync(actor.CollegeId, id, token); return Ok(new { success = true }); }
 }
 
+[ApiController, Authorize, Route("api/students")]
+public sealed class LibraryStudentsController : ControllerBase
+{
+    private readonly LmsMongoContext _db; private readonly IEduGuardClient _eduguard; private readonly ICirculationRepository _circulation;
+    public LibraryStudentsController(LmsMongoContext db, IEduGuardClient eduguard, ICirculationRepository circulation) => (_db, _eduguard, _circulation) = (db, eduguard, circulation);
+
+    [HttpGet, Authorize(Roles = "librarian,college-admin")]
+    public async Task<IActionResult> List(CancellationToken token)
+    {
+        var actor = AuthController.Actor(User);
+        return Ok(new { success = true, data = await _db.Students.Find(x => x.CollegeId == actor.CollegeId).SortBy(x => x.Name).ToListAsync(token) });
+    }
+
+    [HttpGet("search-eduguard"), Authorize(Roles = "librarian")]
+    public async Task<IActionResult> SearchEduGuard([FromQuery] string search, CancellationToken token)
+    {
+        var actor = AuthController.Actor(User);
+        if (string.IsNullOrWhiteSpace(search) || search.Trim().Length < 2) return BadRequest(new { success = false, message = "Enter at least 2 characters." });
+        var data = await _eduguard.SearchStudentsAsync(actor.CollegeId, search.Trim(), token);
+        var ids = data.Select(x => x.Id).ToList();
+        var registered = await _db.Students.Find(Builders<LibraryStudent>.Filter.Eq(x => x.CollegeId, actor.CollegeId) & Builders<LibraryStudent>.Filter.In(x => x.EduGuardStudentId, ids)).Project(x => x.EduGuardStudentId).ToListAsync(token);
+        return Ok(new { success = true, data = data.Select(x => new { x.Id, x.Name, x.Email, x.RollNo, x.PhoneNo, x.DegreeId, x.Course, x.ClassName, x.Semester, registered = registered.Contains(x.Id) }) });
+    }
+
+    [HttpPost("{studentId}"), Authorize(Roles = "librarian")]
+    public async Task<IActionResult> Register(string studentId, CancellationToken token)
+    {
+        var actor = AuthController.Actor(User); var source = await _eduguard.IdentityAsync(studentId, token);
+        if (source.Role != "student" || source.Status != "approved" || source.CollegeId != actor.CollegeId) return Forbid();
+        var update = Builders<LibraryStudent>.Update
+            .Set(x => x.Name, source.Name).Set(x => x.RollNo, source.RollNo ?? "").Set(x => x.Email, source.Email).Set(x => x.PhoneNo, source.PhoneNo)
+            .Set(x => x.CourseId, source.DegreeId).Set(x => x.Course, source.Course ?? "").Set(x => x.ClassName, source.ClassName ?? "").Set(x => x.Semester, source.Semester).Set(x => x.UpdatedAt, DateTime.UtcNow)
+            .SetOnInsert(x => x.CollegeId, actor.CollegeId).SetOnInsert(x => x.EduGuardStudentId, source.Id).SetOnInsert(x => x.RegisteredBy, actor.Id).SetOnInsert(x => x.RegisteredAt, DateTime.UtcNow);
+        var student = await _db.Students.FindOneAndUpdateAsync(x => x.CollegeId == actor.CollegeId && x.EduGuardStudentId == source.Id, update, new FindOneAndUpdateOptions<LibraryStudent> { IsUpsert = true, ReturnDocument = ReturnDocument.After }, token);
+        await _circulation.AddAuditAsync(new() { CollegeId = actor.CollegeId, ActorId = actor.Id, Action = "student.register", EntityType = "student", EntityId = source.Id }, token);
+        return Ok(new { success = true, data = student });
+    }
+
+    [HttpGet("{studentId}/history"), Authorize(Roles = "librarian,college-admin")]
+    public async Task<IActionResult> History(string studentId, CancellationToken token)
+    {
+        var actor = AuthController.Actor(User);
+        if (!await _db.Students.Find(x => x.CollegeId == actor.CollegeId && x.EduGuardStudentId == studentId).AnyAsync(token)) return NotFound();
+        var issuances = await _circulation.ListIssuancesAsync(actor.CollegeId, null, studentId, token);
+        var reservations = await _circulation.ReservationsAsync(actor.CollegeId, studentId, null, null, token);
+        var fines = await _circulation.FinesAsync(actor.CollegeId, studentId, token);
+        return Ok(new { success = true, data = new { issuances, reservations, fines } });
+    }
+}
+
 [ApiController, Authorize, Route("api/library-admin")]
 public sealed class LibraryAdminController : ControllerBase
 {
