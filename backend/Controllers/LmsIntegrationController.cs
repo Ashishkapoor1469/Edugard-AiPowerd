@@ -33,7 +33,7 @@ public sealed class LmsIntegrationController : ControllerBase
             ValidateIssuerSigningKey = true, IssuerSigningKey = new SymmetricSecurityKey(key), ValidateIssuer = true, ValidIssuer = "eduguard",
             ValidateAudience = true, ValidAudience = "eduguard-lms", ValidateLifetime = true, ClockSkew = TimeSpan.FromSeconds(30), RoleClaimType = ClaimTypes.Role
         }, out _);
-        return Ok(new { id = principal.FindFirst("id")?.Value, role = principal.FindFirst(ClaimTypes.Role)?.Value, collegeId = principal.FindFirst("collegeId")?.Value, name = principal.FindFirst("name")?.Value, email = principal.FindFirst("email")?.Value });
+        return Ok(new { id = principal.FindFirst("id")?.Value, role = principal.FindFirst(ClaimTypes.Role)?.Value, collegeId = principal.FindFirst("collegeId")?.Value, name = principal.FindFirst("name")?.Value, email = principal.FindFirst("email")?.Value ?? principal.FindFirst(ClaimTypes.Email)?.Value });
     }
 
     [HttpGet("identities/{id}")]
