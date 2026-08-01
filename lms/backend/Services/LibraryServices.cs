@@ -133,7 +133,7 @@ public sealed class CatalogService : ICatalogService
     }
 
     private async Task BumpCatalogAsync(string collegeId, CancellationToken token) { var settings = await _circulation.GetSettingsAsync(collegeId, token); settings.CatalogVersion++; await _circulation.SaveSettingsAsync(settings, token); }
-    private static void RequireLibraryWrite(LmsActor actor) { if (actor.Role is not ("librarian" or "college-admin" or "admin")) throw new UnauthorizedAccessException(); }
+    private static void RequireLibraryWrite(LmsActor actor) { if (actor.Role != "librarian") throw new UnauthorizedAccessException(); }
     private static void Validate(Book book)
     { if (string.IsNullOrWhiteSpace(book.Title) || string.IsNullOrWhiteSpace(book.Author) || string.IsNullOrWhiteSpace(book.Isbn) || book.TotalCopies < 0) throw new ArgumentException("Title, author, ISBN, and non-negative total copies are required."); }
 }
@@ -160,7 +160,7 @@ public sealed class LibraryCirculationService : ILibraryCirculationService
         RequireStaff(actor); RequireKey(key); var student = await VerifyStudentAccessAsync(actor, studentId, token);
         var book = await _books.GetAsync(actor.CollegeId, bookId, token) ?? throw new KeyNotFoundException("Book not found.");
         var settings = await _repo.GetSettingsAsync(actor.CollegeId, token);
-        var limit = student.DegreeId != null && settings.DegreeIssueLimits.TryGetValue(student.DegreeId, out var configured) ? configured : settings.DefaultIssueLimit;
+        const int limit = 2;
         if (await _repo.ActiveCountAsync(studentId, token) >= limit) throw new InvalidOperationException($"Student has reached the active issue limit of {limit}.");
         var issuance = await _repo.IssueAsync(new Issuance { CollegeId = actor.CollegeId, BookId = book.Id!, StudentId = studentId, DegreeId = student.DegreeId, ClassName = student.ClassName ?? "", BookTitle = book.Title, IssueDate = DateTime.UtcNow, DueDate = DateTime.UtcNow.Date.AddDays(settings.LoanDays), IssueIdempotencyKey = $"{actor.CollegeId}:{key}", IssuedBy = actor.Id }, limit, token);
         settings.CatalogVersion++; await _repo.SaveSettingsAsync(settings, token);
@@ -185,7 +185,7 @@ public sealed class LibraryCirculationService : ILibraryCirculationService
 
     public async Task<Reservation> ReserveAsync(LmsActor actor, string studentId, string bookId, string key, CancellationToken token)
     {
-        RequireKey(key); await VerifyStudentAccessAsync(actor, studentId, token); var book = await _books.GetAsync(actor.CollegeId, bookId, token) ?? throw new KeyNotFoundException("Book not found.");
+        RequireStaff(actor); RequireKey(key); await VerifyStudentAccessAsync(actor, studentId, token); var book = await _books.GetAsync(actor.CollegeId, bookId, token) ?? throw new KeyNotFoundException("Book not found.");
         if (book.AvailableCopies > 0) throw new InvalidOperationException("A copy is available; reservation is not required.");
         var reservation = await _repo.ReserveAsync(new() { CollegeId = actor.CollegeId, BookId = bookId, StudentId = studentId, BookTitle = book.Title, IdempotencyKey = $"{actor.CollegeId}:{key}" }, token);
         await AuditAsync(actor, "reservation.create", reservation.Id!, new() { ["studentId"] = studentId, ["bookId"] = bookId }, token); return reservation;
@@ -195,9 +195,9 @@ public sealed class LibraryCirculationService : ILibraryCirculationService
     {
         var student = await _eduguard.IdentityAsync(studentId, token);
         if (student.Role != "student" || student.CollegeId != actor.CollegeId || student.Status != "approved") throw new UnauthorizedAccessException();
-        if (actor.Role == "student" && actor.Id != studentId) throw new UnauthorizedAccessException(); return student;
+        if (actor.Role is not ("librarian" or "college-admin")) throw new UnauthorizedAccessException(); return student;
     }
     private Task AuditAsync(LmsActor actor, string action, string id, Dictionary<string, string> details, CancellationToken token) => _repo.AddAuditAsync(new() { CollegeId = actor.CollegeId, ActorId = actor.Id, Action = action, EntityType = action.Split('.')[0], EntityId = id, Details = details }, token);
-    private static void RequireStaff(LmsActor actor) { if (actor.Role is not ("librarian" or "college-admin" or "admin")) throw new UnauthorizedAccessException(); }
+    private static void RequireStaff(LmsActor actor) { if (actor.Role != "librarian") throw new UnauthorizedAccessException(); }
     private static void RequireKey(string key) { if (string.IsNullOrWhiteSpace(key) || key.Length > 200) throw new ArgumentException("An Idempotency-Key header is required."); }
 }

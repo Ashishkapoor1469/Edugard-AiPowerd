@@ -127,7 +127,7 @@ public interface ICirculationRepository
     Task<Issuance> RenewAsync(string collegeId, string issuanceId, string actorId, string key, int loanDays, CancellationToken token);
     Task<IReadOnlyList<Issuance>> ListIssuancesAsync(string collegeId, string? status, string? studentId, CancellationToken token);
     Task<Reservation> ReserveAsync(Reservation reservation, CancellationToken token);
-    Task CancelReservationAsync(string collegeId, string reservationId, string studentId, CancellationToken token);
+    Task CancelReservationAsync(string collegeId, string reservationId, CancellationToken token);
     Task<IReadOnlyList<Reservation>> ReservationsAsync(string collegeId, string? studentId, string? bookId, string? status, CancellationToken token);
     Task<Fine> RecordFineAsync(Fine fine, CancellationToken token);
     Task<IReadOnlyList<Fine>> FinesAsync(string collegeId, string? studentId, CancellationToken token);
@@ -245,9 +245,9 @@ public sealed class MongoCirculationRepository : ICirculationRepository
         await _db.Reservations.InsertOneAsync(reservation, cancellationToken: token); return reservation;
     }
 
-    public async Task CancelReservationAsync(string collegeId, string reservationId, string studentId, CancellationToken token)
+    public async Task CancelReservationAsync(string collegeId, string reservationId, CancellationToken token)
     {
-        var result = await _db.Reservations.UpdateOneAsync(x => x.Id == reservationId && x.CollegeId == collegeId && x.StudentId == studentId && (x.Status == "queued" || x.Status == "ready"),
+        var result = await _db.Reservations.UpdateOneAsync(x => x.Id == reservationId && x.CollegeId == collegeId && (x.Status == "queued" || x.Status == "ready"),
             Builders<Reservation>.Update.Set(x => x.Status, "cancelled").Set(x => x.UpdatedAt, DateTime.UtcNow), cancellationToken: token);
         if (result.ModifiedCount == 0) throw new KeyNotFoundException("Reservation not found.");
     }

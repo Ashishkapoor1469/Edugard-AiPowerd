@@ -585,7 +585,7 @@ namespace EduGuard.Controllers
 
         }
 
-        [Authorize]
+        [Authorize(Roles = "college-admin,librarian")]
         [HttpPost("lms-sso")]
         public async Task<IActionResult> CreateLmsSsoToken()
         {
@@ -594,23 +594,11 @@ namespace EduGuard.Controllers
             if (string.IsNullOrEmpty(userId) || string.IsNullOrEmpty(role)) return Unauthorized();
 
             string? collegeId = null, name = null, email = null;
-            if (role is "admin" or "college-admin" or "librarian")
-            {
-                var user = await _mongoService.Admins.Find(x => x.Id == userId).FirstOrDefaultAsync();
-                (collegeId, name, email) = (user?.CollegeId, user?.Name, user?.Email);
-            }
-            else if (role == "mentor")
-            {
-                var user = await _mongoService.Mentors.Find(x => x.Id == userId).FirstOrDefaultAsync();
-                (collegeId, name, email) = (user?.CollegeId, user?.Name, user?.Email);
-            }
-            else if (role == "student")
-            {
-                var user = await _mongoService.Students.Find(x => x.Id == userId).FirstOrDefaultAsync();
-                (collegeId, name, email) = (user?.CollegeId, user?.Name, user?.Email);
-            }
+            var user = await _mongoService.Admins.Find(x => x.Id == userId && x.Role == role && x.Status == "active").FirstOrDefaultAsync();
+            (collegeId, name, email) = (user?.CollegeId, user?.Name, user?.Email);
             if (string.IsNullOrEmpty(collegeId) || string.IsNullOrEmpty(name) || string.IsNullOrEmpty(email))
                 return BadRequest(new { success = false, message = "A college-scoped EduGuard account is required for LMS access." });
+            if (await _mongoService.Colleges.Find(x => x.Id == collegeId && x.IsBlocked).AnyAsync()) return Forbid();
 
             return Ok(new { success = true, token = GenerateLmsToken(userId, role, collegeId, name, email), lmsUrl = _configuration.GetValue<string>("LMS_FRONTEND_URL") ?? "http://localhost:5174" });
         }

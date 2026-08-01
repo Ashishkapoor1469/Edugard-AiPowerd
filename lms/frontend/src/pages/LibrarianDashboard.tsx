@@ -1,14 +1,14 @@
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import { api, idempotency } from "../api";
-import type { Book, Fine, Issuance, User } from "../types";
+import type { Book, Fine, Issuance, Reservation, User } from "../types";
 
-type Tab = "catalog" | "circulation" | "overdue" | "reports" | "settings";
+type Tab = "catalog" | "circulation" | "reservations" | "overdue" | "settings";
 export default function LibrarianDashboard({ user }: { user: User }) {
   const [tab, setTab] = useState<Tab>("catalog");
-  return <section><div className="page-heading"><div><h1>Library desk</h1><p>Catalog, circulation, overdue follow-up, fines, and reporting for your college.</p></div><span className="role-pill">Librarian</span></div>
-    <div className="tabs">{(["catalog", "circulation", "overdue", "reports", "settings"] as Tab[]).map(x => <button key={x} className={tab === x ? "active" : ""} onClick={() => setTab(x)}>{x}</button>)}</div>
-    {tab === "catalog" && <CatalogManager />}{tab === "circulation" && <Circulation />}{tab === "overdue" && <OverdueFines />}{tab === "reports" && <Reports />}{tab === "settings" && <Preferences user={user} />}
+  return <section><div className="page-heading"><div><h1>Library desk</h1><p>Catalog, circulation, reservations, overdue follow-up, and fines for your college.</p></div><span className="role-pill">Librarian</span></div>
+    <div className="tabs">{(["catalog", "circulation", "reservations", "overdue", "settings"] as Tab[]).map(x => <button key={x} className={tab === x ? "active" : ""} onClick={() => setTab(x)}>{x}</button>)}</div>
+    {tab === "catalog" && <CatalogManager />}{tab === "circulation" && <Circulation />}{tab === "reservations" && <Reservations />}{tab === "overdue" && <OverdueFines />}{tab === "settings" && <Preferences user={user} />}
   </section>;
 }
 
@@ -30,13 +30,19 @@ function Circulation() {
   return <div className="two-columns"><form className="panel form-stack" onSubmit={issue}><h2>Issue a book</h2><label>Student ID<input required value={studentId} onChange={e => setStudentId(e.target.value)} /></label><label>Book ID<input required value={bookId} onChange={e => setBookId(e.target.value)} /></label><button>Issue book</button><p className="hint">Both identities are server-verified against EduGuard and college scope.</p></form><div className="panel"><h2>Active issuances</h2>{issues.length === 0 ? <p className="empty small">No active issuances.</p> : issues.map(x => <div className="list-row" key={x._id}><div><strong>{x.bookTitle}</strong><small>Student {x.studentId} · due {new Date(x.dueDate).toLocaleDateString()}</small></div><div><button className="secondary" onClick={() => action(x._id, "renew")}>Renew</button><button onClick={() => action(x._id, "return")}>Return</button></div></div>)}</div></div>;
 }
 
+function Reservations() {
+  const [items, setItems] = useState<Reservation[]>([]); const [studentId, setStudentId] = useState(""); const [bookId, setBookId] = useState("");
+  const load = () => api.get("/api/circulation/reservations").then(r => setItems(r.data.data)); useEffect(() => { void load(); }, []);
+  const reserve = async (event: React.FormEvent) => { event.preventDefault(); try { await api.post("/api/circulation/reservations", { studentId, bookId }, idempotency()); setStudentId(""); setBookId(""); toast.success("Reservation created"); load(); } catch (e: any) { toast.error(e.response?.data?.message || "Reservation failed"); } };
+  const cancel = async (id: string) => { try { await api.delete(`/api/circulation/reservations/${id}`); toast.success("Reservation cancelled"); load(); } catch (e: any) { toast.error(e.response?.data?.message || "Cancellation failed"); } };
+  return <div className="two-columns"><form className="panel form-stack" onSubmit={reserve}><h2>Create reservation</h2><label>Student ID<input required value={studentId} onChange={e => setStudentId(e.target.value)} /></label><label>Book ID<input required value={bookId} onChange={e => setBookId(e.target.value)} /></label><button>Create reservation</button></form><div className="panel"><h2>Reservations</h2>{items.length === 0 ? <p className="empty small">No reservations.</p> : items.map(x => <div className="list-row" key={x._id}><div><strong>{x.bookTitle}</strong><small>Student {x.studentId} · {x.status}</small></div><button className="secondary" onClick={() => cancel(x._id)}>Cancel</button></div>)}</div></div>;
+}
+
 function OverdueFines() {
   const [overdue, setOverdue] = useState<Issuance[]>([]); const [fines, setFines] = useState<Fine[]>([]);
   const load = async () => { const [a, b] = await Promise.all([api.get("/api/circulation/overdue"), api.get("/api/library-admin/fines")]); setOverdue(a.data.data); setFines(b.data.data); }; useEffect(() => { load().catch(() => toast.error("Overdue data could not be loaded")); }, []);
   const fineAction = async (fine: Fine, kind: "payment" | "waive") => { const raw = prompt(`${kind} amount`); if (!raw) return; const reason = kind === "waive" ? prompt("Waiver reason") : undefined; try { await api.post(`/api/library-admin/fines/${fine._id}/${kind}`, { amount: Number(raw), reason }); toast.success("Fine updated"); load(); } catch (e: any) { toast.error(e.response?.data?.message || "Fine update failed"); } };
   return <div className="two-columns"><div className="panel"><h2>Overdue loans</h2>{overdue.map(x => <div className="list-row" key={x._id}><div><strong>{x.bookTitle}</strong><small>Student {x.studentId}</small></div><span className="status overdue">Due {new Date(x.dueDate).toLocaleDateString()}</span></div>)}</div><div className="panel"><h2>Fine tracking</h2>{fines.map(x => <div className="list-row" key={x._id}><div><strong>{x.bookTitle}</strong><small>{x.status} · student {x.studentId}</small></div><div><b>{(x.amount - x.paidAmount - x.waivedAmount).toFixed(2)}</b><button className="secondary" onClick={() => fineAction(x, "payment")}>Record payment</button><button className="secondary" onClick={() => fineAction(x, "waive")}>Waive</button></div></div>)}</div></div>;
 }
-
-function Reports() { const [report, setReport] = useState<any>(); useEffect(() => { api.get("/api/library-admin/reports").then(r => setReport(r.data.data)); }, []); if (!report) return <div className="empty">Loading reports…</div>; return <div><div className="metric-row"><div><strong>{report.totals.issuances}</strong><span>Total issues</span></div><div><strong>{report.totals.active}</strong><span>Active</span></div><div><strong>{report.totals.overdue}</strong><span>Overdue</span></div></div><div className="two-columns"><div className="panel"><h2>Most borrowed</h2>{report.mostBorrowed.map((x: any) => <div className="list-row" key={x._id}><span>{x.title}<small>{x.author}</small></span><b>{x.borrowCount}</b></div>)}</div><div className="panel"><h2>Usage by class</h2>{report.byClass.map((x: any) => <div className="list-row" key={x.className}><span>{x.className}<small>{x.active} active · {x.overdue} overdue</small></span><b>{x.total}</b></div>)}</div></div></div>; }
 
 function Preferences({ user }: { user: User }) { const [prefs, setPrefs] = useState<any>(); useEffect(() => { api.get("/api/library-admin/preferences").then(r => setPrefs(r.data.data)); }, [user.id]); if (!prefs) return <div className="empty">Loading settings…</div>; const save = async () => { await api.put("/api/library-admin/preferences", prefs); toast.success("Notification preferences saved"); }; return <div className="panel form-stack settings-panel"><h2>Notification preferences</h2><label>Overdue digest<select value={prefs.overdueDigest} onChange={e => setPrefs({ ...prefs, overdueDigest: e.target.value })}><option value="daily">Daily</option><option value="off">Off</option></select></label>{[["reservationAlerts", "Reservation-ready alerts"], ["fineAlerts", "Fine threshold alerts"], ["lowStockAlerts", "Low-stock alerts"]].map(([key, label]) => <label className="check" key={key}><input type="checkbox" checked={prefs[key]} onChange={e => setPrefs({ ...prefs, [key]: e.target.checked })} />{label}</label>)}<button onClick={save}>Save preferences</button></div>; }

@@ -63,6 +63,7 @@ public sealed class LmsIntegrationController : ControllerBase
         var email = request.Email.Trim().ToLowerInvariant();
         var librarian = await _mongo.Admins.Find(x => x.Email == email && x.Role == "librarian" && x.Status == "active").FirstOrDefaultAsync(token);
         if (librarian == null || !BCrypt.Net.BCrypt.Verify(request.Password, librarian.Password)) return Unauthorized(new { success = false, message = "Invalid librarian email or password." });
+        if (await _mongo.Colleges.Find(x => x.Id == librarian.CollegeId && x.IsBlocked).AnyAsync(token)) return Forbid();
         return Ok(new { id = librarian.Id, librarian.Name, librarian.Email, librarian.Role, librarian.CollegeId });
     }
 

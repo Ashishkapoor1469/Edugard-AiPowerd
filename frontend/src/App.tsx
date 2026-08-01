@@ -153,7 +153,7 @@ const BottomNav: React.FC = () => {
           ),
         },
       ]
-    : user?.role === "admin" || user?.role === "college-admin"
+    : user?.role === "college-admin"
     ? [
         {
           name: "Dashboard",
@@ -305,7 +305,7 @@ const ProtectedLayout: React.FC = () => {
           <RouteErrorBoundary>
             <Routes>
               <Route path="/" element={user?.role === "librarian" ? <LmsRedirect /> : user?.role === "student" ? <StudentProfile /> : (user?.role === "college-admin" ? <CollegeAdminDashboard /> : (user?.role === "admin" ? <AdminDashboard /> : <Dashboard />))} />
-              <Route path="/library" element={<LmsRedirect />} />
+              <Route path="/library" element={user?.role === "college-admin" || user?.role === "librarian" ? <LmsRedirect /> : <Navigate to="/" replace />} />
               <Route path="/students" element={user?.role === "student" ? <Navigate to="/" replace /> : (user?.role === "college-admin" ? <Navigate to="/" replace /> : (user?.role === "admin" ? <AdminDashboard /> : <Dashboard />))} />
               <Route path="/students/:id" element={<StudentProfile />} />
               <Route path="/class/:className" element={user?.role === "student" ? <Navigate to="/" replace /> : (user?.role === "admin" || user?.role === "college-admin" ? <Navigate to="/" replace /> : <ClassOverview />)} />

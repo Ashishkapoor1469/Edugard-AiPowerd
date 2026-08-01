@@ -145,13 +145,13 @@ const StudentProfile: React.FC = () => {
   const [chartMode, setChartMode] = useState<"marks" | "attendance">("marks");
 
   useEffect(() => {
-    if (activeTab !== "books" || !studentId) return;
+    if (activeTab !== "books" || user?.role !== "student" || !studentId) return;
     setBooksLoading(true);
     axios.get(`/api/library/students/${studentId}/books`)
       .then((response) => setIssuedBooks(response.data.data ?? []))
       .catch((error) => toast.error(error.response?.data?.message || "Could not load issued books"))
       .finally(() => setBooksLoading(false));
-  }, [activeTab, studentId]);
+  }, [activeTab, studentId, user?.role]);
 
   // Overrides modal for Mentors/Admins
   const [showOverrideForm, setShowOverrideForm] = useState(false);
@@ -997,7 +997,7 @@ ${student.aiImprovementPlan || "No plan generated."}
       {/* Rest of the page is only accessible if student is approved, or if logged in user is a mentor/admin */}
       {user?.role !== "student" || student.verificationStatus === "approved" ? (
         <>
-          {user?.role !== "student" && <div className="mb-6 flex gap-2 overflow-x-auto border-b border-[#dadce0] pb-px">{[{ id: "performance", label: "Academic Performance" }, { id: "books", label: "Books" }, { id: "chat", label: "Student Chat" }].map(tab => <button key={tab.id} onClick={() => setActiveTab(tab.id as any)} className={`rounded-t-lg border-b-2 px-4 py-2 text-sm font-semibold ${activeTab === tab.id ? "border-[#12274E] bg-primary/5 text-[#12274E]" : "border-transparent text-[#5f6368]"}`}>{tab.label}</button>)}</div>}
+          {user?.role !== "student" && <div className="mb-6 flex gap-2 overflow-x-auto border-b border-[#dadce0] pb-px">{[{ id: "performance", label: "Academic Performance" }, { id: "chat", label: "Student Chat" }].map(tab => <button key={tab.id} onClick={() => setActiveTab(tab.id as any)} className={`rounded-t-lg border-b-2 px-4 py-2 text-sm font-semibold ${activeTab === tab.id ? "border-[#12274E] bg-primary/5 text-[#12274E]" : "border-transparent text-[#5f6368]"}`}>{tab.label}</button>)}</div>}
           {/* Student portal tabs */}
           {user?.role === "student" && (
             <div className="mb-6 border-b border-[#dadce0] flex gap-2 overflow-x-auto pb-px">
@@ -1437,7 +1437,7 @@ ${student.aiImprovementPlan || "No plan generated."}
 
           {user?.role === "student" && activeTab === "attendance" && <StudentAttendancePanel />}
 
-          {activeTab === "books" && (
+          {user?.role === "student" && activeTab === "books" && (
             <section className="rounded-2xl border border-[#dadce0] bg-white p-6 shadow-sm">
               <div className="mb-5 flex items-center justify-between gap-3">
                 <div>

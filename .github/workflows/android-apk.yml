@@ -39,6 +39,7 @@ jobs:
         run: npm run build
         env:
           VITE_API_URL: https://edugard-aipowerd.onrender.com
+          VITE_PUSH_ENABLED: ${{ secrets.FIREBASE_GOOGLE_SERVICES_JSON != '' }}
 
       - name: Configure Firebase
         env:
