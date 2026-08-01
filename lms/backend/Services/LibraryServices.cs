@@ -95,10 +95,13 @@ public sealed class CatalogService : ICatalogService
     {
         var version = (await _circulation.GetSettingsAsync(collegeId, token)).CatalogVersion;
         var key = $"lms:catalog:{collegeId}:{version}:{query.Search}:{query.Category}:{query.Available}:{query.Page}:{query.Limit}";
-        var cached = await _cache.GetStringAsync(key, token);
+        string? cached = null;
+        try { cached = await _cache.GetStringAsync(key, token); }
+        catch { /* ponytail: cache is optional; serve MongoDB directly when Redis is unavailable. */ }
         if (cached != null) return JsonSerializer.Deserialize<CatalogPage>(cached, JsonOptions)!;
         var page = await _books.SearchAsync(collegeId, query, token);
-        await _cache.SetStringAsync(key, JsonSerializer.Serialize(page, JsonOptions), new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = TimeSpan.FromSeconds(30) }, token);
+        try { await _cache.SetStringAsync(key, JsonSerializer.Serialize(page, JsonOptions), new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = TimeSpan.FromSeconds(30) }, token); }
+        catch { /* ponytail: cache is optional; the database response is still valid. */ }
         return page;
     }
 

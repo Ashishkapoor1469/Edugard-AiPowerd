@@ -48,6 +48,6 @@ app.UseExceptionHandler(handler => handler.Run(async context =>
     context.Response.StatusCode = status; await context.Response.WriteAsJsonAsync(new { success = false, message = status == 500 ? "Unexpected LMS error" : error?.Message });
 }));
 app.UseCors(); app.UseAuthentication(); app.UseRateLimiter(); app.UseAuthorization(); app.MapControllers();
-app.MapGet("/health", () => Results.Ok(new { status = "ok", service = "eduguard-lms" }));
+app.MapGet("/health", () => Results.Ok(new { status = "ok", service = "eduguard-lms", commit = Environment.GetEnvironmentVariable("RENDER_GIT_COMMIT") }));
 await app.Services.GetRequiredService<LmsMongoContext>().EnsureIndexesAsync();
 app.Run();
