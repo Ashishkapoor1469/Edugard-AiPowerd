@@ -153,12 +153,24 @@ namespace EduGuard.Controllers
             if (model == null || string.IsNullOrEmpty(model.Name) || string.IsNullOrEmpty(model.Email) || 
                 string.IsNullOrEmpty(model.Password) || string.IsNullOrEmpty(model.RollNo) || 
                 string.IsNullOrEmpty(model.CollegeId) || string.IsNullOrEmpty(model.CourseId) || 
-                string.IsNullOrEmpty(model.MentorId))
+                string.IsNullOrEmpty(model.Section) || string.IsNullOrEmpty(model.MentorId))
             {
                 return BadRequest(new { success = false, message = "All fields are required" });
             }
 
             model.Email = model.Email.Trim().ToLower();
+            model.Section = model.Section.Trim().ToUpper();
+
+            var degree = await _mongoService.Degrees.Find(d => d.Id == model.CourseId && d.CollegeId == model.CollegeId).FirstOrDefaultAsync();
+            if (degree == null)
+            {
+                return BadRequest(new { success = false, message = "Selected degree does not belong to the selected college" });
+            }
+
+            if (model.Section is not ("A" or "B") || model.Semester < 1 || model.Semester > degree.DurationYears * 2)
+            {
+                return BadRequest(new { success = false, message = "Select a valid section and semester" });
+            }
 
             // Check if student was pre-added by Mentor (Flow A)
             var existing = await _mongoService.Students.Find(s => s.Email == model.Email).FirstOrDefaultAsync();
@@ -178,6 +190,9 @@ namespace EduGuard.Controllers
                 existing.IsRegistered = true;
                 existing.IsVerified = true; // Mark verified as true per instructions
                 existing.VerificationStatus = "approved"; // Pre-added means pre-approved
+                existing.Course = degree.Name;
+                existing.Class = $"{degree.Name}-{model.Section}";
+                existing.Semester = model.Semester;
                 existing.Otp = otp;
                 existing.OtpExpiry = DateTime.UtcNow.AddMinutes(15);
 
@@ -232,7 +247,9 @@ namespace EduGuard.Controllers
                 Password = BCrypt.Net.BCrypt.HashPassword(model.Password),
                 CollegeId = model.CollegeId,
                 CourseId = model.CourseId,
-                Class = model.Class ?? "BCA-A",
+                Course = degree.Name,
+                Class = $"{degree.Name}-{model.Section}",
+                Semester = model.Semester,
                 MentorId = model.MentorId,
                 MentorName = mentor.Name,
                 IsVerified = false, // Flow B starts unverified
@@ -634,7 +651,8 @@ namespace EduGuard.Controllers
         public string Password { get; set; } = string.Empty;
         public string CollegeId { get; set; } = string.Empty;
         public string CourseId { get; set; } = string.Empty;
-        public string? Class { get; set; }
+        public string Section { get; set; } = string.Empty;
+        public int Semester { get; set; }
         public string MentorId { get; set; } = string.Empty;
     }
 

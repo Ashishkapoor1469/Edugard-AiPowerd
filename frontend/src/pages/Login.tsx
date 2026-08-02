@@ -14,6 +14,7 @@ interface College {
 interface Degree {
   _id: string;
   name: string;
+  durationYears: number;
 }
 
 interface Mentor {
@@ -53,6 +54,8 @@ const Login: React.FC = () => {
 
   const [degrees, setDegrees] = useState<Degree[]>([]);
   const [selectedDegree, setSelectedDegree] = useState("");
+  const [section, setSection] = useState("");
+  const [semester, setSemester] = useState("");
 
   const [mentors, setMentors] = useState<Mentor[]>([]);
   const [selectedMentor, setSelectedMentor] = useState("");
@@ -78,6 +81,8 @@ const Login: React.FC = () => {
     if (selectedCollege) {
       setDegreesLoading(true); setSignupListsError("");
       setSelectedDegree("");
+      setSection("");
+      setSemester("");
       setSelectedMentor("");
       setMentors([]);
       setMentorLookupMessage("");
@@ -88,6 +93,8 @@ const Login: React.FC = () => {
     } else {
       setDegrees([]);
       setSelectedDegree("");
+      setSection("");
+      setSemester("");
       setSelectedMentor("");
       setMentors([]);
       setMentorLookupMessage("");
@@ -169,8 +176,8 @@ const Login: React.FC = () => {
           toast.success("Mentor account registered successfully! Pending administrator approval.");
           setIsRegisterMode(false);
         } else if (roleMode === "student") {
-          if (!selectedCollege || !selectedDegree || !selectedMentor) {
-            toast.error("Please select college, degree, and mentor");
+          if (!selectedCollege || !selectedDegree || !section || !semester || !selectedMentor) {
+            toast.error("Please select college, degree, section, semester, and mentor");
             setIsSubmitting(false);
             return;
           }
@@ -192,6 +199,8 @@ const Login: React.FC = () => {
             password,
             collegeId: selectedCollege,
             courseId: selectedDegree,
+            section,
+            semester: Number(semester),
             mentorId: selectedMentor,
           });
           if (res.data.success) {
@@ -386,7 +395,7 @@ const Login: React.FC = () => {
                       <select
                         required
                         value={selectedDegree}
-                        onChange={(e) => setSelectedDegree(e.target.value)}
+                        onChange={(e) => { setSelectedDegree(e.target.value); setSemester(""); }}
                         className="w-full rounded-lg border border-[#dadce0] px-3.5 py-2 text-sm focus:border-primary focus:outline-none bg-white"
                       >
                         <option value="">{degreesLoading ? "Loading degrees..." : "Choose Degree..."}</option>
@@ -394,6 +403,36 @@ const Login: React.FC = () => {
                           <option key={d._id} value={d._id}>{d.name}</option>
                         ))}
                       </select>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-bold text-[#5f6368] uppercase tracking-wider mb-1">Section</label>
+                        <select
+                          required
+                          value={section}
+                          onChange={(e) => setSection(e.target.value)}
+                          className="w-full rounded-lg border border-[#dadce0] px-3.5 py-2 text-sm focus:border-primary focus:outline-none bg-white"
+                        >
+                          <option value="">Choose...</option>
+                          <option value="A">A</option>
+                          <option value="B">B</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-[#5f6368] uppercase tracking-wider mb-1">Semester</label>
+                        <select
+                          required
+                          value={semester}
+                          onChange={(e) => setSemester(e.target.value)}
+                          disabled={!selectedDegree}
+                          className="w-full rounded-lg border border-[#dadce0] px-3.5 py-2 text-sm focus:border-primary focus:outline-none bg-white disabled:bg-slate-50"
+                        >
+                          <option value="">Choose...</option>
+                          {Array.from({ length: (degrees.find((d) => d._id === selectedDegree)?.durationYears || 0) * 2 }, (_, i) => i + 1).map((value) => (
+                            <option key={value} value={value}>{value}</option>
+                          ))}
+                        </select>
+                      </div>
                     </div>
                     <div>
                       <label className="block text-xs font-bold text-[#5f6368] uppercase tracking-wider mb-1">Select Mentor</label>
