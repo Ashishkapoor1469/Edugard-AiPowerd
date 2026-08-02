@@ -46,10 +46,28 @@ export const achievementBadgeCatalog: AchievementBadge[] = [
 
 export type EarnedBadgeRecord = { badgeId?: string; sourceKey?: string; type?: string; name?: string; description?: string; category?: AchievementCategory; awardedAt?: string; awardedBy?: string; eventName?: string; certificateUrl?: string; level?: AchievementLevel };
 
-export const mergeAchievementBadges = (earned: EarnedBadgeRecord[], isCr = false) => achievementBadgeCatalog.map((definition) => {
-  const award = earned.find((item) => item.badgeId === definition.id || item.type === definition.id);
-  return { ...definition, ...(award ?? {}), name: award?.name || definition.name, description: award?.description || definition.description, isEarned: !!award || (isCr && definition.id === "class-representative") };
-});
+const badgeCacheKey = (studentId: string) => `eduguard_achievement_badges_${studentId}`;
+export const readAchievementBadgeCache = (studentId: string): EarnedBadgeRecord[] | null => {
+  try {
+    const cached = JSON.parse(sessionStorage.getItem(badgeCacheKey(studentId)) || "null");
+    return cached && Date.now() - cached.timestamp < 24 * 60 * 60 * 1000 ? cached.data : null;
+  } catch { return null; }
+};
+export const writeAchievementBadgeCache = (studentId: string, data: EarnedBadgeRecord[]) => {
+  try { sessionStorage.setItem(badgeCacheKey(studentId), JSON.stringify({ data, timestamp: Date.now() })); } catch { /* Badge display still works without cache storage. */ }
+};
+
+export const mergeAchievementBadges = (earned: EarnedBadgeRecord[], isCr = false) => {
+  const catalog = achievementBadgeCatalog.map((definition) => {
+    const award = earned.find((item) => item.badgeId === definition.id || item.type === definition.id);
+    return { ...definition, ...(award ?? {}), name: award?.name || definition.name, description: award?.description || definition.description, isEarned: !!award || (isCr && definition.id === "class-representative") };
+  });
+  const fallback = achievementBadgeCatalog.find((item) => item.id === "participation")!;
+  const custom = earned.filter((item) => !achievementBadgeCatalog.some((definition) => item.badgeId === definition.id || item.type === definition.id)).map((item, index) => ({
+    ...fallback, ...item, id: `co-curricular-${item.sourceKey || index}`, name: item.name || "Co-curricular Achievement", shortLabel: "CO-CURRICULAR", description: item.description || "Awarded for a recognised co-curricular contribution.", category: item.category || fallback.category, isEarned: true,
+  }));
+  return [...catalog, ...custom];
+};
 
 export const sampleAchievementBadges = mergeAchievementBadges([
   { badgeId: "participation", awardedAt: "2026-01-12", eventName: "Orientation Week", level: "college" },

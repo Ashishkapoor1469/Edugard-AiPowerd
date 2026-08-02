@@ -2,7 +2,7 @@ import { useId } from "react";
 import type { CSSProperties } from "react";
 import type { AchievementBadge as BadgeData } from "../../data/achievementBadges.js";
 
-type Props = { badge: BadgeData; onSelect?: (badge: BadgeData) => void; large?: boolean };
+type Props = { badge: BadgeData; onSelect?: (badge: BadgeData) => void; large?: boolean; compact?: boolean };
 type BadgeStyle = CSSProperties & Record<"--badge-primary" | "--badge-secondary" | "--badge-accent", string>;
 
 const shapePath: Record<BadgeData["shape"], string> = {
@@ -13,13 +13,13 @@ const shapePath: Record<BadgeData["shape"], string> = {
   arch: "M28 180V85a72 72 0 0 1 144 0v95Z",
 };
 
-export default function AchievementBadge({ badge, onSelect, large = false }: Props) {
+export default function AchievementBadge({ badge, onSelect, large = false, compact = false }: Props) {
   const pathId = useId().replace(/:/g, "");
   const style: BadgeStyle = { "--badge-primary": badge.colors.primary, "--badge-secondary": badge.colors.secondary, "--badge-accent": badge.colors.accent };
   return (
     <button type="button" onClick={() => onSelect?.(badge)} title={badge.isEarned ? badge.name : "Not earned yet"} aria-label={`${badge.name}. ${badge.isEarned ? "Earned" : "Not earned yet"}`} style={style}
-      className={`achievement-sticker group relative mx-auto flex w-full max-w-[190px] flex-col items-center rounded-2xl p-2 text-center transition focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#3155C6]/35 ${badge.isEarned ? "hover:-translate-y-1 hover:scale-105 hover:shadow-xl" : "opacity-45 grayscale"} ${large ? "max-w-[260px]" : ""} ${badge.id === "class-representative" ? "bg-[#F6C945]/10 ring-2 ring-[#F6C945]/50" : ""}`}>
-      {badge.id === "class-representative" && <span className="mb-1 rounded-full bg-[#132238] px-2 py-0.5 text-[8px] font-black uppercase tracking-[0.18em] text-white">Featured leadership badge</span>}
+      className={`achievement-sticker group relative mx-auto flex w-full flex-col items-center text-center transition focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#3155C6]/35 ${compact ? "max-w-12 rounded-xl p-0.5" : "max-w-[190px] rounded-2xl p-2"} ${badge.isEarned ? "hover:-translate-y-1 hover:scale-105 hover:shadow-xl" : "opacity-45 grayscale"} ${large ? "max-w-[260px]" : ""} ${badge.id === "class-representative" && !compact ? "bg-[#F6C945]/10 ring-2 ring-[#F6C945]/50" : ""}`}>
+      {badge.id === "class-representative" && !compact && <span className="mb-1 rounded-full bg-[#132238] px-2 py-0.5 text-[8px] font-black uppercase tracking-[0.18em] text-white">Featured leadership badge</span>}
       <span className="relative block aspect-square w-full">
         <svg viewBox="0 0 200 200" className="h-full w-full overflow-visible" role="img" aria-labelledby={`${pathId}-title`}>
           <title id={`${pathId}-title`}>{badge.name} collectible achievement badge</title>
@@ -39,10 +39,10 @@ export default function AchievementBadge({ badge, onSelect, large = false }: Pro
           </>}
           <g className="badge-sparkles" fill="#F6C945" stroke="#172033" strokeWidth="2"><path d="m28 54 4 8 8 4-8 4-4 8-4-8-8-4 8-4z"/><path d="m173 104 3 6 6 3-6 3-3 6-3-6-6-3 6-3z"/></g>
         </svg>
-        {!badge.isEarned && <span className="absolute bottom-3 right-3 flex h-8 w-8 items-center justify-center rounded-full border-2 border-white bg-[#172033] text-white shadow" aria-hidden="true"><svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.5"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg></span>}
+        {!badge.isEarned && !compact && <span className="absolute bottom-3 right-3 flex h-8 w-8 items-center justify-center rounded-full border-2 border-white bg-[#172033] text-white shadow" aria-hidden="true"><svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.5"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg></span>}
       </span>
-      <span className="mt-1 text-xs font-black text-[#172033]">{badge.name}</span>
-      {badge.isEarned ? <span className="mt-1 text-[10px] font-bold uppercase tracking-wide text-slate-500">{badge.level || "college"}{badge.awardedAt ? ` · ${new Date(badge.awardedAt).toLocaleDateString()}` : ""}</span> : <span className="mt-1 text-[10px] font-bold text-slate-500">Not earned yet</span>}
+      {!compact && <><span className="mt-1 text-xs font-black text-[#172033]">{badge.name}</span>
+      {badge.isEarned ? <span className="mt-1 text-[10px] font-bold uppercase tracking-wide text-slate-500">{badge.level || "college"}{badge.awardedAt ? ` · ${new Date(badge.awardedAt).toLocaleDateString()}` : ""}</span> : <span className="mt-1 text-[10px] font-bold text-slate-500">Not earned yet</span>}</>}
     </button>
   );
 }

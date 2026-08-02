@@ -14,6 +14,7 @@ import { Toaster } from "react-hot-toast";
 
 import CollegeAdminDashboard from "./pages/CollegeAdminDashboard";
 import StudentAssignmentsPage from "./pages/StudentAssignmentsPage";
+import StudentBadgesPage from "./pages/StudentBadgesPage";
 import ReportCard from "./pages/ReportCard";
 import axios from "axios";
 import { ErrorState, LoadingState } from "./components/AsyncState";
@@ -250,7 +251,7 @@ const BottomNav: React.FC = () => {
             </div>
             {user?.role === "student" && <button
               type="button"
-              onClick={() => { setShowProfileMenu(false); navigate("/?tab=achievements"); }}
+              onClick={() => { setShowProfileMenu(false); navigate("/badge"); }}
               className="flex w-full items-center gap-2 px-4 py-2 text-left text-xs font-medium text-primary hover:bg-slate-50"
             >
               <span aria-hidden="true">◆</span>
@@ -317,6 +318,7 @@ const ProtectedLayout: React.FC = () => {
               <Route path="/class/:className" element={user?.role === "student" ? <Navigate to="/" replace /> : (user?.role === "admin" || user?.role === "college-admin" ? <Navigate to="/" replace /> : <ClassOverview />)} />
               <Route path="/notifications" element={user?.role === "student" ? <Navigate to="/" replace /> : (user?.role === "admin" || user?.role === "college-admin" ? <Navigate to="/" replace /> : <NotificationsPage />)} />
               <Route path="/assignments" element={user?.role === "student" ? <StudentAssignmentsPage /> : <Navigate to="/" replace />} />
+              <Route path="/badge" element={user?.role === "librarian" ? <Navigate to="/" replace /> : <StudentBadgesPage />} />
               <Route path="/reportcard/:jobId" element={user?.role === "student" ? <ReportCard /> : <Navigate to="/" replace />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>

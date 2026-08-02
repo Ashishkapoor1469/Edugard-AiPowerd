@@ -417,7 +417,7 @@ const Navbar: React.FC = () => {
               </div>
               {user?.role === "student" && (
                 <button
-                  onClick={() => { setShowProfileDropdown(false); navigate("/?tab=achievements"); }}
+                  onClick={() => { setShowProfileDropdown(false); navigate("/badge"); }}
                   className="flex w-full items-center gap-2 px-4 py-2 text-left text-xs font-medium text-primary hover:bg-slate-50"
                 >
                   <span aria-hidden="true">◆</span>

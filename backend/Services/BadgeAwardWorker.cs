@@ -88,7 +88,7 @@ public sealed class BadgeAwardWorker : BackgroundService
         if (text.Contains("sport") || text.Contains("athletic") || text.Contains("game")) return ("sports-achievement", "sports", "emerald", "sports");
         if (text.Contains("volunteer") || text.Contains("service") || text.Contains("social")) return ("community-service", "service", "sky", "service");
         if (text.Contains("music") || text.Contains("dance") || Regex.IsMatch(text, @"\bart\b") || text.Contains("cultural")) return ("cultural-performer", "culture", "violet", "cultural");
-        return ("participation", "participation", "teal", "participation");
+        return ("co-curricular", "co-curricular", "teal", "participation");
     }
 
 }
