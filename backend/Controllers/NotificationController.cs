@@ -34,7 +34,8 @@ namespace EduGuard.Controllers
             // Fetch notifications for the logged in mentor, sorted by newest first
             var filters = new List<FilterDefinition<Notification>>
             {
-                Builders<Notification>.Filter.Eq(n => n.MentorId, userId)
+                Builders<Notification>.Filter.Eq(n => n.MentorId, userId),
+                Builders<Notification>.Filter.Gte(n => n.CreatedAt, DateTime.UtcNow.AddDays(-15))
             };
             if (isRead.HasValue)
             {
@@ -49,6 +50,7 @@ namespace EduGuard.Controllers
             var notifications = await _mongoService.Notifications
                 .Find(filter)
                 .SortByDescending(n => n.CreatedAt)
+                .Limit(10)
                 .ToListAsync();
 
             var studentIds = notifications

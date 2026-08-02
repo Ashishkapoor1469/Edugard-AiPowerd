@@ -14,10 +14,19 @@ import { Toaster } from "react-hot-toast";
 
 import CollegeAdminDashboard from "./pages/CollegeAdminDashboard";
 import StudentAssignmentsPage from "./pages/StudentAssignmentsPage";
-import MyBadgesModal from "./components/MyBadgesModal";
 import ReportCard from "./pages/ReportCard";
 import axios from "axios";
 import { ErrorState, LoadingState } from "./components/AsyncState";
+import eduGuardLogo from "./assets/e.png";
+
+const WorkspaceLoadingScreen = () => <main className="flex min-h-dvh items-center justify-center bg-[#f8f9fa] p-6 text-center" role="status" aria-live="polite">
+  <div>
+    <div className="workspace-loader mx-auto flex h-24 w-24 items-center justify-center rounded-[24px] border border-slate-200 bg-white shadow-lg"><img src={eduGuardLogo} alt="EduGuard" className="h-16 w-16 rounded-2xl object-cover" /></div>
+    <p className="mt-5 text-sm font-black tracking-wide text-[#132238]">Workspace loading…</p>
+    <p className="mt-1 text-xs text-slate-500">Preparing your EduGuard dashboard</p>
+    <span className="mx-auto mt-4 block h-1.5 w-36 overflow-hidden rounded-full bg-slate-200"><span className="workspace-loader-bar block h-full w-1/2 rounded-full bg-[#3155C6]" /></span>
+  </div>
+</main>;
 
 // Error Boundary to catch page crashes without losing the navbar/sidebar
 class RouteErrorBoundary extends React.Component<
@@ -241,7 +250,7 @@ const BottomNav: React.FC = () => {
             </div>
             {user?.role === "student" && <button
               type="button"
-              onClick={() => { setShowProfileMenu(false); navigate("/?badges=1"); }}
+              onClick={() => { setShowProfileMenu(false); navigate("/?tab=achievements"); }}
               className="flex w-full items-center gap-2 px-4 py-2 text-left text-xs font-medium text-primary hover:bg-slate-50"
             >
               <span aria-hidden="true">◆</span>
@@ -282,7 +291,7 @@ const ProtectedLayout: React.FC = () => {
   const { token, loading, user } = useAuth();
 
   if (loading) {
-    return <LoadingState label="Loading EduGuard workspace…" />;
+    return <WorkspaceLoadingScreen />;
   }
 
   if (!token) {
@@ -315,7 +324,6 @@ const ProtectedLayout: React.FC = () => {
         </div>
       </div>
       <BottomNav />
-      <MyBadgesModal />
     </div>
   );
 };

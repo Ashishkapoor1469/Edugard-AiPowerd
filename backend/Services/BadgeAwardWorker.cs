@@ -63,14 +63,16 @@ public sealed class BadgeAwardWorker : BackgroundService
         {
             var sourceKey = Normalize(contribution);
             if (!sourceKeys.Add(sourceKey)) continue;
-            var (type, color) = Classify(contribution);
+            var (badgeId, type, color, category) = Classify(contribution);
             badges.Add(new StudentBadge
             {
+                BadgeId = badgeId,
                 SourceKey = sourceKey,
                 Type = type,
                 Color = color,
                 Name = contribution.Trim(),
                 Description = $"Awarded for the co-curricular achievement: {contribution.Trim()}.",
+                Category = category,
                 AwardedAt = now
             });
         }
@@ -79,14 +81,14 @@ public sealed class BadgeAwardWorker : BackgroundService
             Builders<Student>.Update.Set(s => s.EarnedBadges, badges).Set(s => s.LastBadgeCheckAt, now), cancellationToken: token);
     }
 
-    private static (string Type, string Color) Classify(string value)
+    private static (string BadgeId, string Type, string Color, string Category) Classify(string value)
     {
         var text = value.ToLowerInvariant();
-        if (text.Contains("winner") || text.Contains("award") || text.Contains("rank")) return ("achievement", "amber");
-        if (text.Contains("sport") || text.Contains("athletic") || text.Contains("game")) return ("sports", "emerald");
-        if (text.Contains("volunteer") || text.Contains("service") || text.Contains("social")) return ("service", "sky");
-        if (text.Contains("music") || text.Contains("dance") || Regex.IsMatch(text, @"\bart\b") || text.Contains("cultural")) return ("culture", "violet");
-        return ("participation", "teal");
+        if (text.Contains("winner") || text.Contains("award") || text.Contains("rank")) return ("competition-winner", "achievement", "amber", "participation");
+        if (text.Contains("sport") || text.Contains("athletic") || text.Contains("game")) return ("sports-achievement", "sports", "emerald", "sports");
+        if (text.Contains("volunteer") || text.Contains("service") || text.Contains("social")) return ("community-service", "service", "sky", "service");
+        if (text.Contains("music") || text.Contains("dance") || Regex.IsMatch(text, @"\bart\b") || text.Contains("cultural")) return ("cultural-performer", "culture", "violet", "cultural");
+        return ("participation", "participation", "teal", "participation");
     }
 
 }

@@ -186,6 +186,9 @@ namespace EduGuard.Models
 
     public class StudentBadge
     {
+        [BsonElement("badgeId")]
+        public string BadgeId { get; set; } = string.Empty;
+
         [BsonElement("sourceKey")]
         public string SourceKey { get; set; } = string.Empty;
 
@@ -200,6 +203,21 @@ namespace EduGuard.Models
 
         [BsonElement("description")]
         public string Description { get; set; } = string.Empty;
+
+        [BsonElement("category")]
+        public string Category { get; set; } = "participation";
+
+        [BsonElement("eventName")]
+        public string? EventName { get; set; }
+
+        [BsonElement("awardedBy")]
+        public string? AwardedBy { get; set; }
+
+        [BsonElement("certificateUrl")]
+        public string? CertificateUrl { get; set; }
+
+        [BsonElement("level")]
+        public string? Level { get; set; }
 
         [BsonElement("awardedAt")]
         public DateTime AwardedAt { get; set; } = DateTime.UtcNow;

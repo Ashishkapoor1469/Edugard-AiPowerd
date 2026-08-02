@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.js";
 import axios from "axios";
 import socket from "../utils/socket.js";
@@ -16,6 +16,7 @@ import {
 import ReactMarkdown from "react-markdown";
 import StudentAttendancePanel from "../components/StudentAttendancePanel.js";
 import CRBadge from "../components/CRBadge.js";
+import StudentAchievementsSection from "../components/achievements/StudentAchievementsSection.js";
 import { ErrorState, LoadingState } from "../components/AsyncState.js";
 import { downloadFile } from "../utils/downloadFile.js";
 
@@ -106,14 +107,15 @@ const StudentProfile: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const { user } = useAuth();
   const navigate = useNavigate();
+  const [profileParams] = useSearchParams();
 
   // If student views their own profile, studentId is user.id
   const studentId = user?.role === "student" ? user.id : id;
 
   // Tabs for Student vs Mentor
   const [activeTab, setActiveTab] = useState<
-    "performance" | "attendance" | "books" | "chat" | "notifications" | "settings"
-  >(() => new URLSearchParams(window.location.search).get("tab") === "books" ? "books" : "performance");
+    "performance" | "achievements" | "attendance" | "books" | "chat" | "notifications" | "settings"
+  >(() => new URLSearchParams(window.location.search).get("tab") === "achievements" ? "achievements" : new URLSearchParams(window.location.search).get("tab") === "books" ? "books" : "performance");
 
   // States
   const [student, setStudent] = useState<Student | null>(null);
@@ -152,6 +154,13 @@ const StudentProfile: React.FC = () => {
   const [attendanceChartError, setAttendanceChartError] = useState("");
   const [chartMode, setChartMode] = useState<"marks" | "attendance">("marks");
   const [savingOverride, setSavingOverride] = useState(false);
+
+  useEffect(() => {
+    const requestedTab = profileParams.get("tab");
+    if (requestedTab !== "achievements" && requestedTab !== "books") return;
+    const frame = requestAnimationFrame(() => setActiveTab(requestedTab));
+    return () => cancelAnimationFrame(frame);
+  }, [profileParams]);
 
   useEffect(() => {
     if (activeTab !== "books" || user?.role !== "student" || !studentId) return;
@@ -992,12 +1001,13 @@ ${student.aiImprovementPlan || "No plan generated."}
       {/* Rest of the page is only accessible if student is approved, or if logged in user is a mentor/admin */}
       {user?.role !== "student" || student.verificationStatus === "approved" ? (
         <>
-          {user?.role !== "student" && <div className="mb-6 flex gap-2 overflow-x-auto border-b border-[#dadce0] pb-px">{[{ id: "performance", label: "Academic Performance" }, { id: "chat", label: "Student Chat" }].map(tab => <button key={tab.id} onClick={() => setActiveTab(tab.id as any)} className={`rounded-t-lg border-b-2 px-4 py-2 text-sm font-semibold ${activeTab === tab.id ? "border-[#12274E] bg-primary/5 text-[#12274E]" : "border-transparent text-[#5f6368]"}`}>{tab.label}</button>)}</div>}
+          {user?.role !== "student" && <div className="mb-6 flex gap-2 overflow-x-auto border-b border-[#dadce0] pb-px">{[{ id: "performance", label: "Academic Performance" }, { id: "achievements", label: "Achievements & Badges" }, { id: "chat", label: "Student Chat" }].map(tab => <button key={tab.id} onClick={() => setActiveTab(tab.id as any)} className={`rounded-t-lg border-b-2 px-4 py-2 text-sm font-semibold ${activeTab === tab.id ? "border-[#12274E] bg-primary/5 text-[#12274E]" : "border-transparent text-[#5f6368]"}`}>{tab.label}</button>)}</div>}
           {/* Student portal tabs */}
           {user?.role === "student" && (
             <div className="mb-6 border-b border-[#dadce0] flex gap-2 overflow-x-auto pb-px">
               {[
                 { id: "performance", label: "Academic Performance" },
+                { id: "achievements", label: "Achievements & Badges" },
                 { id: "attendance", label: "Attendance" },
                 { id: "books", label: "Books" },
                 {
@@ -1020,6 +1030,8 @@ ${student.aiImprovementPlan || "No plan generated."}
               ))}
             </div>
           )}
+
+          {activeTab === "achievements" && <StudentAchievementsSection student={{ _id: student._id, name: student.name, rollNo: student.rollNo, class: student.class }} isCr={student.isCr} canAward={user?.role === "mentor" || user?.role === "admin" || user?.role === "college-admin"} awardedBy={user?.name} />}
 
           {/* 1. PERFORMANCE TAB */}
           {activeTab === "performance" && (

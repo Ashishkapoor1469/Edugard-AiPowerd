@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Net;
 using System.Security.Cryptography;
+using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -70,12 +71,13 @@ namespace EduGuard.Controllers
 
             var collegeId = student.CollegeId;
             var results = new List<object>();
+            var cutoff = DateTime.UtcNow.AddDays(-15);
 
             // Fetch announcements for this college (not expired)
             if (!string.IsNullOrEmpty(collegeId))
             {
                 var announcements = await _mongoService.Announcements
-                    .Find(a => a.CollegeId == collegeId)
+                    .Find(a => a.CollegeId == collegeId && a.CreatedAt >= cutoff)
                     .SortByDescending(a => a.CreatedAt)
                     .Limit(50)
                     .ToListAsync();
@@ -98,7 +100,7 @@ namespace EduGuard.Controllers
 
                 // Fetch events for this college
                 var events = await _mongoService.Events
-                    .Find(e => e.CollegeId == collegeId)
+                    .Find(e => e.CollegeId == collegeId && e.CreatedAt >= cutoff)
                     .SortByDescending(e => e.CreatedAt)
                     .Limit(50)
                     .ToListAsync();
@@ -120,7 +122,7 @@ namespace EduGuard.Controllers
             }
 
             // Sort combined results by createdAt descending
-            results = results.OrderByDescending(r => ((dynamic)r).createdAt).ToList();
+            results = results.OrderByDescending(r => ((dynamic)r).createdAt).Take(10).ToList();
 
             return Ok(new { success = true, data = results });
         }
@@ -1132,6 +1134,116 @@ namespace EduGuard.Controllers
             return Ok(new { success = true, data = badges, processing, lastCheckedAt = student.LastBadgeCheckAt });
         }
 
+        [HttpGet("{id}/badges")]
+        [EnableRateLimiting("data-fetch")]
+        public async Task<IActionResult> StudentBadges(string id)
+        {
+            var student = await _mongoService.Students.Find(s => s.Id == id).FirstOrDefaultAsync();
+            if (student == null) return NotFound(new { success = false, message = "Student not found" });
+            if (!await CanAccessBadgesAsync(student, false)) return Forbid();
+            return Ok(new { success = true, data = student.EarnedBadges ?? new List<StudentBadge>() });
+        }
+
+        [HttpPost("{id}/badges")]
+        [Authorize(Roles = "mentor,admin,college-admin")]
+        public async Task<IActionResult> AwardBadge(string id, [FromForm] AwardBadgeRequest request)
+        {
+            var student = await _mongoService.Students.Find(s => s.Id == id).FirstOrDefaultAsync();
+            if (student == null) return NotFound(new { success = false, message = "Student not found" });
+            if (!await CanAccessBadgesAsync(student, true)) return Forbid();
+
+            var allowedBadges = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "class-representative", "participation", "competition-winner", "runner-up", "nss-volunteer",
+                "community-service", "sports-achievement", "cultural-performer", "debate-champion", "coding-champion",
+                "academic-excellence", "event-coordinator", "attendance-excellence", "team-leader", "innovation-award"
+            };
+            var allowedCategories = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                { "leadership", "academic", "sports", "cultural", "service", "technical", "participation" };
+            var allowedLevels = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                { "college", "university", "state", "national" };
+            var badgeId = request.BadgeId?.Trim() ?? "";
+            var category = request.Category?.Trim().ToLowerInvariant() ?? "";
+            var level = request.Level?.Trim().ToLowerInvariant();
+            if (!allowedBadges.Contains(badgeId) || string.IsNullOrWhiteSpace(request.Title) || request.Title.Length > 120 ||
+                string.IsNullOrWhiteSpace(request.Description) || request.Description.Length > 500 || !allowedCategories.Contains(category) ||
+                string.IsNullOrWhiteSpace(request.EventName) || request.EventName.Length > 120 || string.IsNullOrWhiteSpace(request.AwardedBy) || request.AwardedBy.Length > 120 ||
+                !request.AwardedAt.HasValue)
+                return BadRequest(new { success = false, message = "Badge, title, description, event, awarded date, awarded by and a valid category are required" });
+            if (string.IsNullOrEmpty(level) || !allowedLevels.Contains(level))
+                return BadRequest(new { success = false, message = "Invalid achievement level" });
+            if (request.AwardedAt > DateTime.UtcNow.AddDays(1))
+                return BadRequest(new { success = false, message = "Awarded date cannot be in the future" });
+
+            var eventKey = BadgeAwardWorker.Normalize(string.IsNullOrWhiteSpace(request.EventName) ? request.Title : request.EventName);
+            var sourceKey = $"manual:{badgeId.ToLowerInvariant()}:{eventKey}";
+            if (!request.AllowDuplicate && (student.EarnedBadges ?? new()).Any(b => string.Equals(b.SourceKey, sourceKey, StringComparison.OrdinalIgnoreCase)))
+                return Conflict(new { success = false, message = "This badge has already been awarded for the same event" });
+
+            string? certificateUrl = string.IsNullOrWhiteSpace(request.CertificateUrl) ? null : request.CertificateUrl.Trim();
+            if (certificateUrl != null && (!Uri.TryCreate(certificateUrl, UriKind.Absolute, out var certificateUri) || certificateUri.Scheme is not ("http" or "https")))
+                return BadRequest(new { success = false, message = "Certificate URL must use http or https" });
+            string? savedCertificate = null;
+            if (request.Certificate is { Length: > 0 })
+            {
+                if (request.Certificate.Length > 5 * 1024 * 1024) return BadRequest(new { success = false, message = "Certificate must be 5 MB or smaller" });
+                var extension = Path.GetExtension(request.Certificate.FileName).ToLowerInvariant();
+                if (extension is not (".pdf" or ".png" or ".jpg" or ".jpeg"))
+                    return BadRequest(new { success = false, message = "Certificate must be a PDF, PNG or JPG file" });
+                var directory = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "certificates");
+                Directory.CreateDirectory(directory);
+                savedCertificate = Path.Combine(directory, $"{Guid.NewGuid():N}{extension}");
+                await using var stream = System.IO.File.Create(savedCertificate);
+                await request.Certificate.CopyToAsync(stream);
+                certificateUrl = $"/certificates/{Path.GetFileName(savedCertificate)}";
+            }
+
+            var badge = new StudentBadge
+            {
+                BadgeId = badgeId.ToLowerInvariant(),
+                SourceKey = request.AllowDuplicate ? $"{sourceKey}:{Guid.NewGuid():N}" : sourceKey,
+                Type = badgeId,
+                Name = request.Title.Trim(),
+                Description = request.Description.Trim(),
+                Category = category,
+                EventName = string.IsNullOrWhiteSpace(request.EventName) ? null : request.EventName.Trim(),
+                AwardedBy = string.IsNullOrWhiteSpace(request.AwardedBy) ? null : request.AwardedBy.Trim(),
+                CertificateUrl = certificateUrl,
+                Level = level,
+                AwardedAt = request.AwardedAt ?? DateTime.UtcNow
+            };
+            var filter = Builders<Student>.Filter.Eq(s => s.Id, id);
+            if (!request.AllowDuplicate)
+                filter &= Builders<Student>.Filter.Not(Builders<Student>.Filter.ElemMatch(s => s.EarnedBadges, b => b.SourceKey == sourceKey));
+            var result = await _mongoService.Students.UpdateOneAsync(filter, Builders<Student>.Update.Push(s => s.EarnedBadges, badge).Set(s => s.UpdatedAt, DateTime.UtcNow));
+            if (result.ModifiedCount == 0)
+            {
+                if (savedCertificate != null) System.IO.File.Delete(savedCertificate);
+                return Conflict(new { success = false, message = "This badge has already been awarded for the same event" });
+            }
+            return Ok(new { success = true, data = badge });
+        }
+
+        private async Task<bool> CanAccessBadgesAsync(Student student, bool awarding)
+        {
+            var userId = User.FindFirst("id")?.Value;
+            var role = User.FindFirst(ClaimTypes.Role)?.Value;
+            if (string.IsNullOrEmpty(userId)) return false;
+            if (role == "student") return !awarding && student.Id == userId;
+            if (role == "mentor")
+            {
+                var mentor = await _mongoService.Mentors.Find(m => m.Id == userId && m.Status == "approved").FirstOrDefaultAsync();
+                return mentor != null && student.MentorId == mentor.Id;
+            }
+            if (role == "college-admin")
+            {
+                var admin = await _mongoService.Admins.Find(a => a.Id == userId && a.Status == "active").FirstOrDefaultAsync();
+                return admin != null && !string.IsNullOrEmpty(admin.CollegeId) && admin.CollegeId == student.CollegeId;
+            }
+            if (role == "admin") return await _mongoService.Admins.Find(a => a.Id == userId && a.Status == "active").AnyAsync();
+            return false;
+        }
+
         [HttpGet("me/report-card/jobs")]
         [Authorize(Roles = "student")]
         [EnableRateLimiting("data-fetch")]
@@ -2094,5 +2206,20 @@ namespace EduGuard.Controllers
     public class SelectMentorPayload
     {
         public string MentorId { get; set; } = string.Empty;
+    }
+
+    public class AwardBadgeRequest
+    {
+        public string BadgeId { get; set; } = string.Empty;
+        public string Title { get; set; } = string.Empty;
+        public string Description { get; set; } = string.Empty;
+        public string Category { get; set; } = string.Empty;
+        public string? EventName { get; set; }
+        public string? Level { get; set; }
+        public DateTime? AwardedAt { get; set; }
+        public string? AwardedBy { get; set; }
+        public string? CertificateUrl { get; set; }
+        public IFormFile? Certificate { get; set; }
+        public bool AllowDuplicate { get; set; }
     }
 }

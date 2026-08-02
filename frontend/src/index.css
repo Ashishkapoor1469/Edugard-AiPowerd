@@ -69,6 +69,25 @@
   animation: shimmer 1.4s ease-in-out infinite;
 }
 
+@keyframes workspace-breathe {
+  50% { transform: translateY(-4px); box-shadow: 0 16px 30px rgba(49, 85, 198, 0.18); }
+}
+@keyframes workspace-progress {
+  from { transform: translateX(-110%); }
+  to { transform: translateX(210%); }
+}
+@keyframes badge-sparkle {
+  50% { transform: scale(1.18) rotate(8deg); transform-origin: center; }
+}
+.workspace-loader { animation: workspace-breathe 1.4s ease-in-out infinite; }
+.workspace-loader-bar { animation: workspace-progress 1.1s ease-in-out infinite; }
+.achievement-sticker:hover .badge-sparkles { animation: badge-sparkle .8s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .workspace-loader, .workspace-loader-bar, .achievement-sticker:hover .badge-sparkles { animation: none; }
+  .achievement-sticker { transition: none; }
+}
+
 /* Custom scrollbars */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }

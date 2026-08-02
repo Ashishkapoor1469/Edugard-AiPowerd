@@ -88,11 +88,12 @@ namespace EduGuard.Controllers
 
             var collegeId = mentor.CollegeId;
             var results = new System.Collections.Generic.List<object>();
+            var cutoff = System.DateTime.UtcNow.AddDays(-15);
 
             if (!string.IsNullOrEmpty(collegeId))
             {
                 var announcements = await _mongoService.Announcements
-                    .Find(a => a.CollegeId == collegeId)
+                    .Find(a => a.CollegeId == collegeId && a.CreatedAt >= cutoff)
                     .SortByDescending(a => a.CreatedAt)
                     .Limit(50)
                     .ToListAsync();
@@ -113,7 +114,7 @@ namespace EduGuard.Controllers
                 }
 
                 var events = await _mongoService.Events
-                    .Find(e => e.CollegeId == collegeId)
+                    .Find(e => e.CollegeId == collegeId && e.CreatedAt >= cutoff)
                     .SortByDescending(e => e.CreatedAt)
                     .Limit(50)
                     .ToListAsync();
@@ -134,7 +135,7 @@ namespace EduGuard.Controllers
                 }
             }
 
-            results = results.OrderByDescending(r => ((dynamic)r).createdAt).ToList();
+            results = results.OrderByDescending(r => ((dynamic)r).createdAt).Take(10).ToList();
 
             return Ok(new { success = true, data = results });
         }
