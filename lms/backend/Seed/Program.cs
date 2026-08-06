@@ -40,13 +40,27 @@ var issuancesColl = lmsDb.GetCollection<BsonDocument>("issuances");
 var finesColl = lmsDb.GetCollection<BsonDocument>("fines");
 var announcementsColl = lmsDb.GetCollection<BsonDocument>("announcements");
 
+// Helper for transient network retries
+static async Task ExecuteWithRetryAsync(Func<Task> action, int maxRetries = 3)
+{
+    for (int i = 1; i <= maxRetries; i++)
+    {
+        try { await action(); return; }
+        catch (Exception ex) when (i < maxRetries)
+        {
+            Console.WriteLine($"[Retry {i}/{maxRetries}] Transient connection warning: {ex.Message}. Retrying...");
+            await Task.Delay(2000);
+        }
+    }
+}
+
 // Clean up 2nd college data and synthetic test IDs from LMS
-await booksColl.DeleteManyAsync(new BsonDocument("collegeId", new BsonDocument("$ne", cecCollegeId)));
-await lmsStudentsColl.DeleteManyAsync(new BsonDocument("collegeId", new BsonDocument("$ne", cecCollegeId)));
-await settingsColl.DeleteManyAsync(new BsonDocument("collegeId", new BsonDocument("$ne", cecCollegeId)));
-await issuancesColl.DeleteManyAsync(new BsonDocument("collegeId", new BsonDocument("$ne", cecCollegeId)));
-await finesColl.DeleteManyAsync(new BsonDocument("collegeId", new BsonDocument("$ne", cecCollegeId)));
-await announcementsColl.DeleteManyAsync(new BsonDocument("collegeId", new BsonDocument("$ne", cecCollegeId)));
+await ExecuteWithRetryAsync(async () => await booksColl.DeleteManyAsync(new BsonDocument("collegeId", new BsonDocument("$ne", cecCollegeId))));
+await ExecuteWithRetryAsync(async () => await lmsStudentsColl.DeleteManyAsync(new BsonDocument("collegeId", new BsonDocument("$ne", cecCollegeId))));
+await ExecuteWithRetryAsync(async () => await settingsColl.DeleteManyAsync(new BsonDocument("collegeId", new BsonDocument("$ne", cecCollegeId))));
+await ExecuteWithRetryAsync(async () => await issuancesColl.DeleteManyAsync(new BsonDocument("collegeId", new BsonDocument("$ne", cecCollegeId))));
+await ExecuteWithRetryAsync(async () => await finesColl.DeleteManyAsync(new BsonDocument("collegeId", new BsonDocument("$ne", cecCollegeId))));
+await ExecuteWithRetryAsync(async () => await announcementsColl.DeleteManyAsync(new BsonDocument("collegeId", new BsonDocument("$ne", cecCollegeId))));
 
 Console.WriteLine("[LMS DB] Cleaned up 2nd college and synthetic test IDs");
 
