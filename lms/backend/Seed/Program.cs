@@ -21,15 +21,10 @@ Console.WriteLine($"[Target College ID]: {cecCollegeId} (Chandigarh Engineering 
 Console.WriteLine($"[2nd College ID]:    {secondCollegeId} (Will remain empty in LMS)");
 Console.WriteLine();
 
-// 1. Fetch 15 existing students from EduGuard main DB for Chandigarh Engineering College
+// Fetch all students from EduGuard main DB
 var egStudentsColl = egDb.GetCollection<BsonDocument>("students");
-var filterCollege = new BsonDocument("$or", new BsonArray
-{
-    new BsonDocument("collegeId", cecCollegeId),
-    new BsonDocument("collegeId", new ObjectId(cecCollegeId))
-});
-var egStudents = await egStudentsColl.Find(filterCollege).ToListAsync();
-Console.WriteLine($"[EduGuard DB] Found {egStudents.Count} existing students for Chandigarh Engineering College");
+var allEgStudents = await egStudentsColl.Find(new BsonDocument()).ToListAsync();
+Console.WriteLine($"[EduGuard DB] Total students found in EduGuard DB: {allEgStudents.Count}");
 
 // Collections in LMS
 var booksColl = lmsDb.GetCollection<BsonDocument>("books");
@@ -39,27 +34,17 @@ var issuancesColl = lmsDb.GetCollection<BsonDocument>("issuances");
 var finesColl = lmsDb.GetCollection<BsonDocument>("fines");
 var announcementsColl = lmsDb.GetCollection<BsonDocument>("announcements");
 
-
-// Clean up 2nd college data from LMS if any exists
-await booksColl.DeleteManyAsync(new BsonDocument("collegeId", secondCollegeId));
-await lmsStudentsColl.DeleteManyAsync(new BsonDocument("collegeId", secondCollegeId));
-await settingsColl.DeleteManyAsync(new BsonDocument("collegeId", secondCollegeId));
-await issuancesColl.DeleteManyAsync(new BsonDocument("collegeId", secondCollegeId));
-await finesColl.DeleteManyAsync(new BsonDocument("collegeId", secondCollegeId));
-await announcementsColl.DeleteManyAsync(new BsonDocument("collegeId", secondCollegeId));
-
-// Clean up old synthetic college IDs (e.g. 650000000000000000000001, 6893e6630b80fd3c66aab89f)
-var validColleges = new BsonArray { cecCollegeId };
-await booksColl.DeleteManyAsync(new BsonDocument("collegeId", new BsonDocument("$nin", validColleges)));
-await lmsStudentsColl.DeleteManyAsync(new BsonDocument("collegeId", new BsonDocument("$nin", validColleges)));
-await settingsColl.DeleteManyAsync(new BsonDocument("collegeId", new BsonDocument("$nin", validColleges)));
-await issuancesColl.DeleteManyAsync(new BsonDocument("collegeId", new BsonDocument("$nin", validColleges)));
-await finesColl.DeleteManyAsync(new BsonDocument("collegeId", new BsonDocument("$nin", validColleges)));
-await announcementsColl.DeleteManyAsync(new BsonDocument("collegeId", new BsonDocument("$nin", validColleges)));
+// Clean up 2nd college data and synthetic test IDs from LMS
+await booksColl.DeleteManyAsync(new BsonDocument("collegeId", new BsonDocument("$ne", cecCollegeId)));
+await lmsStudentsColl.DeleteManyAsync(new BsonDocument("collegeId", new BsonDocument("$ne", cecCollegeId)));
+await settingsColl.DeleteManyAsync(new BsonDocument("collegeId", new BsonDocument("$ne", cecCollegeId)));
+await issuancesColl.DeleteManyAsync(new BsonDocument("collegeId", new BsonDocument("$ne", cecCollegeId)));
+await finesColl.DeleteManyAsync(new BsonDocument("collegeId", new BsonDocument("$ne", cecCollegeId)));
+await announcementsColl.DeleteManyAsync(new BsonDocument("collegeId", new BsonDocument("$ne", cecCollegeId)));
 
 Console.WriteLine("[LMS DB] Cleaned up 2nd college and synthetic test IDs");
 
-// 2. Seed Library Settings for CEC
+// 1. Seed Library Settings for CEC
 await settingsColl.ReplaceOneAsync(
     new BsonDocument("collegeId", cecCollegeId),
     new BsonDocument
@@ -80,8 +65,9 @@ await settingsColl.ReplaceOneAsync(
 );
 Console.WriteLine("[LMS DB] Library settings seeded for Chandigarh Engineering College");
 
-// 3. Seed LMS Students using exact EduGuard student IDs & details
-foreach (var s in egStudents)
+// 2. Seed LMS Students using exact EduGuard student IDs & details
+int seededCount = 0;
+foreach (var s in allEgStudents)
 {
     var sId = s["_id"].ToString()!;
     var name = s.Contains("name") ? s["name"].AsString : "Student";
@@ -111,10 +97,11 @@ foreach (var s in egStudents)
         },
         new ReplaceOptions { IsUpsert = true }
     );
+    seededCount++;
 }
-Console.WriteLine($"[LMS DB] Seeded {egStudents.Count} student library profiles matching EduGuard DB");
+Console.WriteLine($"[LMS DB] Seeded {seededCount} student library profiles matching EduGuard DB");
 
-// 4. Seed 50 Books for Chandigarh Engineering College
+// 3. Seed 30 Books for Chandigarh Engineering College
 var catalogData = new (string isbn, string title, string author, string category, string dept, string lang, string pub, string ed, int copies, string shelf)[]
 {
     ("9780262046305", "Introduction to Algorithms", "Thomas H. Cormen", "Computer Science", "Computer Science", "English", "MIT Press", "4th Edition", 5, "CS-A1"),
@@ -196,7 +183,7 @@ foreach (var b in catalogData)
 }
 Console.WriteLine($"[LMS DB] Seeded {catalogData.Length} books with physical accession copies for Chandigarh Engineering College");
 
-// 5. Seed Announcements
+// 4. Seed Announcements
 await announcementsColl.ReplaceOneAsync(
     new BsonDocument { ["collegeId"] = cecCollegeId, ["title"] = "Mid-Semester Book Return Drive" },
     new BsonDocument
