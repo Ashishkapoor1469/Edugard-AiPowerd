@@ -15,7 +15,6 @@ namespace EduGuard.Models
         public string? Id { get; set; }
 
         [BsonElement("collegeId")]
-        [BsonRepresentation(BsonType.ObjectId)]
         public string? CollegeId { get; set; }
 
         [BsonElement("assignedCourseId")]
