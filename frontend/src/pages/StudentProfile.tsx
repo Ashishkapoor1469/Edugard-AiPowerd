@@ -47,6 +47,7 @@ interface MentorInfo {
 
 interface Student {
   _id: string;
+  collegeId?: string;
   rollNo: string;
   name: string;
   isCr?: boolean;
