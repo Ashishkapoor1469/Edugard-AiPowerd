@@ -122,15 +122,34 @@ const MentorApprovalStatus: React.FC = () => {
 
 const LmsRedirect: React.FC = () => {
   const [error, setError] = React.useState("");
+  const [targetUrl, setTargetUrl] = React.useState("");
   const openLms = React.useCallback(() => {
     setError("");
     axios.post("/api/auth/lms-sso").then(({ data }) => {
-      window.location.assign(`${data.lmsUrl.replace(/\/$/, "")}/#token=${encodeURIComponent(data.token)}`);
-    }).catch((err) => setError(err.response?.data?.message || "Could not open the Library service"));
+      const fullUrl = `${data.lmsUrl.replace(/\/$/, "")}/#token=${encodeURIComponent(data.token)}`;
+      setTargetUrl(fullUrl);
+      window.location.href = fullUrl;
+    }).catch((err) => setError(err.response?.data?.message || "Could not open the Library service. Please try again."));
   }, []);
   React.useEffect(openLms, [openLms]);
-  return error ? <ErrorState message={error} onRetry={openLms} /> : <LoadingState label="Opening EduGuard Library…" />;
+
+  if (error) return <ErrorState message={error} onRetry={openLms} />;
+
+  return (
+    <div className="flex flex-col items-center justify-center p-8 text-center">
+      <LoadingState label="Opening EduGuard Library…" />
+      {targetUrl && (
+        <a
+          href={targetUrl}
+          className="mt-4 rounded-lg bg-primary px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-primary-hover transition-colors"
+        >
+          Click here if EduGuard Library does not open automatically
+        </a>
+      )}
+    </div>
+  );
 };
+
 
 // Bottom Navigation Bar for mobile devices
 const BottomNav: React.FC = () => {

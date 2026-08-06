@@ -602,7 +602,7 @@ namespace EduGuard.Controllers
 
         }
 
-        [Authorize(Roles = "college-admin,librarian")]
+        [Authorize]
         [HttpPost("lms-sso")]
         public async Task<IActionResult> CreateLmsSsoToken()
         {
@@ -611,15 +611,33 @@ namespace EduGuard.Controllers
             if (string.IsNullOrEmpty(userId) || string.IsNullOrEmpty(role)) return Unauthorized();
 
             string? collegeId = null, name = null, email = null;
-            var user = await _mongoService.Admins.Find(x => x.Id == userId).FirstOrDefaultAsync();
-            if (user is null || user.Role != role || user.Status != "active") return Unauthorized();
-            (collegeId, name, email) = (user?.CollegeId, user?.Name, user?.Email);
+            if (role is "college-admin" or "librarian")
+            {
+                var admin = await _mongoService.Admins.Find(x => x.Id == userId).FirstOrDefaultAsync();
+                if (admin is null || admin.Status != "active") return Unauthorized();
+                (collegeId, name, email) = (admin.CollegeId, admin.Name, admin.Email);
+            }
+            else if (role == "student")
+            {
+                var student = await _mongoService.Students.Find(x => x.Id == userId).FirstOrDefaultAsync();
+                if (student is null) return Unauthorized();
+                (collegeId, name, email) = (student.CollegeId, student.Name, student.Email);
+            }
+            else if (role == "mentor")
+            {
+                var mentor = await _mongoService.Mentors.Find(x => x.Id == userId).FirstOrDefaultAsync();
+                if (mentor is null || mentor.Status != "active") return Unauthorized();
+                (collegeId, name, email) = (mentor.CollegeId, mentor.Name, mentor.Email);
+            }
+
             if (string.IsNullOrEmpty(collegeId) || string.IsNullOrEmpty(name) || string.IsNullOrEmpty(email))
                 return BadRequest(new { success = false, message = "A college-scoped EduGuard account is required for LMS access." });
             if (await _mongoService.Colleges.Find(x => x.Id == collegeId && x.IsBlocked).AnyAsync()) return Forbid();
 
-            return Ok(new { success = true, token = GenerateLmsToken(userId, role, collegeId, name, email), lmsUrl = _configuration.GetValue<string>("LMS_FRONTEND_URL") ?? "http://localhost:5174" });
+            var lmsUrl = _configuration.GetValue<string>("LMS_FRONTEND_URL") ?? "https://edugard-ai-powerd-swsb.vercel.app";
+            return Ok(new { success = true, token = GenerateLmsToken(userId, role, collegeId, name, email), lmsUrl = lmsUrl });
         }
+
 
         // --- TEMP DEVELOPER SEEDING ADAPTERS ---
         [AllowAnonymous]
