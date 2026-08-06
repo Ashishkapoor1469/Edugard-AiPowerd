@@ -7,10 +7,14 @@ Console.WriteLine();
 var eduguardUri = "mongodb+srv://kapoorashish714_db_user:6BwvdR5PQwQtx4uY@cluster0.qjdjvy8.mongodb.net/eduguard?retryWrites=true&w=majority";
 var lmsUri = "mongodb+srv://kapoorashish714_db_user:BfPlxjWxqurQ6B3O@cluster0.eqfqbiz.mongodb.net/eduguard_lms?retryWrites=true&w=majority&appName=Cluster0";
 
-var egClient = new MongoClient(eduguardUri);
+var egSettings = MongoClientSettings.FromConnectionString(eduguardUri);
+egSettings.SslSettings = new SslSettings { ServerCertificateValidationCallback = (sender, certificate, chain, sslPolicyErrors) => true };
+var egClient = new MongoClient(egSettings);
 var egDb = egClient.GetDatabase("eduguard");
 
-var lmsClient = new MongoClient(lmsUri);
+var lmsSettings = MongoClientSettings.FromConnectionString(lmsUri);
+lmsSettings.SslSettings = new SslSettings { ServerCertificateValidationCallback = (sender, certificate, chain, sslPolicyErrors) => true };
+var lmsClient = new MongoClient(lmsSettings);
 var lmsDb = lmsClient.GetDatabase("eduguard_lms");
 
 // Target College: Chandigarh Engineering College
