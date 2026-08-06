@@ -377,6 +377,9 @@ const StudentProfile: React.FC = () => {
       if (res.data.success) {
         const data: Student = res.data.data;
         setStudent(data);
+        if (data?.collegeId) {
+          fetchMentors(data.collegeId);
+        }
 
         // Save to cache
         sessionStorage.setItem(cacheKey, JSON.stringify(data));
@@ -423,8 +426,9 @@ const StudentProfile: React.FC = () => {
     }
   };
 
-  const fetchMentors = async (signal?: AbortSignal) => {
-    const CACHE_KEY = "eduguard_mentors_list";
+  const fetchMentors = async (targetCollegeId?: string, signal?: AbortSignal) => {
+    const cid = targetCollegeId || student?.collegeId || user?.collegeId;
+    const CACHE_KEY = `eduguard_mentors_list_${cid || "all"}`;
     const TTL = 10 * 60 * 1000; // 10 minutes
 
     // Show cached data immediately
@@ -444,7 +448,9 @@ const StudentProfile: React.FC = () => {
     // Fetch fresh data in background
     setLoadingMentors(true);
     try {
-      const res = await axios.get("/api/mentors/list", { signal });
+      const params: Record<string, string> = {};
+      if (cid) params.collegeId = cid;
+      const res = await axios.get("/api/mentors/list", { params, signal });
       if (res.data.success) {
         setMentorsList(res.data.data);
         sessionStorage.setItem(
@@ -497,7 +503,7 @@ const StudentProfile: React.FC = () => {
 
     fetchStudent(true);
     if (user?.role === "student") {
-      fetchMentors(signal);
+      fetchMentors(user?.collegeId, signal);
       fetchNotifications(signal);
       setReportCardsLoading(true); setReportCardsError("");
       axios.get("/api/students/me/report-card/jobs", { signal })

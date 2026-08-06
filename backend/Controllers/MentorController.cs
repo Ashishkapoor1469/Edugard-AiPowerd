@@ -27,6 +27,11 @@ namespace EduGuard.Controllers
         [EnableRateLimiting("dashboard-fetch")]
         public async Task<IActionResult> GetMentorsList([FromQuery] string? collegeId = null, [FromQuery] string? courseId = null)
         {
+            if (string.IsNullOrWhiteSpace(collegeId))
+            {
+                collegeId = User.FindFirst("collegeId")?.Value ?? User.FindFirst("college")?.Value;
+            }
+
             var filters = new List<FilterDefinition<Mentor>>
             {
                 Builders<Mentor>.Filter.Eq(m => m.Status, "approved")
