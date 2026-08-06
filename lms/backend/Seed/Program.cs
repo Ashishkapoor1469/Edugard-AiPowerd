@@ -23,7 +23,12 @@ Console.WriteLine();
 
 // 1. Fetch 15 existing students from EduGuard main DB for Chandigarh Engineering College
 var egStudentsColl = egDb.GetCollection<BsonDocument>("students");
-var egStudents = await egStudentsColl.Find(new BsonDocument("collegeId", new ObjectId(cecCollegeId))).ToListAsync();
+var filterCollege = new BsonDocument("$or", new BsonArray
+{
+    new BsonDocument("collegeId", cecCollegeId),
+    new BsonDocument("collegeId", new ObjectId(cecCollegeId))
+});
+var egStudents = await egStudentsColl.Find(filterCollege).ToListAsync();
 Console.WriteLine($"[EduGuard DB] Found {egStudents.Count} existing students for Chandigarh Engineering College");
 
 // Collections in LMS
@@ -33,6 +38,7 @@ var settingsColl = lmsDb.GetCollection<BsonDocument>("settings");
 var issuancesColl = lmsDb.GetCollection<BsonDocument>("issuances");
 var finesColl = lmsDb.GetCollection<BsonDocument>("fines");
 var announcementsColl = lmsDb.GetCollection<BsonDocument>("announcements");
+
 
 // Clean up 2nd college data from LMS if any exists
 await booksColl.DeleteManyAsync(new BsonDocument("collegeId", secondCollegeId));
