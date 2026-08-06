@@ -212,8 +212,27 @@ namespace EduGuard.Controllers
                 TimeSpan.FromMinutes(10),
                 () => _mongoService.Degrees.Find(filter).ToListAsync()
             );
+
+            if (!string.IsNullOrEmpty(collegeId) && (degrees == null || degrees.Count == 0))
+            {
+                var defaultDegrees = new List<Degree>
+                {
+                    new Degree { CollegeId = collegeId, Name = "B.Tech CSE", DurationYears = 4, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
+                    new Degree { CollegeId = collegeId, Name = "BCA", DurationYears = 3, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
+                    new Degree { CollegeId = collegeId, Name = "BBA", DurationYears = 3, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
+                    new Degree { CollegeId = collegeId, Name = "B.Com", DurationYears = 3, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
+                    new Degree { CollegeId = collegeId, Name = "BA", DurationYears = 3, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
+                    new Degree { CollegeId = collegeId, Name = "M.Tech", DurationYears = 2, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow }
+                };
+
+                await _mongoService.Degrees.InsertManyAsync(defaultDegrees);
+                await _cacheService.RemoveAsync("admin:degrees:all", $"admin:degrees:{collegeId}");
+                degrees = defaultDegrees;
+            }
+
             return Ok(new { success = true, data = degrees });
         }
+
 
         [HttpPost("degrees")]
         public async Task<IActionResult> CreateDegree([FromBody] Degree model)
