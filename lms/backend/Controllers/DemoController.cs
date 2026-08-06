@@ -26,12 +26,14 @@ public sealed class DemoController : ControllerBase
             return BadRequest(new { success = false, message = "Demo data seeding is disabled in this environment." });
         }
 
-        await DemoDataSeeder.SeedAsync(_db, token);
+        var actor = AuthController.Actor(User);
+        await DemoDataSeeder.SeedAsync(_db, actor.CollegeId, token);
         return Ok(new
         {
             success = true,
-            message = "Demo data seeded successfully for Dronacharya College of Engineering.",
-            collegeId = DemoDataSeeder.DemoCollegeId
+            message = "Demo data seeded successfully for your college.",
+            collegeId = actor.CollegeId
         });
     }
 }
+

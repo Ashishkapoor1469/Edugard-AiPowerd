@@ -67,7 +67,14 @@ app.UseExceptionHandler(handler => handler.Run(async context =>
 app.UseCors(); app.UseAuthentication(); app.UseRateLimiter(); app.UseAuthorization(); app.MapControllers();
 app.MapGet("/health", () => Results.Ok(new { status = "ok", service = "eduguard-lms", commit = Environment.GetEnvironmentVariable("RENDER_GIT_COMMIT") }));
 await app.Services.GetRequiredService<LmsMongoContext>().EnsureIndexesAsync();
+if (app.Configuration.GetValue<bool>("LMS_ENABLE_DEMO_SEED", true))
+{
+    using var scope = app.Services.CreateScope();
+    var db = scope.ServiceProvider.GetRequiredService<LmsMongoContext>();
+    await Lms.Api.Seed.DemoDataSeeder.SeedAsync(db);
+}
 app.Run();
+
 
 static ConfigurationOptions CreateRedisOptions(string redisUrl)
 {

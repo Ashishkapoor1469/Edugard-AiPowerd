@@ -13,15 +13,34 @@ public static class DemoDataSeeder
     public const string DemoLibrarian1Id = "650000000000000000000020";
     public const string DemoLibrarian2Id = "650000000000000000000021";
 
-    public static async Task SeedAsync(LmsMongoContext db, CancellationToken token = default)
+    public static async Task SeedAsync(LmsMongoContext db, string targetCollegeId = DemoCollegeId, CancellationToken token = default)
+    {
+        // Find all colleges present in the database to ensure every logged in college gets sample data
+        var collegeIds = new HashSet<string> { targetCollegeId, DemoCollegeId };
+        
+        var existingBookColleges = await db.Books.Distinct(x => x.CollegeId, Builders<Book>.Filter.Empty).ToListAsync(token);
+        var existingSettingColleges = await db.Settings.Distinct(x => x.CollegeId, Builders<LibrarySettings>.Filter.Empty).ToListAsync(token);
+        var existingStudentColleges = await db.Students.Distinct(x => x.CollegeId, Builders<LibraryStudent>.Filter.Empty).ToListAsync(token);
+        
+        foreach (var c in existingBookColleges) if (!string.IsNullOrEmpty(c)) collegeIds.Add(c);
+        foreach (var c in existingSettingColleges) if (!string.IsNullOrEmpty(c)) collegeIds.Add(c);
+        foreach (var c in existingStudentColleges) if (!string.IsNullOrEmpty(c)) collegeIds.Add(c);
+
+        foreach (var collegeId in collegeIds)
+        {
+            await SeedCollegeDataAsync(db, collegeId, token);
+        }
+    }
+
+    private static async Task SeedCollegeDataAsync(LmsMongoContext db, string collegeId, CancellationToken token)
     {
         // 1. Seed Library Settings
-        var existingSettings = await db.Settings.Find(x => x.CollegeId == DemoCollegeId).FirstOrDefaultAsync(token);
+        var existingSettings = await db.Settings.Find(x => x.CollegeId == collegeId).FirstOrDefaultAsync(token);
         if (existingSettings == null)
         {
             var settings = new LibrarySettings
             {
-                CollegeId = DemoCollegeId,
+                CollegeId = collegeId,
                 DefaultIssueLimit = 2,
                 DegreeIssueLimits = new Dictionary<string, int>
                 {
@@ -83,13 +102,13 @@ public static class DemoDataSeeder
                 .Set(x => x.ClassName, className)
                 .Set(x => x.Semester, semester)
                 .Set(x => x.UpdatedAt, DateTime.UtcNow)
-                .SetOnInsert(x => x.CollegeId, DemoCollegeId)
+                .SetOnInsert(x => x.CollegeId, collegeId)
                 .SetOnInsert(x => x.EduGuardStudentId, eduguardId)
                 .SetOnInsert(x => x.RegisteredBy, DemoLibrarian1Id)
                 .SetOnInsert(x => x.RegisteredAt, DateTime.UtcNow);
 
             await db.Students.UpdateOneAsync(
-                x => x.CollegeId == DemoCollegeId && x.EduGuardStudentId == eduguardId,
+                x => x.CollegeId == collegeId && x.EduGuardStudentId == eduguardId,
                 update,
                 new UpdateOptions { IsUpsert = true },
                 token);
@@ -154,7 +173,7 @@ public static class DemoDataSeeder
         foreach (var tuple in catalogData)
         {
             var (isbn, title, author, category, dept, lang, pub, ed, copies, shelf) = tuple;
-            var existingBook = await db.Books.Find(x => x.CollegeId == DemoCollegeId && x.Isbn == isbn).FirstOrDefaultAsync(token);
+            var existingBook = await db.Books.Find(x => x.CollegeId == collegeId && x.Isbn == isbn).FirstOrDefaultAsync(token);
             
             var physicalCopies = Enumerable.Range(1, copies).Select(i => new PhysicalCopy
             {
@@ -172,7 +191,7 @@ public static class DemoDataSeeder
             {
                 var newBook = new Book
                 {
-                    CollegeId = DemoCollegeId,
+                    CollegeId = collegeId,
                     Isbn = isbn,
                     Title = title,
                     Author = author,
@@ -212,12 +231,12 @@ public static class DemoDataSeeder
         if (seededBooks.Count >= 5 && studentIds.Count >= 5)
         {
             // Issuance 1: Active Loan
-            var iss1Key = $"{DemoCollegeId}:demo-issue-1";
+            var iss1Key = $"{collegeId}:demo-issue-1";
             if (!await db.Issuances.Find(x => x.IssueIdempotencyKey == iss1Key).AnyAsync(token))
             {
                 var iss1 = new Issuance
                 {
-                    CollegeId = DemoCollegeId,
+                    CollegeId = collegeId,
                     BookId = seededBooks[0].Id!,
                     StudentId = studentIds[0],
                     AccessionNumber = seededBooks[0].PhysicalCopies.FirstOrDefault()?.AccessionNumber ?? "ACC-001",
@@ -236,13 +255,13 @@ public static class DemoDataSeeder
             }
 
             // Issuance 2: Overdue Loan with Fine
-            var iss2Key = $"{DemoCollegeId}:demo-issue-2";
+            var iss2Key = $"{collegeId}:demo-issue-2";
             var iss2 = await db.Issuances.Find(x => x.IssueIdempotencyKey == iss2Key).FirstOrDefaultAsync(token);
             if (iss2 == null)
             {
                 iss2 = new Issuance
                 {
-                    CollegeId = DemoCollegeId,
+                    CollegeId = collegeId,
                     BookId = seededBooks[1].Id!,
                     StudentId = studentIds[1],
                     AccessionNumber = seededBooks[1].PhysicalCopies.FirstOrDefault()?.AccessionNumber ?? "ACC-002",
@@ -262,7 +281,7 @@ public static class DemoDataSeeder
                 // Add overdue fine
                 var fine = new Fine
                 {
-                    CollegeId = DemoCollegeId,
+                    CollegeId = collegeId,
                     IssuanceId = iss2.Id!,
                     StudentId = studentIds[1],
                     BookTitle = seededBooks[1].Title,
@@ -277,11 +296,11 @@ public static class DemoDataSeeder
             }
 
             // Seed Announcement
-            if (!await db.Announcements.Find(x => x.CollegeId == DemoCollegeId).AnyAsync(token))
+            if (!await db.Announcements.Find(x => x.CollegeId == collegeId).AnyAsync(token))
             {
                 var announcement = new LibraryAnnouncement
                 {
-                    CollegeId = DemoCollegeId,
+                    CollegeId = collegeId,
                     Title = "Mid-Semester Book Return Drive",
                     Content = "Please return or renew all borrowed books before the upcoming mid-semester examinations. Late fine waivers available for prompt returns.",
                     TargetAudience = "all",
@@ -292,4 +311,5 @@ public static class DemoDataSeeder
             }
         }
     }
+
 }

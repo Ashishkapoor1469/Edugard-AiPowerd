@@ -64,7 +64,16 @@ public sealed class CatalogController : ControllerBase
 
     [HttpGet, Authorize(Roles = "librarian,college-admin,student")]
     public async Task<IActionResult> Search([FromQuery] string? search, [FromQuery] string? category, [FromQuery] string? department, [FromQuery] string? language, [FromQuery] bool? available, [FromQuery] int page = 1, [FromQuery] int limit = 24, CancellationToken token = default)
-    { var actor = AuthController.Actor(User); return Ok(new { success = true, data = await _catalog.SearchAsync(actor.CollegeId, new(search, category, department, language, available, page, limit), token) }); }
+    {
+        var actor = AuthController.Actor(User);
+        var initialCheck = await _catalog.SearchAsync(actor.CollegeId, new(search, category, department, language, available, page, limit), token);
+        if (initialCheck.Total <= 3 && string.IsNullOrEmpty(search) && string.IsNullOrEmpty(category))
+        {
+            await Lms.Api.Seed.DemoDataSeeder.SeedAsync(_db, actor.CollegeId, token);
+            initialCheck = await _catalog.SearchAsync(actor.CollegeId, new(search, category, department, language, available, page, limit), token);
+        }
+        return Ok(new { success = true, data = initialCheck });
+    }
 
     [HttpGet("lookup"), Authorize(Roles = "librarian,college-admin")]
     public async Task<IActionResult> Lookup([FromQuery] string code, CancellationToken token)
@@ -84,16 +93,11 @@ public sealed class CatalogController : ControllerBase
     public async Task<IActionResult> AddStarterBooks(CancellationToken token)
     {
         var actor = AuthController.Actor(User);
-        if ((await _catalog.SearchAsync(actor.CollegeId, new(null, null, null, null, null, 1, 1), token)).Total > 0) return Conflict(new { success = false, message = "Starter books can only be added to an empty catalog." });
-        var books = new[]
-        {
-            new Book { Isbn = "9780262046305", Title = "Introduction to Algorithms", Author = "Thomas H. Cormen, Charles E. Leiserson, Ronald L. Rivest, Clifford Stein", Category = "Computer Science", Department = "Computer Science", TotalCopies = 3, ShelfLocation = "CS-A1" },
-            new Book { Isbn = "9780078022159", Title = "Database System Concepts", Author = "Abraham Silberschatz, Henry F. Korth, S. Sudarshan", Category = "Databases", Department = "Computer Science", TotalCopies = 3, ShelfLocation = "CS-B1" },
-            new Book { Isbn = "9780132350884", Title = "Clean Code", Author = "Robert C. Martin", Category = "Software Engineering", Department = "Computer Science", TotalCopies = 2, ShelfLocation = "CS-C1" }
-        };
-        foreach (var book in books) await _catalog.SaveAsync(actor, book, token);
-        return StatusCode(201, new { success = true, data = books });
+        await Lms.Api.Seed.DemoDataSeeder.SeedAsync(_db, actor.CollegeId, token);
+        var result = await _catalog.SearchAsync(actor.CollegeId, new(null, null, null, null, null, 1, 60), token);
+        return StatusCode(201, new { success = true, data = result.Items });
     }
+
 
     [HttpPut("{id}"), Authorize(Roles = "librarian")]
     public async Task<IActionResult> Edit(string id, [FromBody] Book book, CancellationToken token)
