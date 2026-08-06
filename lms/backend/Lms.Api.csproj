@@ -11,4 +11,7 @@
     <PackageReference Include="Microsoft.Extensions.Caching.StackExchangeRedis" Version="8.0.19" />
     <PackageReference Include="MongoDB.Driver" Version="3.9.0" />
   </ItemGroup>
+  <ItemGroup>
+    <Compile Remove="Seed\Program.cs" />
+  </ItemGroup>
 </Project>

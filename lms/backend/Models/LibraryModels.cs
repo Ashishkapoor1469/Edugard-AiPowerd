@@ -8,7 +8,7 @@ namespace Lms.Api.Models;
 public sealed class LibraryStudent
 {
     [BsonId, BsonRepresentation(BsonType.ObjectId), JsonPropertyName("_id")] public string? Id { get; set; }
-    [BsonElement("collegeId"), BsonRepresentation(BsonType.ObjectId)] public string CollegeId { get; set; } = string.Empty;
+    [BsonElement("collegeId")] public string CollegeId { get; set; } = string.Empty;
     [BsonElement("eduguardStudentId"), BsonRepresentation(BsonType.ObjectId)] public string EduGuardStudentId { get; set; } = string.Empty;
     [BsonElement("name")] public string Name { get; set; } = string.Empty;
     [BsonElement("rollNo")] public string RollNo { get; set; } = string.Empty;
@@ -39,7 +39,7 @@ public sealed class Book
 {
     [BsonId, BsonRepresentation(BsonType.ObjectId), JsonPropertyName("_id")]
     public string? Id { get; set; }
-    [BsonElement("collegeId"), BsonRepresentation(BsonType.ObjectId)] public string CollegeId { get; set; } = string.Empty;
+    [BsonElement("collegeId")] public string CollegeId { get; set; } = string.Empty;
     [BsonElement("isbn")] public string Isbn { get; set; } = string.Empty;
     [BsonElement("title")] public string Title { get; set; } = string.Empty;
     [BsonElement("author")] public string Author { get; set; } = string.Empty;
@@ -64,7 +64,7 @@ public sealed class Book
 public sealed class Issuance
 {
     [BsonId, BsonRepresentation(BsonType.ObjectId), JsonPropertyName("_id")] public string? Id { get; set; }
-    [BsonElement("collegeId"), BsonRepresentation(BsonType.ObjectId)] public string CollegeId { get; set; } = string.Empty;
+    [BsonElement("collegeId")] public string CollegeId { get; set; } = string.Empty;
     [BsonElement("bookId"), BsonRepresentation(BsonType.ObjectId)] public string BookId { get; set; } = string.Empty;
     [BsonElement("studentId"), BsonRepresentation(BsonType.ObjectId)] public string StudentId { get; set; } = string.Empty;
     [BsonElement("accessionNumber")] public string AccessionNumber { get; set; } = string.Empty;
@@ -91,7 +91,7 @@ public sealed class Issuance
 public sealed class Reservation
 {
     [BsonId, BsonRepresentation(BsonType.ObjectId), JsonPropertyName("_id")] public string? Id { get; set; }
-    [BsonElement("collegeId"), BsonRepresentation(BsonType.ObjectId)] public string CollegeId { get; set; } = string.Empty;
+    [BsonElement("collegeId")] public string CollegeId { get; set; } = string.Empty;
     [BsonElement("bookId"), BsonRepresentation(BsonType.ObjectId)] public string BookId { get; set; } = string.Empty;
     [BsonElement("studentId"), BsonRepresentation(BsonType.ObjectId)] public string StudentId { get; set; } = string.Empty;
     [BsonElement("bookTitle")] public string BookTitle { get; set; } = string.Empty;
@@ -108,7 +108,7 @@ public sealed class Reservation
 public sealed class Fine
 {
     [BsonId, BsonRepresentation(BsonType.ObjectId), JsonPropertyName("_id")] public string? Id { get; set; }
-    [BsonElement("collegeId"), BsonRepresentation(BsonType.ObjectId)] public string CollegeId { get; set; } = string.Empty;
+    [BsonElement("collegeId")] public string CollegeId { get; set; } = string.Empty;
     [BsonElement("issuanceId"), BsonRepresentation(BsonType.ObjectId)] public string IssuanceId { get; set; } = string.Empty;
     [BsonElement("studentId"), BsonRepresentation(BsonType.ObjectId)] public string StudentId { get; set; } = string.Empty;
     [BsonElement("bookTitle")] public string BookTitle { get; set; } = string.Empty;
@@ -124,7 +124,7 @@ public sealed class Fine
 public sealed class Wishlist
 {
     [BsonId, BsonRepresentation(BsonType.ObjectId), JsonPropertyName("_id")] public string? Id { get; set; }
-    [BsonElement("collegeId"), BsonRepresentation(BsonType.ObjectId)] public string CollegeId { get; set; } = string.Empty;
+    [BsonElement("collegeId")] public string CollegeId { get; set; } = string.Empty;
     [BsonElement("studentId"), BsonRepresentation(BsonType.ObjectId)] public string StudentId { get; set; } = string.Empty;
     [BsonElement("bookId"), BsonRepresentation(BsonType.ObjectId)] public string BookId { get; set; } = string.Empty;
     [BsonElement("createdAt")] public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
@@ -134,7 +134,7 @@ public sealed class Wishlist
 public sealed class LibraryAnnouncement
 {
     [BsonId, BsonRepresentation(BsonType.ObjectId), JsonPropertyName("_id")] public string? Id { get; set; }
-    [BsonElement("collegeId"), BsonRepresentation(BsonType.ObjectId)] public string CollegeId { get; set; } = string.Empty;
+    [BsonElement("collegeId")] public string CollegeId { get; set; } = string.Empty;
     [BsonElement("title")] public string Title { get; set; } = string.Empty;
     [BsonElement("content")] public string Content { get; set; } = string.Empty;
     [BsonElement("targetAudience")] public string TargetAudience { get; set; } = "all"; // all, students, librarians
@@ -147,7 +147,7 @@ public sealed class LibraryAnnouncement
 public sealed class LibrarySettings
 {
     [BsonId, BsonRepresentation(BsonType.ObjectId), JsonPropertyName("_id")] public string? Id { get; set; }
-    [BsonElement("collegeId"), BsonRepresentation(BsonType.ObjectId)] public string CollegeId { get; set; } = string.Empty;
+    [BsonElement("collegeId")] public string CollegeId { get; set; } = string.Empty;
     [BsonElement("defaultIssueLimit")] public int DefaultIssueLimit { get; set; } = 2;
     [BsonElement("degreeIssueLimits")] public Dictionary<string, int> DegreeIssueLimits { get; set; } = new();
     [BsonElement("loanDays")] public int LoanDays { get; set; } = 14;

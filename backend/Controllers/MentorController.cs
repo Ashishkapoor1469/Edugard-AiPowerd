@@ -44,7 +44,12 @@ namespace EduGuard.Controllers
 
             if (!string.IsNullOrWhiteSpace(courseId))
             {
-                filters.Add(Builders<Mentor>.Filter.Eq(m => m.AssignedCourseId, courseId));
+                var courseFilter = Builders<Mentor>.Filter.Or(
+                    Builders<Mentor>.Filter.Eq(m => m.AssignedCourseId, courseId),
+                    Builders<Mentor>.Filter.Eq(m => m.AssignedCourseId, null),
+                    Builders<Mentor>.Filter.Eq(m => m.AssignedCourseId, "")
+                );
+                filters.Add(courseFilter);
             }
 
             var filter = Builders<Mentor>.Filter.And(filters);
