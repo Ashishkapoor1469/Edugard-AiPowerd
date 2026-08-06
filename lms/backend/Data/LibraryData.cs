@@ -39,33 +39,40 @@ public sealed class LmsMongoContext
 
     public async Task EnsureIndexesAsync(CancellationToken token = default)
     {
-        await Students.Indexes.CreateManyAsync([
-            new(Builders<LibraryStudent>.IndexKeys.Ascending(x => x.CollegeId).Ascending(x => x.EduGuardStudentId), new CreateIndexOptions { Unique = true }),
-            new(Builders<LibraryStudent>.IndexKeys.Ascending(x => x.CollegeId).Ascending(x => x.RollNo))
-        ], token);
-        await Books.Indexes.CreateManyAsync([
-            new(Builders<Book>.IndexKeys.Ascending(x => x.CollegeId).Ascending(x => x.Isbn), new CreateIndexOptions { Unique = true }),
-            new(Builders<Book>.IndexKeys.Text(x => x.Title).Text(x => x.Author).Text(x => x.Isbn).Text(x => x.Category).Text(x => x.Department).Text(x => x.Publisher)),
-            new(Builders<Book>.IndexKeys.Ascending(x => x.CollegeId).Ascending(x => x.Category).Descending(x => x.AvailableCopies))
-        ], token);
-        await Issuances.Indexes.CreateManyAsync([
-            new(Builders<Issuance>.IndexKeys.Ascending(x => x.IssueIdempotencyKey), new CreateIndexOptions { Unique = true }),
-            new(Builders<Issuance>.IndexKeys.Ascending(x => x.StudentId).Ascending(x => x.ActiveSlot), new CreateIndexOptions<Issuance> { Unique = true, PartialFilterExpression = Builders<Issuance>.Filter.Eq(x => x.Status, "active") & Builders<Issuance>.Filter.Exists(x => x.ActiveSlot) }),
-            new(Builders<Issuance>.IndexKeys.Ascending(x => x.StudentId).Ascending(x => x.Status)),
-            new(Builders<Issuance>.IndexKeys.Ascending(x => x.BookId).Ascending(x => x.Status)),
-            new(Builders<Issuance>.IndexKeys.Ascending(x => x.CollegeId).Ascending(x => x.Status).Ascending(x => x.DueDate))
-        ], token);
-        await Reservations.Indexes.CreateManyAsync([
-            new(Builders<Reservation>.IndexKeys.Ascending(x => x.IdempotencyKey), new CreateIndexOptions { Unique = true }),
-            new(Builders<Reservation>.IndexKeys.Ascending(x => x.BookId).Ascending(x => x.Status).Ascending(x => x.CreatedAt)),
-            new(Builders<Reservation>.IndexKeys.Ascending(x => x.StudentId).Ascending(x => x.Status))
-        ], token);
-        await Fines.Indexes.CreateManyAsync([new CreateIndexModel<Fine>(Builders<Fine>.IndexKeys.Ascending(x => x.IssuanceId), new CreateIndexOptions { Unique = true })], token);
-        await Settings.Indexes.CreateManyAsync([new CreateIndexModel<LibrarySettings>(Builders<LibrarySettings>.IndexKeys.Ascending(x => x.CollegeId), new CreateIndexOptions { Unique = true })], token);
-        await Preferences.Indexes.CreateManyAsync([new CreateIndexModel<LibrarianPreferences>(Builders<LibrarianPreferences>.IndexKeys.Ascending(x => x.LibrarianId), new CreateIndexOptions { Unique = true })], token);
-        await Audits.Indexes.CreateManyAsync([new CreateIndexModel<LibraryAudit>(Builders<LibraryAudit>.IndexKeys.Ascending(x => x.CollegeId).Descending(x => x.CreatedAt))], token);
-        await Wishlists.Indexes.CreateManyAsync([new CreateIndexModel<Wishlist>(Builders<Wishlist>.IndexKeys.Ascending(x => x.CollegeId).Ascending(x => x.StudentId).Ascending(x => x.BookId), new CreateIndexOptions { Unique = true })], token);
-        await Announcements.Indexes.CreateManyAsync([new CreateIndexModel<LibraryAnnouncement>(Builders<LibraryAnnouncement>.IndexKeys.Ascending(x => x.CollegeId).Descending(x => x.CreatedAt))], token);
+        try
+        {
+            await Students.Indexes.CreateManyAsync([
+                new(Builders<LibraryStudent>.IndexKeys.Ascending(x => x.CollegeId).Ascending(x => x.EduGuardStudentId), new CreateIndexOptions { Unique = true, Sparse = true }),
+                new(Builders<LibraryStudent>.IndexKeys.Ascending(x => x.CollegeId).Ascending(x => x.RollNo))
+            ], token);
+            await Books.Indexes.CreateManyAsync([
+                new(Builders<Book>.IndexKeys.Ascending(x => x.CollegeId).Ascending(x => x.Isbn), new CreateIndexOptions { Unique = true }),
+                new(Builders<Book>.IndexKeys.Text(x => x.Title).Text(x => x.Author).Text(x => x.Isbn).Text(x => x.Category).Text(x => x.Department).Text(x => x.Publisher)),
+                new(Builders<Book>.IndexKeys.Ascending(x => x.CollegeId).Ascending(x => x.Category).Descending(x => x.AvailableCopies))
+            ], token);
+            await Issuances.Indexes.CreateManyAsync([
+                new(Builders<Issuance>.IndexKeys.Ascending(x => x.IssueIdempotencyKey), new CreateIndexOptions { Unique = true }),
+                new(Builders<Issuance>.IndexKeys.Ascending(x => x.StudentId).Ascending(x => x.ActiveSlot), new CreateIndexOptions<Issuance> { Unique = true, PartialFilterExpression = Builders<Issuance>.Filter.Eq(x => x.Status, "active") & Builders<Issuance>.Filter.Exists(x => x.ActiveSlot) }),
+                new(Builders<Issuance>.IndexKeys.Ascending(x => x.StudentId).Ascending(x => x.Status)),
+                new(Builders<Issuance>.IndexKeys.Ascending(x => x.BookId).Ascending(x => x.Status)),
+                new(Builders<Issuance>.IndexKeys.Ascending(x => x.CollegeId).Ascending(x => x.Status).Ascending(x => x.DueDate))
+            ], token);
+            await Reservations.Indexes.CreateManyAsync([
+                new(Builders<Reservation>.IndexKeys.Ascending(x => x.IdempotencyKey), new CreateIndexOptions { Unique = true }),
+                new(Builders<Reservation>.IndexKeys.Ascending(x => x.BookId).Ascending(x => x.Status).Ascending(x => x.CreatedAt)),
+                new(Builders<Reservation>.IndexKeys.Ascending(x => x.StudentId).Ascending(x => x.Status))
+            ], token);
+            await Fines.Indexes.CreateManyAsync([new CreateIndexModel<Fine>(Builders<Fine>.IndexKeys.Ascending(x => x.IssuanceId), new CreateIndexOptions { Unique = true })], token);
+            await Settings.Indexes.CreateManyAsync([new CreateIndexModel<LibrarySettings>(Builders<LibrarySettings>.IndexKeys.Ascending(x => x.CollegeId), new CreateIndexOptions { Unique = true })], token);
+            await Preferences.Indexes.CreateManyAsync([new CreateIndexModel<LibrarianPreferences>(Builders<LibrarianPreferences>.IndexKeys.Ascending(x => x.LibrarianId), new CreateIndexOptions { Unique = true })], token);
+            await Audits.Indexes.CreateManyAsync([new CreateIndexModel<LibraryAudit>(Builders<LibraryAudit>.IndexKeys.Ascending(x => x.CollegeId).Descending(x => x.CreatedAt))], token);
+            await Wishlists.Indexes.CreateManyAsync([new CreateIndexModel<Wishlist>(Builders<Wishlist>.IndexKeys.Ascending(x => x.CollegeId).Ascending(x => x.StudentId).Ascending(x => x.BookId), new CreateIndexOptions { Unique = true })], token);
+            await Announcements.Indexes.CreateManyAsync([new CreateIndexModel<LibraryAnnouncement>(Builders<LibraryAnnouncement>.IndexKeys.Ascending(x => x.CollegeId).Descending(x => x.CreatedAt))], token);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Warning] EnsureIndexesAsync encountered an error but will continue: {ex.Message}");
+        }
     }
 }
 
