@@ -23,7 +23,8 @@ public sealed class LmsMongoContext
     {
         var url = new MongoUrl(config["LMS_MONGO_URI"] ?? "mongodb://127.0.0.1:27017/eduguard_lms");
         Client = new MongoClient(MongoClientSettings.FromConnectionString(url.Url));
-        var database = Client.GetDatabase(url.DatabaseName ?? "eduguard_lms");
+        var dbName = string.IsNullOrWhiteSpace(url.DatabaseName) ? "eduguard_lms" : url.DatabaseName;
+        var database = Client.GetDatabase(dbName);
         Students = database.GetCollection<LibraryStudent>("students");
         Books = database.GetCollection<Book>("books");
         Issuances = database.GetCollection<Issuance>("issuances");
