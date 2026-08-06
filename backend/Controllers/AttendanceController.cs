@@ -293,7 +293,10 @@ namespace EduGuard.Controllers
         {
             var (_, collegeId) = await AdminScopeAsync();
             if (string.IsNullOrEmpty(collegeId)) return Unauthorized();
-            var filter = Builders<Student>.Filter.Eq(s => s.CollegeId, collegeId) & Builders<Student>.Filter.Eq(s => s.VerificationStatus, "approved");
+            var filter = Builders<Student>.Filter.Eq(s => s.CollegeId, collegeId) &
+                (Builders<Student>.Filter.Eq(s => s.VerificationStatus, "approved") |
+                 Builders<Student>.Filter.Eq(s => s.VerificationStatus, "verified") |
+                 Builders<Student>.Filter.Eq(s => s.IsVerified, true));
             if (!string.IsNullOrWhiteSpace(classId)) filter &= Builders<Student>.Filter.Eq(s => s.Class, classId);
             var students = await _mongo.Students.Find(filter).SortBy(s => s.Class).ThenBy(s => s.RollNo).ToListAsync();
             return Ok(new { success = true, data = students.Select(s => new { _id = s.Id, s.Name, s.RollNo, classId = s.Class }) });
@@ -325,7 +328,13 @@ namespace EduGuard.Controllers
             var type = request.LeadershipType.Trim().ToUpperInvariant();
             if (string.IsNullOrWhiteSpace(request.StudentId) || string.IsNullOrWhiteSpace(request.ClassId) || string.IsNullOrWhiteSpace(type))
                 return BadRequest(new { success = false, message = "Student, class and leadership type are required" });
-            var student = await _mongo.Students.Find(s => s.Id == request.StudentId && s.CollegeId == collegeId && s.Class == request.ClassId && s.VerificationStatus == "approved").FirstOrDefaultAsync();
+            var studentFilter = Builders<Student>.Filter.Eq(s => s.Id, request.StudentId) &
+                Builders<Student>.Filter.Eq(s => s.CollegeId, collegeId) &
+                Builders<Student>.Filter.Eq(s => s.Class, request.ClassId) &
+                (Builders<Student>.Filter.Eq(s => s.VerificationStatus, "approved") |
+                 Builders<Student>.Filter.Eq(s => s.VerificationStatus, "verified") |
+                 Builders<Student>.Filter.Eq(s => s.IsVerified, true));
+            var student = await _mongo.Students.Find(studentFilter).FirstOrDefaultAsync();
             if (student == null) return BadRequest(new { success = false, message = "Student is not on the active roster for this class" });
             var duplicate = await _mongo.LeadershipAssignments.Find(a => a.StudentId == student.Id && a.LeadershipType == type && a.IsActive).AnyAsync();
             if (duplicate) return Conflict(new { success = false, message = "This student already has that active leadership assignment" });
