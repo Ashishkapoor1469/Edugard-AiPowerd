@@ -9,11 +9,13 @@ var lmsUri = "mongodb+srv://kapoorashish714_db_user:BfPlxjWxqurQ6B3O@cluster0.eq
 
 var egSettings = MongoClientSettings.FromConnectionString(eduguardUri);
 egSettings.SslSettings = new SslSettings { ServerCertificateValidationCallback = (sender, certificate, chain, sslPolicyErrors) => true };
+egSettings.AllowInsecureTls = true;
 var egClient = new MongoClient(egSettings);
 var egDb = egClient.GetDatabase("eduguard");
 
 var lmsSettings = MongoClientSettings.FromConnectionString(lmsUri);
 lmsSettings.SslSettings = new SslSettings { ServerCertificateValidationCallback = (sender, certificate, chain, sslPolicyErrors) => true };
+lmsSettings.AllowInsecureTls = true;
 var lmsClient = new MongoClient(lmsSettings);
 var lmsDb = lmsClient.GetDatabase("eduguard_lms");
 
