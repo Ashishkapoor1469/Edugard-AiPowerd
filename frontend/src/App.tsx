@@ -136,12 +136,12 @@ const LmsRedirect: React.FC = () => {
   if (error) return <ErrorState message={error} onRetry={openLms} />;
 
   return (
-    <div className="flex flex-col items-center justify-center p-8 text-center">
+    <div className="flex min-h-[60vh] w-full flex-col items-center justify-center p-8 text-center my-auto">
       <LoadingState label="Opening EduGuard Library…" />
       {targetUrl && (
         <a
           href={targetUrl}
-          className="mt-4 rounded-lg bg-primary px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-primary-hover transition-colors"
+          className="mt-6 rounded-lg bg-[#12274E] px-5 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-[#0B1830] transition-colors"
         >
           Click here if EduGuard Library does not open automatically
         </a>

@@ -41,9 +41,11 @@ export default function Layout({ user, children }: { user: User; children: React
             </NavLink>
           ))}
         </nav>
-        <button className="user-button" onClick={signOut}>
-          {user.name}
-          <small>{user.role}</small>
+        <button className="user-button" onClick={signOut} title="Click to Sign Out">
+          <span className="user-name">{user.name}</span>
+          <span className="user-role-badge">
+            {user.role === "college-admin" ? "College Admin" : user.role === "librarian" ? "Librarian" : "Student"}
+          </span>
         </button>
       </header>
       <main>{children}</main>

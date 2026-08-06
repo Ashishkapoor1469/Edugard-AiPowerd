@@ -2,8 +2,8 @@ import { Spinner } from "./ui/Spinner";
 
 export function LoadingState({ label = "Loading…", compact = false }: { label?: string; compact?: boolean }) {
   return (
-    <div role="status" aria-live="polite" className={`flex items-center justify-center gap-2 text-xs font-semibold text-slate-500 ${compact ? "py-4" : "min-h-40 rounded-2xl border border-slate-200 bg-white p-8"}`}>
-      <Spinner size={compact ? "sm" : "md"} label={label} />
+    <div role="status" aria-live="polite" className={`flex items-center justify-center text-slate-700 w-full mx-auto my-auto ${compact ? "py-4 flex-row gap-2 text-xs font-semibold" : "min-h-[50vh] flex-col gap-3 text-sm font-semibold p-8 text-center rounded-2xl border border-slate-200/80 bg-white/80 backdrop-blur-sm shadow-xs"}`}>
+      <Spinner size={compact ? "sm" : "lg"} label={label} />
       <span>{label}</span>
     </div>
   );
