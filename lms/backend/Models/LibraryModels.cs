@@ -24,6 +24,17 @@ public sealed class LibraryStudent
 }
 
 [BsonIgnoreExtraElements]
+public sealed class PhysicalCopy
+{
+    [BsonElement("accessionNumber")] public string AccessionNumber { get; set; } = string.Empty;
+    [BsonElement("barcode")] public string Barcode { get; set; } = string.Empty;
+    [BsonElement("status")] public string Status { get; set; } = "available"; // available, issued, reserved, lost, damaged, missing, repair, withdrawn
+    [BsonElement("shelfLocation")] public string ShelfLocation { get; set; } = string.Empty;
+    [BsonElement("conditionNotes")] public string ConditionNotes { get; set; } = string.Empty;
+    [BsonElement("addedAt")] public DateTime AddedAt { get; set; } = DateTime.UtcNow;
+}
+
+[BsonIgnoreExtraElements]
 public sealed class Book
 {
     [BsonId, BsonRepresentation(BsonType.ObjectId), JsonPropertyName("_id")]
@@ -33,11 +44,17 @@ public sealed class Book
     [BsonElement("title")] public string Title { get; set; } = string.Empty;
     [BsonElement("author")] public string Author { get; set; } = string.Empty;
     [BsonElement("category")] public string Category { get; set; } = string.Empty;
+    [BsonElement("department")] public string Department { get; set; } = string.Empty;
+    [BsonElement("language")] public string Language { get; set; } = "English";
+    [BsonElement("publisher")] public string Publisher { get; set; } = string.Empty;
+    [BsonElement("edition")] public string Edition { get; set; } = string.Empty;
+    [BsonElement("tags")] public List<string> Tags { get; set; } = new();
     [BsonElement("totalCopies")] public int TotalCopies { get; set; }
     [BsonElement("availableCopies")] public int AvailableCopies { get; set; }
     [BsonElement("shelfLocation")] public string ShelfLocation { get; set; } = string.Empty;
     [BsonElement("coverImage")] public string CoverImage { get; set; } = string.Empty;
     [BsonElement("borrowCount")] public int BorrowCount { get; set; }
+    [BsonElement("physicalCopies")] public List<PhysicalCopy> PhysicalCopies { get; set; } = new();
     [BsonElement("isActive")] public bool IsActive { get; set; } = true;
     [BsonElement("createdAt")] public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     [BsonElement("updatedAt")] public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
@@ -50,6 +67,7 @@ public sealed class Issuance
     [BsonElement("collegeId"), BsonRepresentation(BsonType.ObjectId)] public string CollegeId { get; set; } = string.Empty;
     [BsonElement("bookId"), BsonRepresentation(BsonType.ObjectId)] public string BookId { get; set; } = string.Empty;
     [BsonElement("studentId"), BsonRepresentation(BsonType.ObjectId)] public string StudentId { get; set; } = string.Empty;
+    [BsonElement("accessionNumber")] public string AccessionNumber { get; set; } = string.Empty;
     [BsonElement("degreeId"), BsonRepresentation(BsonType.ObjectId), BsonIgnoreIfNull] public string? DegreeId { get; set; }
     [BsonElement("className")] public string ClassName { get; set; } = string.Empty;
     [BsonElement("bookTitle")] public string BookTitle { get; set; } = string.Empty;
@@ -103,6 +121,29 @@ public sealed class Fine
 }
 
 [BsonIgnoreExtraElements]
+public sealed class Wishlist
+{
+    [BsonId, BsonRepresentation(BsonType.ObjectId), JsonPropertyName("_id")] public string? Id { get; set; }
+    [BsonElement("collegeId"), BsonRepresentation(BsonType.ObjectId)] public string CollegeId { get; set; } = string.Empty;
+    [BsonElement("studentId"), BsonRepresentation(BsonType.ObjectId)] public string StudentId { get; set; } = string.Empty;
+    [BsonElement("bookId"), BsonRepresentation(BsonType.ObjectId)] public string BookId { get; set; } = string.Empty;
+    [BsonElement("createdAt")] public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+}
+
+[BsonIgnoreExtraElements]
+public sealed class LibraryAnnouncement
+{
+    [BsonId, BsonRepresentation(BsonType.ObjectId), JsonPropertyName("_id")] public string? Id { get; set; }
+    [BsonElement("collegeId"), BsonRepresentation(BsonType.ObjectId)] public string CollegeId { get; set; } = string.Empty;
+    [BsonElement("title")] public string Title { get; set; } = string.Empty;
+    [BsonElement("content")] public string Content { get; set; } = string.Empty;
+    [BsonElement("targetAudience")] public string TargetAudience { get; set; } = "all"; // all, students, librarians
+    [BsonElement("createdBy")] public string CreatedBy { get; set; } = string.Empty;
+    [BsonElement("createdAt")] public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    [BsonElement("expiresAt"), BsonIgnoreIfNull] public DateTime? ExpiresAt { get; set; }
+}
+
+[BsonIgnoreExtraElements]
 public sealed class LibrarySettings
 {
     [BsonId, BsonRepresentation(BsonType.ObjectId), JsonPropertyName("_id")] public string? Id { get; set; }
@@ -110,10 +151,12 @@ public sealed class LibrarySettings
     [BsonElement("defaultIssueLimit")] public int DefaultIssueLimit { get; set; } = 2;
     [BsonElement("degreeIssueLimits")] public Dictionary<string, int> DegreeIssueLimits { get; set; } = new();
     [BsonElement("loanDays")] public int LoanDays { get; set; } = 14;
+    [BsonElement("maxRenewalCount")] public int MaxRenewalCount { get; set; } = 1;
     [BsonElement("dailyFineRate"), BsonRepresentation(BsonType.Decimal128)] public decimal DailyFineRate { get; set; } = 1;
     [BsonElement("fineAlertThreshold"), BsonRepresentation(BsonType.Decimal128)] public decimal FineAlertThreshold { get; set; } = 50;
     [BsonElement("importantOverdueDays")] public int ImportantOverdueDays { get; set; } = 7;
     [BsonElement("highDemandReservationThreshold")] public int HighDemandReservationThreshold { get; set; } = 3;
+    [BsonElement("holidays")] public List<string> Holidays { get; set; } = new(); // YYYY-MM-DD
     [BsonElement("overdueDigest")] public string OverdueDigest { get; set; } = "daily";
     [BsonElement("catalogVersion")] public long CatalogVersion { get; set; } = 1;
     [BsonElement("updatedAt")] public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
@@ -144,3 +187,4 @@ public sealed class LibraryAudit
     [BsonElement("details")] public Dictionary<string, string> Details { get; set; } = new();
     [BsonElement("createdAt")] public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
+

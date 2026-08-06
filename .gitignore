@@ -33,6 +33,7 @@ EduGuard Project Analysis.md
 **/secrets.json
 *.pfx
 *.key
+**/google-services.json
 
 # Logs and temporary files
 *.log

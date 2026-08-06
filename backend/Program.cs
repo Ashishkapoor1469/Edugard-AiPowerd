@@ -180,11 +180,33 @@ builder.Services.AddAuthentication(options =>
 
 var app = builder.Build();
 
-// Enable detailed error pages in Development
+app.UseExceptionHandler(handler => handler.Run(async context =>
+{
+    var error = context.Features.Get<Microsoft.AspNetCore.Diagnostics.IExceptionHandlerFeature>()?.Error;
+    var (status, code) = error switch
+    {
+        UnauthorizedAccessException => (403, "FORBIDDEN"),
+        KeyNotFoundException => (404, "NOT_FOUND"),
+        ArgumentException => (400, "BAD_REQUEST"),
+        InvalidOperationException => (409, "CONFLICT"),
+        _ => (500, "INTERNAL_SERVER_ERROR")
+    };
+    context.Response.StatusCode = status;
+    context.Response.ContentType = "application/json";
+    await context.Response.WriteAsJsonAsync(new
+    {
+        success = false,
+        code = code,
+        message = status == 500 ? "Unexpected EduGuard server error." : error?.Message ?? "An error occurred.",
+        traceId = context.TraceIdentifier
+    });
+}));
+
 if (app.Environment.IsDevelopment())
 {
     app.UseDeveloperExceptionPage();
 }
+
 
 app.UseCors("AllowAll");
 

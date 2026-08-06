@@ -15,6 +15,9 @@ public sealed class LmsMongoContext
     public IMongoCollection<LibrarySettings> Settings { get; }
     public IMongoCollection<LibrarianPreferences> Preferences { get; }
     public IMongoCollection<LibraryAudit> Audits { get; }
+    public IMongoCollection<Wishlist> Wishlists { get; }
+    public IMongoCollection<LibraryAnnouncement> Announcements { get; }
+
 
     public LmsMongoContext(IConfiguration config)
     {
@@ -29,6 +32,8 @@ public sealed class LmsMongoContext
         Settings = database.GetCollection<LibrarySettings>("settings");
         Preferences = database.GetCollection<LibrarianPreferences>("librarian_preferences");
         Audits = database.GetCollection<LibraryAudit>("audits");
+        Wishlists = database.GetCollection<Wishlist>("wishlists");
+        Announcements = database.GetCollection<LibraryAnnouncement>("announcements");
     }
 
     public async Task EnsureIndexesAsync(CancellationToken token = default)
@@ -39,7 +44,7 @@ public sealed class LmsMongoContext
         ], token);
         await Books.Indexes.CreateManyAsync([
             new(Builders<Book>.IndexKeys.Ascending(x => x.CollegeId).Ascending(x => x.Isbn), new CreateIndexOptions { Unique = true }),
-            new(Builders<Book>.IndexKeys.Text(x => x.Title).Text(x => x.Author).Text(x => x.Isbn).Text(x => x.Category)),
+            new(Builders<Book>.IndexKeys.Text(x => x.Title).Text(x => x.Author).Text(x => x.Isbn).Text(x => x.Category).Text(x => x.Department).Text(x => x.Publisher)),
             new(Builders<Book>.IndexKeys.Ascending(x => x.CollegeId).Ascending(x => x.Category).Descending(x => x.AvailableCopies))
         ], token);
         await Issuances.Indexes.CreateManyAsync([
@@ -58,16 +63,19 @@ public sealed class LmsMongoContext
         await Settings.Indexes.CreateManyAsync([new CreateIndexModel<LibrarySettings>(Builders<LibrarySettings>.IndexKeys.Ascending(x => x.CollegeId), new CreateIndexOptions { Unique = true })], token);
         await Preferences.Indexes.CreateManyAsync([new CreateIndexModel<LibrarianPreferences>(Builders<LibrarianPreferences>.IndexKeys.Ascending(x => x.LibrarianId), new CreateIndexOptions { Unique = true })], token);
         await Audits.Indexes.CreateManyAsync([new CreateIndexModel<LibraryAudit>(Builders<LibraryAudit>.IndexKeys.Ascending(x => x.CollegeId).Descending(x => x.CreatedAt))], token);
+        await Wishlists.Indexes.CreateManyAsync([new CreateIndexModel<Wishlist>(Builders<Wishlist>.IndexKeys.Ascending(x => x.CollegeId).Ascending(x => x.StudentId).Ascending(x => x.BookId), new CreateIndexOptions { Unique = true })], token);
+        await Announcements.Indexes.CreateManyAsync([new CreateIndexModel<LibraryAnnouncement>(Builders<LibraryAnnouncement>.IndexKeys.Ascending(x => x.CollegeId).Descending(x => x.CreatedAt))], token);
     }
 }
 
-public sealed record CatalogQuery(string? Search, string? Category, bool? Available, int Page, int Limit);
+public sealed record CatalogQuery(string? Search, string? Category, string? Department, string? Language, bool? Available, int Page, int Limit);
 public sealed record CatalogPage(IReadOnlyList<Book> Items, long Total, int Page, int Pages);
 
 public interface IBookRepository
 {
     Task<CatalogPage> SearchAsync(string collegeId, CatalogQuery query, CancellationToken token);
     Task<Book?> GetAsync(string collegeId, string id, CancellationToken token);
+    Task<Book?> GetByBarcodeOrAccessionAsync(string collegeId, string code, CancellationToken token);
     Task<Book> SaveAsync(Book book, CancellationToken token);
     Task<bool> DeactivateAsync(string collegeId, string id, CancellationToken token);
     Task<IReadOnlyList<Book>> ImportAsync(string collegeId, IReadOnlyList<Book> books, CancellationToken token);
@@ -82,8 +90,17 @@ public sealed class MongoBookRepository : IBookRepository
     public async Task<CatalogPage> SearchAsync(string collegeId, CatalogQuery query, CancellationToken token)
     {
         var filter = Builders<Book>.Filter.Eq(x => x.CollegeId, collegeId) & Builders<Book>.Filter.Eq(x => x.IsActive, true);
-        if (!string.IsNullOrWhiteSpace(query.Search)) filter &= Builders<Book>.Filter.Text(query.Search.Trim());
+        if (!string.IsNullOrWhiteSpace(query.Search))
+        {
+            var term = query.Search.Trim();
+            filter &= (Builders<Book>.Filter.Text(term) |
+                      Builders<Book>.Filter.Regex(x => x.Title, new BsonRegularExpression(term, "i")) |
+                      Builders<Book>.Filter.Regex(x => x.Author, new BsonRegularExpression(term, "i")) |
+                      Builders<Book>.Filter.Regex(x => x.Isbn, new BsonRegularExpression(term, "i")));
+        }
         if (!string.IsNullOrWhiteSpace(query.Category)) filter &= Builders<Book>.Filter.Eq(x => x.Category, query.Category.Trim());
+        if (!string.IsNullOrWhiteSpace(query.Department)) filter &= Builders<Book>.Filter.Eq(x => x.Department, query.Department.Trim());
+        if (!string.IsNullOrWhiteSpace(query.Language)) filter &= Builders<Book>.Filter.Eq(x => x.Language, query.Language.Trim());
         if (query.Available == true) filter &= Builders<Book>.Filter.Gt(x => x.AvailableCopies, 0);
         if (query.Available == false) filter &= Builders<Book>.Filter.Eq(x => x.AvailableCopies, 0);
         var page = Math.Max(1, query.Page);
@@ -96,13 +113,33 @@ public sealed class MongoBookRepository : IBookRepository
     public Task<Book?> GetAsync(string collegeId, string id, CancellationToken token) =>
         _db.Books.Find(x => x.Id == id && x.CollegeId == collegeId && x.IsActive).FirstOrDefaultAsync(token)!;
 
+    public Task<Book?> GetByBarcodeOrAccessionAsync(string collegeId, string code, CancellationToken token)
+    {
+        var clean = code.Trim();
+        var filter = Builders<Book>.Filter.Eq(x => x.CollegeId, collegeId) & Builders<Book>.Filter.Eq(x => x.IsActive, true) &
+                     (Builders<Book>.Filter.Eq(x => x.Isbn, clean) |
+                      Builders<Book>.Filter.ElemMatch(x => x.PhysicalCopies, c => c.AccessionNumber == clean || c.Barcode == clean));
+        return _db.Books.Find(filter).FirstOrDefaultAsync(token)!;
+    }
+
     public async Task<Book> SaveAsync(Book book, CancellationToken token)
     {
         book.UpdatedAt = DateTime.UtcNow;
+        if (book.PhysicalCopies == null || book.PhysicalCopies.Count == 0)
+        {
+            book.PhysicalCopies = Enumerable.Range(1, Math.Max(1, book.TotalCopies)).Select(i => new PhysicalCopy
+            {
+                AccessionNumber = $"{book.Isbn.Replace("-", "")}-{i:D3}",
+                Barcode = $"BC-{book.Isbn.Replace("-", "")}-{i:D3}",
+                Status = "available",
+                ShelfLocation = book.ShelfLocation
+            }).ToList();
+        }
         if (string.IsNullOrEmpty(book.Id)) await _db.Books.InsertOneAsync(book, cancellationToken: token);
         else await _db.Books.ReplaceOneAsync(x => x.Id == book.Id && x.CollegeId == book.CollegeId, book, cancellationToken: token);
         return book;
     }
+
 
     public async Task<bool> DeactivateAsync(string collegeId, string id, CancellationToken token)
     {

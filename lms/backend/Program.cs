@@ -45,9 +45,25 @@ var app = builder.Build();
 app.UseExceptionHandler(handler => handler.Run(async context =>
 {
     var error = context.Features.Get<IExceptionHandlerFeature>()?.Error;
-    var status = error switch { UnauthorizedAccessException => 403, KeyNotFoundException => 404, ArgumentException => 400, InvalidOperationException => 409, _ => 500 };
-    context.Response.StatusCode = status; await context.Response.WriteAsJsonAsync(new { success = false, message = status == 500 ? "Unexpected LMS error" : error?.Message });
+    var (status, code) = error switch
+    {
+        UnauthorizedAccessException => (403, "FORBIDDEN"),
+        KeyNotFoundException => (404, "NOT_FOUND"),
+        ArgumentException => (400, "BAD_REQUEST"),
+        InvalidOperationException => (409, "CONFLICT"),
+        _ => (500, "INTERNAL_SERVER_ERROR")
+    };
+    context.Response.StatusCode = status;
+    context.Response.ContentType = "application/json";
+    await context.Response.WriteAsJsonAsync(new
+    {
+        success = false,
+        code = code,
+        message = status == 500 ? "Unexpected LMS server error." : error?.Message ?? "An error occurred.",
+        traceId = context.TraceIdentifier
+    });
 }));
+
 app.UseCors(); app.UseAuthentication(); app.UseRateLimiter(); app.UseAuthorization(); app.MapControllers();
 app.MapGet("/health", () => Results.Ok(new { status = "ok", service = "eduguard-lms", commit = Environment.GetEnvironmentVariable("RENDER_GIT_COMMIT") }));
 await app.Services.GetRequiredService<LmsMongoContext>().EnsureIndexesAsync();

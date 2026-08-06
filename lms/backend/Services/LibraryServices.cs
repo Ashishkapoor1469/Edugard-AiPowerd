@@ -81,9 +81,12 @@ public sealed class EduGuardClient : IEduGuardClient
 public interface ICatalogService
 {
     Task<CatalogPage> SearchAsync(string collegeId, CatalogQuery query, CancellationToken token);
+    Task<Book?> LookupCodeAsync(string collegeId, string code, CancellationToken token);
     Task<Book> SaveAsync(LmsActor actor, Book book, CancellationToken token);
     Task DeleteAsync(LmsActor actor, string id, CancellationToken token);
+    Task<Book> UpdateCopyStatusAsync(LmsActor actor, string bookId, string accessionNumber, string status, string notes, CancellationToken token);
     Task<IReadOnlyList<Book>> ImportAsync(LmsActor actor, Stream excel, CancellationToken token);
+    Task<IReadOnlyList<Book>> RecommendationsAsync(string collegeId, string studentId, CancellationToken token);
 }
 
 public sealed class CatalogService : ICatalogService
@@ -92,12 +95,17 @@ public sealed class CatalogService : ICatalogService
     private readonly IBookRepository _books;
     private readonly ICirculationRepository _circulation;
     private readonly IDistributedCache _cache;
-    public CatalogService(IBookRepository books, ICirculationRepository circulation, IDistributedCache cache) => (_books, _circulation, _cache) = (books, circulation, cache);
+    private readonly LmsMongoContext _db;
+
+    public CatalogService(IBookRepository books, ICirculationRepository circulation, IDistributedCache cache, LmsMongoContext db)
+    {
+        _books = books; _circulation = circulation; _cache = cache; _db = db;
+    }
 
     public async Task<CatalogPage> SearchAsync(string collegeId, CatalogQuery query, CancellationToken token)
     {
         var version = (await _circulation.GetSettingsAsync(collegeId, token)).CatalogVersion;
-        var key = $"lms:catalog:{collegeId}:{version}:{query.Search}:{query.Category}:{query.Available}:{query.Page}:{query.Limit}";
+        var key = $"lms:catalog:{collegeId}:{version}:{query.Search}:{query.Category}:{query.Department}:{query.Language}:{query.Available}:{query.Page}:{query.Limit}";
         string? cached = null;
         try { cached = await _cache.GetStringAsync(key, token); }
         catch { /* ponytail: cache is optional; serve MongoDB directly when Redis is unavailable. */ }
@@ -107,6 +115,9 @@ public sealed class CatalogService : ICatalogService
         catch { /* ponytail: cache is optional; the database response is still valid. */ }
         return page;
     }
+
+    public Task<Book?> LookupCodeAsync(string collegeId, string code, CancellationToken token) =>
+        _books.GetByBarcodeOrAccessionAsync(collegeId, code, token);
 
     public async Task<Book> SaveAsync(LmsActor actor, Book book, CancellationToken token)
     {
@@ -118,10 +129,37 @@ public sealed class CatalogService : ICatalogService
             var checkedOut = existing.TotalCopies - existing.AvailableCopies;
             if (book.TotalCopies < checkedOut) throw new InvalidOperationException("Total copies cannot be less than checked-out copies.");
             book.AvailableCopies = book.TotalCopies - checkedOut; book.BorrowCount = existing.BorrowCount; book.CreatedAt = existing.CreatedAt;
+            book.PhysicalCopies = existing.PhysicalCopies ?? new List<PhysicalCopy>();
         }
         else book.AvailableCopies = book.TotalCopies;
         var saved = await _books.SaveAsync(book, token); await BumpCatalogAsync(actor.CollegeId, token);
         await _circulation.AddAuditAsync(new() { CollegeId = actor.CollegeId, ActorId = actor.Id, Action = isNew ? "book.add" : "book.edit", EntityType = "book", EntityId = saved.Id! }, token);
+        return saved;
+    }
+
+    public async Task<Book> UpdateCopyStatusAsync(LmsActor actor, string bookId, string accessionNumber, string status, string notes, CancellationToken token)
+    {
+        RequireLibraryWrite(actor);
+        var book = await _books.GetAsync(actor.CollegeId, bookId, token) ?? throw new KeyNotFoundException("Book not found.");
+        var copy = book.PhysicalCopies.FirstOrDefault(c => c.AccessionNumber == accessionNumber) ?? throw new KeyNotFoundException("Physical copy not found.");
+        
+        var oldStatus = copy.Status;
+        copy.Status = status;
+        copy.ConditionNotes = notes;
+        
+        // Adjust available copies count if marked lost/damaged/withdrawn
+        if (oldStatus == "available" && status != "available" && status != "issued")
+        {
+            book.AvailableCopies = Math.Max(0, book.AvailableCopies - 1);
+        }
+        else if (oldStatus != "available" && status == "available")
+        {
+            book.AvailableCopies = Math.Min(book.TotalCopies, book.AvailableCopies + 1);
+        }
+
+        var saved = await _books.SaveAsync(book, token);
+        await BumpCatalogAsync(actor.CollegeId, token);
+        await _circulation.AddAuditAsync(new() { CollegeId = actor.CollegeId, ActorId = actor.Id, Action = "book.copy_status_update", EntityType = "book", EntityId = bookId, Details = new() { ["accession"] = accessionNumber, ["status"] = status } }, token);
         return saved;
     }
 
@@ -146,12 +184,46 @@ public sealed class CatalogService : ICatalogService
         {
             var title = Cell(row, "title"); if (string.IsNullOrWhiteSpace(title)) continue;
             if (!int.TryParse(Cell(row, "total copies"), out var copies)) int.TryParse(Cell(row, "totalcopies"), out copies);
-            var book = new Book { Title = title, Author = Cell(row, "author"), Isbn = Cell(row, "isbn"), Category = Cell(row, "category"), TotalCopies = copies, ShelfLocation = Cell(row, "shelf location"), CoverImage = Cell(row, "cover image") };
+            if (copies <= 0) copies = 1;
+            var book = new Book
+            {
+                Title = title,
+                Author = Cell(row, "author"),
+                Isbn = Cell(row, "isbn"),
+                Category = Cell(row, "category"),
+                Department = Cell(row, "department"),
+                Language = string.IsNullOrWhiteSpace(Cell(row, "language")) ? "English" : Cell(row, "language"),
+                Publisher = Cell(row, "publisher"),
+                TotalCopies = copies,
+                ShelfLocation = Cell(row, "shelf location"),
+                CoverImage = Cell(row, "cover image")
+            };
             Validate(book); books.Add(book);
         }
         var saved = await _books.ImportAsync(actor.CollegeId, books, token); await BumpCatalogAsync(actor.CollegeId, token);
         await _circulation.AddAuditAsync(new() { CollegeId = actor.CollegeId, ActorId = actor.Id, Action = "book.bulk-import", EntityType = "book", EntityId = "batch", Details = new() { ["count"] = saved.Count.ToString() } }, token);
         return saved;
+    }
+
+    public async Task<IReadOnlyList<Book>> RecommendationsAsync(string collegeId, string studentId, CancellationToken token)
+    {
+        var student = await _db.Students.Find(x => x.CollegeId == collegeId && x.EduGuardStudentId == studentId).FirstOrDefaultAsync(token);
+        var course = student?.Course ?? "";
+        
+        // Fetch books matching student's course/department, or top borrowed books
+        var filter = Builders<Book>.Filter.Eq(x => x.CollegeId, collegeId) & Builders<Book>.Filter.Eq(x => x.IsActive, true);
+        if (!string.IsNullOrWhiteSpace(course))
+        {
+            filter &= (Builders<Book>.Filter.Regex(x => x.Category, new BsonRegularExpression(course, "i")) |
+                      Builders<Book>.Filter.Regex(x => x.Department, new BsonRegularExpression(course, "i")));
+        }
+        
+        var list = await _db.Books.Find(filter).SortByDescending(x => x.BorrowCount).Limit(10).ToListAsync(token);
+        if (list.Count == 0)
+        {
+            list = await _db.Books.Find(x => x.CollegeId == collegeId && x.IsActive).SortByDescending(x => x.BorrowCount).Limit(10).ToListAsync(token);
+        }
+        return list;
     }
 
     private async Task BumpCatalogAsync(string collegeId, CancellationToken token) { var settings = await _circulation.GetSettingsAsync(collegeId, token); settings.CatalogVersion++; await _circulation.SaveSettingsAsync(settings, token); }
@@ -163,10 +235,11 @@ public sealed class CatalogService : ICatalogService
 public interface ILibraryCirculationService
 {
     Task<IReadOnlyList<Issuance>> IssuedAsync(LmsActor actor, string studentId, bool activeOnly, CancellationToken token);
-    Task<Issuance> IssueAsync(LmsActor actor, string studentId, string bookId, int loanDays, string key, CancellationToken token);
+    Task<Issuance> IssueAsync(LmsActor actor, string studentId, string bookId, int loanDays, string key, CancellationToken token, string? accessionNumber = null);
     Task<Issuance> ReturnAsync(LmsActor actor, string issuanceId, string key, CancellationToken token);
     Task<Issuance> RenewAsync(LmsActor actor, string issuanceId, string key, CancellationToken token);
     Task<Reservation> ReserveAsync(LmsActor actor, string studentId, string bookId, int loanDays, string key, CancellationToken token);
+    DateTime CalculateDueDate(DateTime startDate, int loanDays, List<string> holidays);
 }
 
 public sealed class LibraryCirculationService : ILibraryCirculationService
@@ -177,16 +250,47 @@ public sealed class LibraryCirculationService : ILibraryCirculationService
     public async Task<IReadOnlyList<Issuance>> IssuedAsync(LmsActor actor, string studentId, bool activeOnly, CancellationToken token)
     { await VerifyStudentAccessAsync(actor, studentId, token); return await _repo.StudentIssuedAsync(studentId, activeOnly, token); }
 
-    public async Task<Issuance> IssueAsync(LmsActor actor, string studentId, string bookId, int loanDays, string key, CancellationToken token)
+    public DateTime CalculateDueDate(DateTime startDate, int loanDays, List<string> holidays)
+    {
+        var due = startDate.Date.AddDays(loanDays);
+        var holidaySet = new HashSet<string>(holidays ?? new List<string>());
+        
+        // Skip Sundays or configured holiday dates
+        while (due.DayOfWeek == DayOfWeek.Sunday || holidaySet.Contains(due.ToString("yyyy-MM-dd")))
+        {
+            due = due.AddDays(1);
+        }
+        return due;
+    }
+
+    public async Task<Issuance> IssueAsync(LmsActor actor, string studentId, string bookId, int loanDays, string key, CancellationToken token, string? accessionNumber = null)
     {
         RequireStaff(actor); RequireKey(key); RequireObjectIds(studentId, bookId); loanDays = RequireLoanDays(loanDays); var student = await VerifyStudentAccessAsync(actor, studentId, token);
         var book = await _books.GetAsync(actor.CollegeId, bookId, token) ?? throw new KeyNotFoundException("Book not found.");
         var settings = await _repo.GetSettingsAsync(actor.CollegeId, token);
         const int limit = 2;
         if (await _repo.ActiveCountAsync(studentId, token) >= limit) throw new InvalidOperationException($"Student has reached the active issue limit of {limit}.");
-        var issuance = await _repo.IssueAsync(new Issuance { CollegeId = actor.CollegeId, BookId = book.Id!, StudentId = studentId, DegreeId = student.DegreeId, ClassName = student.ClassName ?? "", BookTitle = book.Title, IssueDate = DateTime.UtcNow, DueDate = DateTime.UtcNow.Date.AddDays(loanDays), LoanDays = loanDays, IssueIdempotencyKey = $"{actor.CollegeId}:{key}", IssuedBy = actor.Id }, limit, token);
+        
+        var calculatedDueDate = CalculateDueDate(DateTime.UtcNow, loanDays, settings.Holidays);
+
+        var issuance = await _repo.IssueAsync(new Issuance
+        {
+            CollegeId = actor.CollegeId,
+            BookId = book.Id!,
+            StudentId = studentId,
+            AccessionNumber = accessionNumber ?? book.PhysicalCopies.FirstOrDefault(c => c.Status == "available")?.AccessionNumber ?? "",
+            DegreeId = student.DegreeId,
+            ClassName = student.ClassName ?? "",
+            BookTitle = book.Title,
+            IssueDate = DateTime.UtcNow,
+            DueDate = calculatedDueDate,
+            LoanDays = loanDays,
+            IssueIdempotencyKey = $"{actor.CollegeId}:{key}",
+            IssuedBy = actor.Id
+        }, limit, token);
+        
         settings.CatalogVersion++; await _repo.SaveSettingsAsync(settings, token);
-        await AuditAsync(actor, "issuance.issue", issuance.Id!, new() { ["studentId"] = studentId, ["bookId"] = bookId }, token); return issuance;
+        await AuditAsync(actor, "issuance.issue", issuance.Id!, new() { ["studentId"] = studentId, ["bookId"] = bookId, ["accession"] = issuance.AccessionNumber }, token); return issuance;
     }
 
     public async Task<Issuance> ReturnAsync(LmsActor actor, string issuanceId, string key, CancellationToken token)
@@ -200,8 +304,11 @@ public sealed class LibraryCirculationService : ILibraryCirculationService
     {
         RequireStaff(actor); RequireKey(key); RequireObjectIds(issuanceId); var settings = await _repo.GetSettingsAsync(actor.CollegeId, token);
         var issuance = (await _repo.ListIssuancesAsync(actor.CollegeId, null, null, token)).FirstOrDefault(x => x.Id == issuanceId) ?? throw new KeyNotFoundException("Issuance not found.");
+        if (issuance.RenewalCount >= settings.MaxRenewalCount) throw new InvalidOperationException($"Maximum renewal limit of {settings.MaxRenewalCount} reached.");
         if ((await _repo.ReservationsAsync(actor.CollegeId, null, issuance.BookId, "queued", token)).Count > 0) throw new InvalidOperationException("Book has queued reservations and cannot be renewed.");
-        var renewed = await _repo.RenewAsync(actor.CollegeId, issuanceId, actor.Id, $"{actor.CollegeId}:{key}", issuance.LoanDays is 10 or 15 or 30 ? issuance.LoanDays : settings.LoanDays, token);
+        
+        var loanDays = issuance.LoanDays is 10 or 15 or 30 ? issuance.LoanDays : settings.LoanDays;
+        var renewed = await _repo.RenewAsync(actor.CollegeId, issuanceId, actor.Id, $"{actor.CollegeId}:{key}", loanDays, token);
         await AuditAsync(actor, "issuance.renew", renewed.Id!, new(), token); return renewed;
     }
 
@@ -226,3 +333,4 @@ public sealed class LibraryCirculationService : ILibraryCirculationService
     private static void RequireObjectIds(params string[] ids) { if (ids.Any(id => !ObjectId.TryParse(id, out _))) throw new ArgumentException("Select a valid student and book."); }
     private static int RequireLoanDays(int days) => days is 10 or 15 or 30 ? days : throw new ArgumentException("Loan period must be 10, 15, or 30 days.");
 }
+

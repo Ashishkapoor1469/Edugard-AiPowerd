@@ -25,7 +25,7 @@ public sealed class AuthController : ControllerBase
     public async Task<IActionResult> Exchange([FromBody] ExchangeRequest request, CancellationToken cancellationToken)
     {
         var actor = await _eduguard.ValidateSsoAsync(request.Token, cancellationToken);
-        if (actor.Role is not ("college-admin" or "librarian")) return Forbid();
+        if (actor.Role is not ("college-admin" or "librarian" or "student")) return Forbid();
         return Ok(new { success = true, token = CreateToken(actor) });
     }
 
@@ -49,7 +49,7 @@ public sealed class AuthController : ControllerBase
         return new JwtSecurityTokenHandler().WriteToken(new JwtSecurityTokenHandler().CreateToken(descriptor));
     }
 
-    [HttpGet("me"), Authorize(Roles = "librarian,college-admin")]
+    [HttpGet("me"), Authorize(Roles = "librarian,college-admin,student")]
     public IActionResult Me() => Ok(new { success = true, data = Actor(User) });
     internal static LmsActor Actor(ClaimsPrincipal user) => new(user.FindFirst("id")?.Value ?? "", user.FindFirst(ClaimTypes.Role)?.Value ?? "", user.FindFirst("collegeId")?.Value ?? "", user.FindFirst("name")?.Value ?? "", user.FindFirst("email")?.Value ?? "");
 }
@@ -58,11 +58,23 @@ public sealed class AuthController : ControllerBase
 public sealed class CatalogController : ControllerBase
 {
     private readonly ICatalogService _catalog;
-    public CatalogController(ICatalogService catalog) => _catalog = catalog;
+    private readonly LmsMongoContext _db;
 
-    [HttpGet, Authorize(Roles = "librarian,college-admin")]
-    public async Task<IActionResult> Search([FromQuery] string? search, [FromQuery] string? category, [FromQuery] bool? available, [FromQuery] int page = 1, [FromQuery] int limit = 24, CancellationToken token = default)
-    { var actor = AuthController.Actor(User); return Ok(new { success = true, data = await _catalog.SearchAsync(actor.CollegeId, new(search, category, available, page, limit), token) }); }
+    public CatalogController(ICatalogService catalog, LmsMongoContext db) => (_catalog, _db) = (catalog, db);
+
+    [HttpGet, Authorize(Roles = "librarian,college-admin,student")]
+    public async Task<IActionResult> Search([FromQuery] string? search, [FromQuery] string? category, [FromQuery] string? department, [FromQuery] string? language, [FromQuery] bool? available, [FromQuery] int page = 1, [FromQuery] int limit = 24, CancellationToken token = default)
+    { var actor = AuthController.Actor(User); return Ok(new { success = true, data = await _catalog.SearchAsync(actor.CollegeId, new(search, category, department, language, available, page, limit), token) }); }
+
+    [HttpGet("lookup"), Authorize(Roles = "librarian,college-admin")]
+    public async Task<IActionResult> Lookup([FromQuery] string code, CancellationToken token)
+    {
+        if (string.IsNullOrWhiteSpace(code)) return BadRequest(new { success = false, message = "Barcode or accession number required." });
+        var actor = AuthController.Actor(User);
+        var book = await _catalog.LookupCodeAsync(actor.CollegeId, code, token);
+        if (book == null) return NotFound(new { success = false, message = "No matching book found." });
+        return Ok(new { success = true, data = book });
+    }
 
     [HttpPost, Authorize(Roles = "librarian")]
     public async Task<IActionResult> Add([FromBody] Book book, CancellationToken token)
@@ -72,12 +84,12 @@ public sealed class CatalogController : ControllerBase
     public async Task<IActionResult> AddStarterBooks(CancellationToken token)
     {
         var actor = AuthController.Actor(User);
-        if ((await _catalog.SearchAsync(actor.CollegeId, new(null, null, null, 1, 1), token)).Total > 0) return Conflict(new { success = false, message = "Starter books can only be added to an empty catalog." });
+        if ((await _catalog.SearchAsync(actor.CollegeId, new(null, null, null, null, null, 1, 1), token)).Total > 0) return Conflict(new { success = false, message = "Starter books can only be added to an empty catalog." });
         var books = new[]
         {
-            new Book { Isbn = "9780262046305", Title = "Introduction to Algorithms", Author = "Thomas H. Cormen, Charles E. Leiserson, Ronald L. Rivest, Clifford Stein", Category = "Computer Science", TotalCopies = 3, ShelfLocation = "CS-A1" },
-            new Book { Isbn = "9780078022159", Title = "Database System Concepts", Author = "Abraham Silberschatz, Henry F. Korth, S. Sudarshan", Category = "Databases", TotalCopies = 3, ShelfLocation = "CS-B1" },
-            new Book { Isbn = "9780132350884", Title = "Clean Code", Author = "Robert C. Martin", Category = "Software Engineering", TotalCopies = 2, ShelfLocation = "CS-C1" }
+            new Book { Isbn = "9780262046305", Title = "Introduction to Algorithms", Author = "Thomas H. Cormen, Charles E. Leiserson, Ronald L. Rivest, Clifford Stein", Category = "Computer Science", Department = "Computer Science", TotalCopies = 3, ShelfLocation = "CS-A1" },
+            new Book { Isbn = "9780078022159", Title = "Database System Concepts", Author = "Abraham Silberschatz, Henry F. Korth, S. Sudarshan", Category = "Databases", Department = "Computer Science", TotalCopies = 3, ShelfLocation = "CS-B1" },
+            new Book { Isbn = "9780132350884", Title = "Clean Code", Author = "Robert C. Martin", Category = "Software Engineering", Department = "Computer Science", TotalCopies = 2, ShelfLocation = "CS-C1" }
         };
         foreach (var book in books) await _catalog.SaveAsync(actor, book, token);
         return StatusCode(201, new { success = true, data = books });
@@ -86,6 +98,14 @@ public sealed class CatalogController : ControllerBase
     [HttpPut("{id}"), Authorize(Roles = "librarian")]
     public async Task<IActionResult> Edit(string id, [FromBody] Book book, CancellationToken token)
     { book.Id = id; return Ok(new { success = true, data = await _catalog.SaveAsync(AuthController.Actor(User), book, token) }); }
+
+    [HttpPost("copies/{id}/status"), Authorize(Roles = "librarian")]
+    public async Task<IActionResult> UpdateCopyStatus(string id, [FromBody] CopyStatusRequest request, CancellationToken token)
+    {
+        var actor = AuthController.Actor(User);
+        var updated = await _catalog.UpdateCopyStatusAsync(actor, id, request.AccessionNumber, request.Status, request.Notes ?? "", token);
+        return Ok(new { success = true, data = updated });
+    }
 
     [HttpDelete("{id}"), Authorize(Roles = "librarian")]
     public async Task<IActionResult> Delete(string id, CancellationToken token)
@@ -99,7 +119,41 @@ public sealed class CatalogController : ControllerBase
         await using var stream = file.OpenReadStream(); var saved = await _catalog.ImportAsync(AuthController.Actor(User), stream, token);
         return Ok(new { success = true, imported = saved.Count, data = saved });
     }
+
+    [HttpGet("recommendations"), Authorize(Roles = "librarian,college-admin,student")]
+    public async Task<IActionResult> Recommendations(CancellationToken token)
+    {
+        var actor = AuthController.Actor(User);
+        var books = await _catalog.RecommendationsAsync(actor.CollegeId, actor.Id, token);
+        return Ok(new { success = true, data = books });
+    }
+
+    [HttpGet("wishlist"), Authorize(Roles = "librarian,college-admin,student")]
+    public async Task<IActionResult> GetWishlist(CancellationToken token)
+    {
+        var actor = AuthController.Actor(User);
+        var wishlistItems = await _db.Wishlists.Find(x => x.CollegeId == actor.CollegeId && x.StudentId == actor.Id).ToListAsync(token);
+        var bookIds = wishlistItems.Select(x => x.BookId).ToList();
+        var books = await _db.Books.Find(x => x.CollegeId == actor.CollegeId && bookIds.Contains(x.Id!)).ToListAsync(token);
+        return Ok(new { success = true, data = books });
+    }
+
+    [HttpPost("wishlist/{bookId}"), Authorize(Roles = "librarian,college-admin,student")]
+    public async Task<IActionResult> ToggleWishlist(string bookId, CancellationToken token)
+    {
+        var actor = AuthController.Actor(User);
+        var existing = await _db.Wishlists.Find(x => x.CollegeId == actor.CollegeId && x.StudentId == actor.Id && x.BookId == bookId).FirstOrDefaultAsync(token);
+        if (existing != null)
+        {
+            await _db.Wishlists.DeleteOneAsync(x => x.Id == existing.Id, token);
+            return Ok(new { success = true, wishlisted = false });
+        }
+        await _db.Wishlists.InsertOneAsync(new Wishlist { CollegeId = actor.CollegeId, StudentId = actor.Id, BookId = bookId }, cancellationToken: token);
+        return Ok(new { success = true, wishlisted = true });
+    }
 }
+
+public sealed record CopyStatusRequest(string AccessionNumber, string Status, string? Notes);
 
 [ApiController, Authorize, Route("api/circulation")]
 public sealed class CirculationController : ControllerBase
@@ -121,7 +175,7 @@ public sealed class CirculationController : ControllerBase
     { var actor = AuthController.Actor(User); var data = (await _repo.ListIssuancesAsync(actor.CollegeId, "active", null, token)).Where(x => x.DueDate.Date < DateTime.UtcNow.Date); return Ok(new { success = true, data }); }
 
     [HttpPost("issue"), Authorize(Roles = "librarian")]
-    public async Task<IActionResult> Issue([FromBody] IssueRequest request, CancellationToken token) => Ok(new { success = true, data = await _service.IssueAsync(AuthController.Actor(User), request.StudentId, request.BookId, request.LoanDays, Key, token) });
+    public async Task<IActionResult> Issue([FromBody] IssueRequest request, CancellationToken token) => Ok(new { success = true, data = await _service.IssueAsync(AuthController.Actor(User), request.StudentId, request.BookId, request.LoanDays, Key, token, request.AccessionNumber) });
     [HttpPost("{id}/return"), Authorize(Roles = "librarian")]
     public async Task<IActionResult> Return(string id, CancellationToken token) => Ok(new { success = true, data = await _service.ReturnAsync(AuthController.Actor(User), id, Key, token) });
     [HttpPost("{id}/renew"), Authorize(Roles = "librarian")]
@@ -189,11 +243,10 @@ public sealed class LibraryStudentsController : ControllerBase
         return StatusCode(201, new { success = true, data = student });
     }
 
-    [HttpGet("{studentId}/history"), Authorize(Roles = "librarian,college-admin")]
+    [HttpGet("{studentId}/history"), Authorize(Roles = "librarian,college-admin,student")]
     public async Task<IActionResult> History(string studentId, CancellationToken token)
     {
         var actor = AuthController.Actor(User);
-        if (!await _db.Students.Find(x => x.CollegeId == actor.CollegeId && x.EduGuardStudentId == studentId).AnyAsync(token)) return NotFound();
         var issuances = await _circulation.ListIssuancesAsync(actor.CollegeId, null, studentId, token);
         var reservations = await _circulation.ReservationsAsync(actor.CollegeId, studentId, null, null, token);
         var fines = await _circulation.FinesAsync(actor.CollegeId, studentId, token);
@@ -219,14 +272,51 @@ public sealed class LibraryAdminController : ControllerBase
     public async Task<IActionResult> Waive(string id, [FromBody] FineActionRequest request, CancellationToken token)
     { if (request.Amount <= 0 || string.IsNullOrWhiteSpace(request.Reason)) return BadRequest(new { message = "Positive amount and reason are required." }); var actor = AuthController.Actor(User); var fine = await _repo.UpdateFineAsync(actor.CollegeId, id, 0, request.Amount, token); await AuditFine(actor, fine, "fine.waive", request, token); return Ok(new { success = true, data = fine }); }
 
-    [HttpGet("reports"), Authorize(Roles = "college-admin")]
+    [HttpGet("reports"), Authorize(Roles = "librarian,college-admin")]
     public async Task<IActionResult> Reports(CancellationToken token)
     {
         var actor = AuthController.Actor(User);
         var mostBorrowed = await _db.Books.Find(x => x.CollegeId == actor.CollegeId).SortByDescending(x => x.BorrowCount).Limit(10).Project(x => new { x.Id, x.Title, x.Author, x.BorrowCount }).ToListAsync(token);
         var issuances = await _repo.ListIssuancesAsync(actor.CollegeId, null, null, token); var today = DateTime.UtcNow.Date;
         var byClass = issuances.GroupBy(x => string.IsNullOrEmpty(x.ClassName) ? "Unassigned" : x.ClassName).Select(x => new { className = x.Key, total = x.Count(), active = x.Count(i => i.Status == "active"), overdue = x.Count(i => i.Status == "active" && i.DueDate.Date < today) }).OrderByDescending(x => x.total);
-        return Ok(new { success = true, data = new { mostBorrowed, totals = new { issuances = issuances.Count, active = issuances.Count(x => x.Status == "active"), overdue = issuances.Count(x => x.Status == "active" && x.DueDate.Date < today) }, byClass } });
+        var fines = await _repo.FinesAsync(actor.CollegeId, null, token);
+        var totalFineCollected = fines.Sum(f => f.PaidAmount);
+        var totalFineWaived = fines.Sum(f => f.WaivedAmount);
+        return Ok(new { success = true, data = new { mostBorrowed, totals = new { issuances = issuances.Count, active = issuances.Count(x => x.Status == "active"), overdue = issuances.Count(x => x.Status == "active" && x.DueDate.Date < today), fineCollected = totalFineCollected, fineWaived = totalFineWaived }, byClass } });
+    }
+
+    [HttpGet("reports/export"), Authorize(Roles = "librarian,college-admin")]
+    public async Task<IActionResult> ExportReports([FromQuery] string type, CancellationToken token)
+    {
+        var actor = AuthController.Actor(User);
+        var sb = new StringBuilder();
+        if (type == "overdue")
+        {
+            sb.AppendLine("Book Title,Student ID,Class,DueDate,LoanDays");
+            var issuances = (await _repo.ListIssuancesAsync(actor.CollegeId, "active", null, token)).Where(x => x.DueDate.Date < DateTime.UtcNow.Date);
+            foreach (var i in issuances) sb.AppendLine($"\"{i.BookTitle}\",\"{i.StudentId}\",\"{i.ClassName}\",\"{i.DueDate:yyyy-MM-dd}\",\"{i.LoanDays}\"");
+        }
+        else if (type == "fines")
+        {
+            sb.AppendLine("Book Title,Student ID,Amount,PaidAmount,WaivedAmount,Status");
+            var fines = await _repo.FinesAsync(actor.CollegeId, null, token);
+            foreach (var f in fines) sb.AppendLine($"\"{f.BookTitle}\",\"{f.StudentId}\",\"{f.Amount}\",\"{f.PaidAmount}\",\"{f.WaivedAmount}\",\"{f.Status}\"");
+        }
+        else
+        {
+            sb.AppendLine("ISBN,Title,Author,Category,TotalCopies,AvailableCopies,BorrowCount");
+            var books = await _db.Books.Find(x => x.CollegeId == actor.CollegeId && x.IsActive).ToListAsync(token);
+            foreach (var b in books) sb.AppendLine($"\"{b.Isbn}\",\"{b.Title}\",\"{b.Author}\",\"{b.Category}\",\"{b.TotalCopies}\",\"{b.AvailableCopies}\",\"{b.BorrowCount}\"");
+        }
+        return File(Encoding.UTF8.GetBytes(sb.ToString()), "text/csv", $"lms_report_{type}_{DateTime.UtcNow:yyyyMMdd}.csv");
+    }
+
+    [HttpGet("audits"), Authorize(Roles = "librarian,college-admin")]
+    public async Task<IActionResult> Audits([FromQuery] int limit = 100, CancellationToken token = default)
+    {
+        var actor = AuthController.Actor(User);
+        var audits = await _db.Audits.Find(x => x.CollegeId == actor.CollegeId).SortByDescending(x => x.CreatedAt).Limit(limit).ToListAsync(token);
+        return Ok(new { success = true, data = audits });
     }
 
     [HttpGet("librarians"), Authorize(Roles = "college-admin")]
@@ -244,6 +334,41 @@ public sealed class LibraryAdminController : ControllerBase
     public async Task<IActionResult> Preferences([FromBody] LibrarianPreferences prefs, CancellationToken token) { var actor = AuthController.Actor(User); prefs.Id = null; prefs.LibrarianId = actor.Id; prefs.CollegeId = actor.CollegeId; prefs.UpdatedAt = DateTime.UtcNow; await _db.Preferences.ReplaceOneAsync(x => x.LibrarianId == actor.Id, prefs, new ReplaceOptions { IsUpsert = true }, token); return Ok(new { success = true, data = prefs }); }
 
     private Task AuditFine(LmsActor actor, Fine fine, string action, FineActionRequest request, CancellationToken token) => _repo.AddAuditAsync(new() { CollegeId = actor.CollegeId, ActorId = actor.Id, Action = action, EntityType = "fine", EntityId = fine.Id!, Details = new() { ["amount"] = request.Amount.ToString("0.00"), ["reason"] = request.Reason ?? "" } }, token);
+}
+
+[ApiController, Authorize, Route("api/announcements")]
+public sealed class AnnouncementsController : ControllerBase
+{
+    private readonly LmsMongoContext _db;
+    public AnnouncementsController(LmsMongoContext db) => _db = db;
+
+    [HttpGet]
+    public async Task<IActionResult> List(CancellationToken token)
+    {
+        var actor = AuthController.Actor(User);
+        var items = await _db.Announcements.Find(x => x.CollegeId == actor.CollegeId).SortByDescending(x => x.CreatedAt).ToListAsync(token);
+        return Ok(new { success = true, data = items });
+    }
+
+    [HttpPost, Authorize(Roles = "librarian,college-admin")]
+    public async Task<IActionResult> Create([FromBody] LibraryAnnouncement announcement, CancellationToken token)
+    {
+        var actor = AuthController.Actor(User);
+        announcement.Id = null;
+        announcement.CollegeId = actor.CollegeId;
+        announcement.CreatedBy = actor.Name;
+        announcement.CreatedAt = DateTime.UtcNow;
+        await _db.Announcements.InsertOneAsync(announcement, cancellationToken: token);
+        return StatusCode(201, new { success = true, data = announcement });
+    }
+
+    [HttpDelete("{id}"), Authorize(Roles = "librarian,college-admin")]
+    public async Task<IActionResult> Delete(string id, CancellationToken token)
+    {
+        var actor = AuthController.Actor(User);
+        await _db.Announcements.DeleteOneAsync(x => x.Id == id && x.CollegeId == actor.CollegeId, token);
+        return Ok(new { success = true });
+    }
 }
 
 [ApiController, Route("api/internal/eduguard")]
@@ -264,7 +389,7 @@ public sealed class EduGuardCompatibilityController : ControllerBase
     private bool Authorized() { var supplied = Request.Headers["X-EduGuard-Service-Key"].FirstOrDefault() ?? ""; return _key.Length > 0 && supplied.Length == _key.Length && CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(supplied), Encoding.UTF8.GetBytes(_key)); }
 }
 
-public sealed record IssueRequest(string StudentId, string BookId, int LoanDays = 15);
+public sealed record IssueRequest(string StudentId, string BookId, int LoanDays = 15, string? AccessionNumber = null);
 public sealed record ReserveRequest(string StudentId, string BookId, int LoanDays = 15);
 public sealed record FineActionRequest(decimal Amount, string? Reason);
 public sealed record LibrarianRequest(string Name, string Email, string Password);
@@ -273,3 +398,4 @@ public sealed record CompatibilityBook(string BookId, string Title, DateTime Iss
 public sealed record CompatibilityReturn(string BookId);
 public sealed record ExchangeRequest(string Token);
 public sealed record LibrarianLoginRequest(string Email, string Password);
+
