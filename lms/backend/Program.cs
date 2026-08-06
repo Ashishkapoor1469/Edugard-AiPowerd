@@ -69,9 +69,16 @@ app.MapGet("/health", () => Results.Ok(new { status = "ok", service = "eduguard-
 await app.Services.GetRequiredService<LmsMongoContext>().EnsureIndexesAsync();
 if (app.Configuration.GetValue<bool>("LMS_ENABLE_DEMO_SEED", true))
 {
-    using var scope = app.Services.CreateScope();
-    var db = scope.ServiceProvider.GetRequiredService<LmsMongoContext>();
-    await Lms.Api.Seed.DemoDataSeeder.SeedAsync(db);
+    try
+    {
+        using var scope = app.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<LmsMongoContext>();
+        await Lms.Api.Seed.DemoDataSeeder.SeedAsync(db);
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"[Warning] SeedAsync skipped due to startup error: {ex.Message}");
+    }
 }
 app.Run();
 

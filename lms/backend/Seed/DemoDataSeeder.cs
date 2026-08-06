@@ -15,20 +15,36 @@ public static class DemoDataSeeder
 
     public static async Task SeedAsync(LmsMongoContext db, string targetCollegeId = DemoCollegeId, CancellationToken token = default)
     {
-        // Find all colleges present in the database to ensure every logged in college gets sample data
-        var collegeIds = new HashSet<string> { targetCollegeId, DemoCollegeId };
-        
-        var existingBookColleges = await db.Books.Distinct(x => x.CollegeId, Builders<Book>.Filter.Empty).ToListAsync(token);
-        var existingSettingColleges = await db.Settings.Distinct(x => x.CollegeId, Builders<LibrarySettings>.Filter.Empty).ToListAsync(token);
-        var existingStudentColleges = await db.Students.Distinct(x => x.CollegeId, Builders<LibraryStudent>.Filter.Empty).ToListAsync(token);
-        
-        foreach (var c in existingBookColleges) if (!string.IsNullOrEmpty(c)) collegeIds.Add(c);
-        foreach (var c in existingSettingColleges) if (!string.IsNullOrEmpty(c)) collegeIds.Add(c);
-        foreach (var c in existingStudentColleges) if (!string.IsNullOrEmpty(c)) collegeIds.Add(c);
-
-        foreach (var collegeId in collegeIds)
+        try
         {
-            await SeedCollegeDataAsync(db, collegeId, token);
+            var collegeIds = new HashSet<string> { targetCollegeId, DemoCollegeId };
+            
+            try
+            {
+                var existingBookColleges = await db.Books.Distinct(x => x.CollegeId, Builders<Book>.Filter.Empty).ToListAsync(token);
+                foreach (var c in existingBookColleges) if (!string.IsNullOrEmpty(c)) collegeIds.Add(c);
+            } catch { }
+
+            try
+            {
+                var existingSettingColleges = await db.Settings.Distinct(x => x.CollegeId, Builders<LibrarySettings>.Filter.Empty).ToListAsync(token);
+                foreach (var c in existingSettingColleges) if (!string.IsNullOrEmpty(c)) collegeIds.Add(c);
+            } catch { }
+
+            try
+            {
+                var existingStudentColleges = await db.Students.Distinct(x => x.CollegeId, Builders<LibraryStudent>.Filter.Empty).ToListAsync(token);
+                foreach (var c in existingStudentColleges) if (!string.IsNullOrEmpty(c)) collegeIds.Add(c);
+            } catch { }
+
+            foreach (var collegeId in collegeIds)
+            {
+                await SeedCollegeDataAsync(db, collegeId, token);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Warning] DemoDataSeeder encountered error: {ex.Message}");
         }
     }
 
