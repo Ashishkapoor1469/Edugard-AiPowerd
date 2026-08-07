@@ -5,7 +5,7 @@ import { useDropzone } from "react-dropzone";
 import toast from "react-hot-toast";
 import { listLoadError } from "../utils/apiErrors.js";
 import { downloadFile } from "../utils/downloadFile.js";
-import { ErrorState, LoadingState } from "../components/AsyncState.js";
+import { CardGridSkeleton, ErrorState, ListSkeleton, TableSkeleton } from "../components/AsyncState.js";
 
 interface Student {
   _id: string;
@@ -55,7 +55,6 @@ const Dashboard: React.FC = () => {
   // Component States
   const [students, setStudents] = useState<Student[]>([]);
   const [pendingStudents, setPendingStudents] = useState<Student[]>([]);
-  const [stats, setStats] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [studentsError, setStudentsError] = useState("");
   const [pendingError, setPendingError] = useState("");
@@ -106,34 +105,7 @@ const Dashboard: React.FC = () => {
   const [rcJobs, setRcJobs] = useState<any[]>([]);
   const [rcLoadingJobs, setRcLoadingJobs] = useState(false);
   const [rcJobsError, setRcJobsError] = useState("");
-  const STATS_CACHE_KEY = "eduguard_dashboard_stats";
-  const STATS_TTL_MS = 5 * 60 * 1000; // 5 minutes
-
-  const fetchDashboardStats = async () => {
-    try {
-      // 1. Show cached stats immediately (stale-while-revalidate)
-      const cached = sessionStorage.getItem(STATS_CACHE_KEY);
-      if (cached) {
-        const { data, timestamp } = JSON.parse(cached);
-        setStats(data);
-        // If cache is still fresh, skip the network call
-        if (Date.now() - timestamp < STATS_TTL_MS) return;
-      }
-
-      // 2. Fetch fresh stats in background
-      const res = await axios.get("/api/students/stats");
-      if (res.data.success) {
-        setStats(res.data.data);
-        sessionStorage.setItem(
-          STATS_CACHE_KEY,
-          JSON.stringify({ data: res.data.data, timestamp: Date.now() })
-        );
-      }
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
+  const rcGenerationKey = useRef<{ studentId: string; key: string } | null>(null);
   const fetchStudents = async (signal?: AbortSignal) => {
     const requestId = studentsRequestId.current + 1;
     studentsRequestId.current = requestId;
@@ -198,10 +170,6 @@ const Dashboard: React.FC = () => {
       setAssignmentsError(listLoadError(err, "Failed to load assignments."));
     } finally { setAssignmentsLoading(false); }
   };
-
-  useEffect(() => {
-    fetchDashboardStats();
-  }, [courseFilter, classFilter]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -269,7 +237,6 @@ const Dashboard: React.FC = () => {
         class: newAsgnClass,
         deadline: newAsgnDeadline,
         instructions: newAsgnInstructions,
-        mentorId: stats?.mentorId || "dev-mentor",
       });
       if (res.data.success) {
         toast.success("Assignment created!");
@@ -542,7 +509,7 @@ const Dashboard: React.FC = () => {
             </div>
 
             {loading ? (
-              <LoadingState label="Loading students…" />
+              <TableSkeleton rows={8} columns={6} label="Loading students" />
             ) : studentsError ? (
               <ErrorState message={studentsError} onRetry={() => fetchStudents()} />
             ) : students.length === 0 ? (
@@ -618,7 +585,7 @@ const Dashboard: React.FC = () => {
           <div className="rounded-2xl border border-[#dadce0] bg-white p-6 shadow-sm">
             <h2 className="text-lg font-semibold text-[#202124] mb-4">Pending Student Registrations</h2>
             {pendingLoading ? (
-              <LoadingState label="Loading pending enrollments…" compact />
+              <TableSkeleton rows={5} columns={4} label="Loading pending enrollments" />
             ) : pendingError ? (
               <ErrorState message={pendingError} onRetry={fetchPendingStudents} compact />
             ) : pendingStudents.length === 0 ? (
@@ -737,7 +704,7 @@ const Dashboard: React.FC = () => {
               <div>
                 <h2 className="text-lg font-semibold text-[#202124] mb-3">Evaluate Submissions</h2>
                 {assignmentsLoading ? (
-                  <LoadingState label="Loading assignments…" compact />
+                  <CardGridSkeleton count={3} label="Loading assignments" />
                 ) : assignmentsError ? (
                   <ErrorState message={assignmentsError} onRetry={fetchAssignments} compact />
                 ) : assignments.length === 0 ? (
@@ -764,7 +731,7 @@ const Dashboard: React.FC = () => {
               {selectedAsgnId && (
                 <div className="flex-1">
                   <h3 className="text-sm font-bold text-[#202124] mb-2">Student Submissions</h3>
-                  {loadingSubmissions ? <LoadingState label="Loading submissions…" compact /> : submissions.length === 0 ? (
+                  {loadingSubmissions ? <ListSkeleton count={4} label="Loading submissions" /> : submissions.length === 0 ? (
                     <p className="text-xs text-[#5f6368] py-4 italic">No uploads received yet.</p>
                   ) : (
                     <div className="space-y-4">
@@ -935,6 +902,7 @@ const Dashboard: React.FC = () => {
                   value={rcStudentId}
                   onChange={(e) => {
                     setRcStudentId(e.target.value);
+                    rcGenerationKey.current = null;
                     if (e.target.value) {
                       setRcLoadingJobs(true); setRcJobsError("");
                       axios.get(`/api/students/${e.target.value}/report-card/jobs`)
@@ -959,8 +927,20 @@ const Dashboard: React.FC = () => {
                     if (!rcStudentId) return;
                     setRcGenerating(true);
                     try {
-                      const res = await axios.post(`/api/students/${rcStudentId}/report-card/generate`);
+                      if (rcGenerationKey.current?.studentId !== rcStudentId) {
+                        rcGenerationKey.current = {
+                          studentId: rcStudentId,
+                          key: `report-card:${rcStudentId}:${crypto.randomUUID()}`,
+                        };
+                      }
+                      const idempotencyKey = rcGenerationKey.current.key;
+                      const res = await axios.post(
+                        `/api/students/${rcStudentId}/report-card/generate`,
+                        undefined,
+                        { headers: { "Idempotency-Key": idempotencyKey } },
+                      );
                       if (res.data.success) {
+                        rcGenerationKey.current = null;
                         toast.success("Report card generation queued!");
                         // Poll for completion
                         const jobId = res.data.jobId;
@@ -1003,7 +983,7 @@ const Dashboard: React.FC = () => {
               <div className="bg-white border border-[#dadce0] rounded-2xl p-6 shadow-sm">
                 <h3 className="text-sm font-semibold text-[#202124] mb-4">Report Card History</h3>
                 {rcLoadingJobs ? (
-                  <LoadingState label="Loading report card history…" compact />
+                  <ListSkeleton count={3} label="Loading report card history" />
                 ) : rcJobsError ? (
                   <ErrorState message={rcJobsError} compact />
                 ) : rcJobs.length === 0 ? (

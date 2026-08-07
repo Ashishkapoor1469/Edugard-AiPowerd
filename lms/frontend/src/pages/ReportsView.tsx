@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import { api } from "../api";
-import { PageLoader } from "../components/AsyncState";
+import { ErrorState, TableSkeleton } from "../components/AsyncState";
 
 interface ReportTotals {
   issuances: number;
@@ -30,15 +30,18 @@ export default function ReportsView() {
   const [byClass, setByClass] = useState<ClassUsage[]>([]);
   const [mostBorrowed, setMostBorrowed] = useState<MostBorrowedBook[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
   const fetchReports = async () => {
     setLoading(true);
+    setError("");
     try {
       const res = await api.get("/api/library-admin/reports");
       setTotals(res.data.data.totals);
       setByClass(res.data.data.byClass || []);
       setMostBorrowed(res.data.data.mostBorrowed || []);
     } catch {
+      setError("Failed to load library reports.");
       toast.error("Failed to load library reports.");
     } finally {
       setLoading(false);
@@ -49,12 +52,23 @@ export default function ReportsView() {
     fetchReports();
   }, []);
 
-  const exportReport = (type: "catalog" | "overdue" | "fines") => {
-    window.open(`${api.defaults.baseURL}/api/library-admin/reports/export?type=${type}`, "_blank");
-    toast.success(`Exporting ${type} report CSV...`);
+  const exportReport = async (type: "catalog" | "overdue" | "fines") => {
+    try {
+      const response = await api.get("/api/library-admin/reports/export", { params: { type }, responseType: "blob" });
+      const url = URL.createObjectURL(response.data);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `lms_report_${type}.csv`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+      toast.success(`${type} report downloaded.`);
+    } catch {
+      toast.error(`Could not export ${type} report.`);
+    }
   };
 
-  if (loading) return <PageLoader label="Loading library reports..." />;
+  if (loading) return <TableSkeleton rows={7} columns={5} label="Loading library reports" />;
+  if (error) return <ErrorState message={error} onRetry={fetchReports} />;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>

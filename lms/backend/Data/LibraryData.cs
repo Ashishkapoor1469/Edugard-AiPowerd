@@ -1,6 +1,7 @@
 using Lms.Api.Models;
 using MongoDB.Bson;
 using MongoDB.Driver;
+using System.Text.RegularExpressions;
 
 namespace Lms.Api.Data;
 
@@ -55,7 +56,6 @@ public sealed class LmsMongoContext
         {
             await Books.Indexes.CreateManyAsync([
                 new(Builders<Book>.IndexKeys.Ascending(x => x.CollegeId).Ascending(x => x.Isbn), new CreateIndexOptions { Unique = true }),
-                new(Builders<Book>.IndexKeys.Text(x => x.Title).Text(x => x.Author).Text(x => x.Isbn).Text(x => x.Category).Text(x => x.Department).Text(x => x.Publisher)),
                 new(Builders<Book>.IndexKeys.Ascending(x => x.CollegeId).Ascending(x => x.Category).Descending(x => x.AvailableCopies))
             ], token);
         }
@@ -116,11 +116,10 @@ public sealed class MongoBookRepository : IBookRepository
         var filter = Builders<Book>.Filter.Eq(x => x.CollegeId, collegeId) & Builders<Book>.Filter.Eq(x => x.IsActive, true);
         if (!string.IsNullOrWhiteSpace(query.Search))
         {
-            var term = query.Search.Trim();
-            filter &= (Builders<Book>.Filter.Text(term) |
-                      Builders<Book>.Filter.Regex(x => x.Title, new BsonRegularExpression(term, "i")) |
-                      Builders<Book>.Filter.Regex(x => x.Author, new BsonRegularExpression(term, "i")) |
-                      Builders<Book>.Filter.Regex(x => x.Isbn, new BsonRegularExpression(term, "i")));
+            var term = new BsonRegularExpression(Regex.Escape(query.Search.Trim()), "i");
+            filter &= (Builders<Book>.Filter.Regex(x => x.Title, term) |
+                       Builders<Book>.Filter.Regex(x => x.Author, term) |
+                       Builders<Book>.Filter.Regex(x => x.Isbn, term));
         }
         if (!string.IsNullOrWhiteSpace(query.Category)) filter &= Builders<Book>.Filter.Eq(x => x.Category, query.Category.Trim());
         if (!string.IsNullOrWhiteSpace(query.Department)) filter &= Builders<Book>.Filter.Eq(x => x.Department, query.Department.Trim());
@@ -173,16 +172,29 @@ public sealed class MongoBookRepository : IBookRepository
 
     public async Task<IReadOnlyList<Book>> ImportAsync(string collegeId, IReadOnlyList<Book> books, CancellationToken token)
     {
-        var saved = new List<Book>();
-        foreach (var row in books)
+        var uniqueRows = books.GroupBy(row => row.Isbn, StringComparer.OrdinalIgnoreCase).Select(group => group.Last()).ToList();
+        var isbns = uniqueRows.Select(row => row.Isbn).ToList();
+        var existingBooks = await _db.Books.Find(x => x.CollegeId == collegeId && isbns.Contains(x.Isbn)).ToListAsync(token);
+        var existingByIsbn = existingBooks.ToDictionary(book => book.Isbn, StringComparer.OrdinalIgnoreCase);
+        var saved = new List<Book>(uniqueRows.Count);
+        var writes = new List<WriteModel<Book>>(uniqueRows.Count);
+        foreach (var row in uniqueRows)
         {
-            var existing = await _db.Books.Find(x => x.CollegeId == collegeId && x.Isbn == row.Isbn).FirstOrDefaultAsync(token);
-            if (existing == null) { row.CollegeId = collegeId; row.AvailableCopies = row.TotalCopies; await _db.Books.InsertOneAsync(row, cancellationToken: token); saved.Add(row); continue; }
+            if (!existingByIsbn.TryGetValue(row.Isbn, out var existing))
+            {
+                row.CollegeId = collegeId;
+                row.AvailableCopies = row.TotalCopies;
+                writes.Add(new InsertOneModel<Book>(row));
+                saved.Add(row);
+                continue;
+            }
             var loaned = existing.TotalCopies - existing.AvailableCopies;
             existing.Title = row.Title; existing.Author = row.Author; existing.Category = row.Category; existing.ShelfLocation = row.ShelfLocation; existing.CoverImage = row.CoverImage;
             existing.TotalCopies = row.TotalCopies; existing.AvailableCopies = Math.Max(0, row.TotalCopies - loaned); existing.UpdatedAt = DateTime.UtcNow;
-            await _db.Books.ReplaceOneAsync(x => x.Id == existing.Id, existing, cancellationToken: token); saved.Add(existing);
+            writes.Add(new ReplaceOneModel<Book>(Builders<Book>.Filter.Eq(x => x.Id, existing.Id), existing));
+            saved.Add(existing);
         }
+        if (writes.Count > 0) await _db.Books.BulkWriteAsync(writes, cancellationToken: token);
         return saved;
     }
 

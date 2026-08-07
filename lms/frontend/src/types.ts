@@ -2,7 +2,7 @@ export interface User {
   id: string;
   name: string;
   email: string;
-  role: "librarian" | "college-admin" | "student";
+  role: "librarian" | "college-admin";
   collegeId: string;
 }
 
@@ -106,4 +106,3 @@ export interface LibraryAudit {
   details: Record<string, string>;
   createdAt: string;
 }
-

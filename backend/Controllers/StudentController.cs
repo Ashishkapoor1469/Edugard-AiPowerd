@@ -33,6 +33,8 @@ namespace EduGuard.Controllers
         private readonly BadgeAwardWorker _badgeAwardWorker;
         private readonly IPushAudienceNotifier _pushAudience;
         private readonly IPushNotificationQueue _pushQueue;
+        private readonly IStudentAccessService _studentAccess;
+        private readonly IBadgeCatalog _badgeCatalog;
 
         public StudentController(
             MongoService mongoService,
@@ -43,7 +45,9 @@ namespace EduGuard.Controllers
             ICacheService cacheService,
             BadgeAwardWorker badgeAwardWorker,
             IPushAudienceNotifier pushAudience,
-            IPushNotificationQueue pushQueue)
+            IPushNotificationQueue pushQueue,
+            IStudentAccessService studentAccess,
+            IBadgeCatalog badgeCatalog)
         {
             _mongoService = mongoService;
             _excelParserService = excelParserService;
@@ -54,10 +58,13 @@ namespace EduGuard.Controllers
             _badgeAwardWorker = badgeAwardWorker;
             _pushAudience = pushAudience;
             _pushQueue = pushQueue;
+            _studentAccess = studentAccess;
+            _badgeCatalog = badgeCatalog;
         }
 
         // --- STUDENT ALERTS: Announcements + Events for their college ---
         [HttpGet("my-alerts")]
+        [Authorize(Roles = "student")]
         public async Task<IActionResult> GetMyAlerts()
         {
             var userId = User.FindFirst("id")?.Value;
@@ -128,6 +135,7 @@ namespace EduGuard.Controllers
         }
 
         [HttpGet]
+        [Authorize(Roles = "mentor,admin,college-admin")]
         [EnableRateLimiting("dashboard-fetch")]
         public async Task<IActionResult> GetStudents(
             [FromQuery] int page = 1,
@@ -249,6 +257,7 @@ namespace EduGuard.Controllers
         }
 
         [HttpGet("stats")]
+        [Authorize(Roles = "mentor")]
         [EnableRateLimiting("dashboard-fetch")]
         public async Task<IActionResult> GetDashboardStats([FromQuery] string? course = null, [FromQuery] string? @class = null)
         {
@@ -321,6 +330,7 @@ namespace EduGuard.Controllers
         }
 
         [HttpPost("upload")]
+        [Authorize(Roles = "mentor")]
         public async Task<IActionResult> UploadStudents([FromForm] IFormFile file)
         {
             if (file == null || file.Length == 0)
@@ -579,6 +589,7 @@ namespace EduGuard.Controllers
         }
 
         [HttpGet("class/{className}")]
+        [Authorize(Roles = "mentor")]
         [EnableRateLimiting("dashboard-fetch")]
         public async Task<IActionResult> GetStudentsByClass(string className)
         {
@@ -587,6 +598,7 @@ namespace EduGuard.Controllers
         }
 
         [HttpGet("class/{className}/summary")]
+        [Authorize(Roles = "mentor")]
         [EnableRateLimiting("dashboard-fetch")]
         public async Task<IActionResult> GetClassSummary(string className)
         {
@@ -821,12 +833,14 @@ namespace EduGuard.Controllers
             {
                 return NotFound(new { success = false, message = "Student not found" });
             }
+            if (!await _studentAccess.CanReadAsync(User, student)) return Forbid();
             var dto = await MapToProfileDto(student);
             return Ok(new { success = true, data = dto });
         }
 
         [HttpPut("{id}")]
         [HttpPatch("{id}")]
+        [Authorize(Roles = "mentor,admin,college-admin")]
         public async Task<IActionResult> UpdateStudent(string id, [FromBody] StudentUpdatePayload model)
         {
             var student = await _mongoService.Students.Find(s => s.Id == id).FirstOrDefaultAsync();
@@ -834,6 +848,7 @@ namespace EduGuard.Controllers
             {
                 return NotFound(new { success = false, message = "Student not found" });
             }
+            if (!await _studentAccess.CanManageAsync(User, student)) return Forbid();
 
             var oldValues = new Student
             {
@@ -895,6 +910,7 @@ namespace EduGuard.Controllers
 
         [HttpPost("{id}/select-mentor")]
         [HttpPatch("select-mentor")]
+        [Authorize(Roles = "student")]
         public async Task<IActionResult> SelectMentor(string? id, [FromBody] SelectMentorPayload model)
         {
             if (model == null || string.IsNullOrEmpty(model.MentorId))
@@ -907,6 +923,7 @@ namespace EduGuard.Controllers
             {
                 return Unauthorized(new { success = false, message = "User ID not found in claims" });
             }
+            if (studentId != User.FindFirst("id")?.Value) return Forbid();
 
             var student = await _mongoService.Students.Find(s => s.Id == studentId).FirstOrDefaultAsync();
             if (student == null)
@@ -914,11 +931,17 @@ namespace EduGuard.Controllers
                 return NotFound(new { success = false, message = "Student not found" });
             }
 
-            // Verify mentor exists
-            var mentor = await _mongoService.Mentors.Find(m => m.Id == model.MentorId).FirstOrDefaultAsync();
+            // A student may only select an approved mentor in their own college
+            // and degree scope. The UI filter is not an authorization boundary.
+            var mentor = await _mongoService.Mentors.Find(m =>
+                m.Id == model.MentorId &&
+                m.Status == "approved" &&
+                m.CollegeId == student.CollegeId &&
+                (string.IsNullOrEmpty(m.AssignedCourseId) || m.AssignedCourseId == student.CourseId)
+            ).FirstOrDefaultAsync();
             if (mentor == null)
             {
-                return NotFound(new { success = false, message = "Mentor not found" });
+                return NotFound(new { success = false, message = "Approved mentor not found in this student's college and degree" });
             }
 
             // Verify mentor capacity is not exceeded (max 30 students)
@@ -954,6 +977,7 @@ namespace EduGuard.Controllers
             {
                 return NotFound(new { success = false, message = "Student not found" });
             }
+            if (!await _studentAccess.CanReadAsync(User, student)) return Forbid();
 
             if (!string.IsNullOrEmpty(student.RiskExplanation))
             {
@@ -978,6 +1002,7 @@ namespace EduGuard.Controllers
             {
                 return NotFound(new { success = false, message = "Student not found" });
             }
+            if (!await _studentAccess.CanReadAsync(User, student)) return Forbid();
 
             if (!string.IsNullOrEmpty(student.AiImprovementPlan))
             {
@@ -994,12 +1019,14 @@ namespace EduGuard.Controllers
         }
 
         [HttpPost("study-planner/{id}")]
+        [Authorize(Roles = "mentor")]
         public async Task<IActionResult> GenerateStudyPlan(string id, [FromBody] StudyPlannerRequest request)
         {
             if (request == null) return BadRequest("Request body is required");
 
             var student = await _mongoService.Students.Find(s => s.Id == id).FirstOrDefaultAsync();
             if (student == null) return NotFound("Student not found");
+            if (!await _studentAccess.CanManageAsync(User, student)) return Forbid();
 
             try
             {
@@ -1018,19 +1045,21 @@ namespace EduGuard.Controllers
         }
 
         [HttpPost("assignments")]
+        [Authorize(Roles = "mentor")]
         public async Task<IActionResult> CreateAssignment([FromBody] Assignment model)
         {
-            if (model == null || string.IsNullOrEmpty(model.Title) || string.IsNullOrEmpty(model.MentorId))
+            if (model == null || string.IsNullOrWhiteSpace(model.Title) || string.IsNullOrWhiteSpace(model.Class))
             {
-                return BadRequest("Title and MentorId are required");
+                return BadRequest("Title and class are required");
             }
-
-            var mentor = await _mongoService.Mentors.Find(m => m.Id == model.MentorId).FirstOrDefaultAsync();
-            if (mentor != null)
-            {
-                if (string.IsNullOrEmpty(model.CollegeId)) model.CollegeId = mentor.CollegeId ?? string.Empty;
-                if (string.IsNullOrEmpty(model.CourseId)) model.CourseId = mentor.AssignedCourseId ?? string.Empty;
-            }
+            var actorId = User.FindFirst("id")?.Value;
+            var mentor = await _mongoService.Mentors.Find(m => m.Id == actorId && m.Status == "approved").FirstOrDefaultAsync();
+            if (mentor == null) return Forbid();
+            if (!mentor.AssignedClasses.Contains(model.Class)) return Forbid();
+            model.Id = null;
+            model.MentorId = mentor.Id!;
+            model.CollegeId = mentor.CollegeId ?? string.Empty;
+            model.CourseId = mentor.AssignedCourseId ?? string.Empty;
 
             model.CreatedAt = DateTime.UtcNow;
             model.UpdatedAt = DateTime.UtcNow;
@@ -1043,24 +1072,52 @@ namespace EduGuard.Controllers
         }
 
         [HttpGet("assignments")]
+        [Authorize(Roles = "mentor,student")]
         [EnableRateLimiting("dashboard-fetch")]
         public async Task<IActionResult> ListAssignments([FromQuery] string? courseId = null, [FromQuery] string? @class = null, [FromQuery] string? classId = null)
         {
             var selectedClass = string.IsNullOrWhiteSpace(@class) ? classId : @class;
             var filter = Builders<Assignment>.Filter.Empty;
-            if (!string.IsNullOrWhiteSpace(courseId)) filter &= Builders<Assignment>.Filter.Eq(a => a.CourseId, courseId);
-            if (!string.IsNullOrWhiteSpace(selectedClass)) filter &= Builders<Assignment>.Filter.Eq(a => a.Class, selectedClass);
-            var list = await _mongoService.Assignments.Find(filter).ToListAsync();
-            return Ok(new { success = true, data = list });
+            var actorId = User.FindFirst("id")?.Value ?? "";
+            var role = User.FindFirst(ClaimTypes.Role)?.Value;
+            Student? student = null;
+            if (role == "student")
+            {
+                student = await _mongoService.Students.Find(s => s.Id == actorId).FirstOrDefaultAsync();
+                if (student == null) return Forbid();
+                filter &= Builders<Assignment>.Filter.Eq(a => a.CourseId, student.CourseId) & Builders<Assignment>.Filter.Eq(a => a.Class, student.Class);
+            }
+            else
+            {
+                filter &= Builders<Assignment>.Filter.Eq(a => a.MentorId, actorId);
+                if (!string.IsNullOrWhiteSpace(courseId)) filter &= Builders<Assignment>.Filter.Eq(a => a.CourseId, courseId);
+                if (!string.IsNullOrWhiteSpace(selectedClass)) filter &= Builders<Assignment>.Filter.Eq(a => a.Class, selectedClass);
+            }
+            var list = await _mongoService.Assignments.Find(filter).SortByDescending(a => a.CreatedAt).ToListAsync();
+            if (student == null) return Ok(new { success = true, data = list });
+            var assignmentIds = list.Where(a => a.Id != null).Select(a => a.Id!).ToList();
+            var submissions = await _mongoService.Submissions.Find(s => s.StudentId == student.Id && assignmentIds.Contains(s.AssignmentId)).ToListAsync();
+            var byAssignment = submissions.GroupBy(s => s.AssignmentId).ToDictionary(group => group.Key, group => group.OrderByDescending(s => s.SubmittedAt).First());
+            return Ok(new { success = true, data = list.Select(assignment => new { _id = assignment.Id, assignment.Title, assignment.Description, assignment.Instructions, assignment.Deadline, submission = assignment.Id != null && byAssignment.TryGetValue(assignment.Id, out var submission) ? submission : null }) });
         }
 
         [HttpPost("assignments/{assignmentId}/submit")]
+        [Authorize(Roles = "student")]
         public async Task<IActionResult> SubmitAssignment(string assignmentId, [FromBody] Submission model)
         {
-            if (model == null || string.IsNullOrEmpty(model.StudentId) || string.IsNullOrEmpty(model.SubmittedPdfUrl))
+            if (model == null || string.IsNullOrWhiteSpace(model.SubmittedPdfUrl))
             {
-                return BadRequest("StudentId and SubmittedPdfUrl are required");
+                return BadRequest("Submission URL is required");
             }
+            var studentId = User.FindFirst("id")?.Value ?? "";
+            var student = await _mongoService.Students.Find(s => s.Id == studentId).FirstOrDefaultAsync();
+            var assignment = await _mongoService.Assignments.Find(a => a.Id == assignmentId).FirstOrDefaultAsync();
+            if (student == null || assignment == null) return NotFound();
+            if (assignment.CourseId != student.CourseId || assignment.Class != student.Class) return Forbid();
+            if (await _mongoService.Submissions.Find(s => s.AssignmentId == assignmentId && s.StudentId == studentId).AnyAsync())
+                return Conflict(new { success = false, message = "Assignment has already been submitted" });
+            model.Id = null;
+            model.StudentId = studentId;
             model.AssignmentId = assignmentId;
             model.SubmittedAt = DateTime.UtcNow;
             await _mongoService.Submissions.InsertOneAsync(model);
@@ -1068,19 +1125,25 @@ namespace EduGuard.Controllers
         }
 
         [HttpGet("assignments/{assignmentId}/submissions")]
+        [Authorize(Roles = "mentor")]
         [EnableRateLimiting("dashboard-fetch")]
         public async Task<IActionResult> ListSubmissions(string assignmentId)
         {
+            var actorId = User.FindFirst("id")?.Value;
+            if (!await _mongoService.Assignments.Find(a => a.Id == assignmentId && a.MentorId == actorId).AnyAsync()) return Forbid();
             var list = await _mongoService.Submissions.Find(s => s.AssignmentId == assignmentId).ToListAsync();
             return Ok(new { success = true, data = list });
         }
 
         [HttpPost("submissions/{submissionId}/grade")]
+        [Authorize(Roles = "mentor")]
         public async Task<IActionResult> GradeSubmission(string submissionId, [FromBody] GradeRequest request)
         {
             if (request == null) return BadRequest("Grade and feedback are required");
             var submission = await _mongoService.Submissions.Find(s => s.Id == submissionId).FirstOrDefaultAsync();
             if (submission == null) return NotFound("Submission not found");
+            var actorId = User.FindFirst("id")?.Value;
+            if (!await _mongoService.Assignments.Find(a => a.Id == submission.AssignmentId && a.MentorId == actorId).AnyAsync()) return Forbid();
             
             var filter = Builders<Submission>.Filter.Eq(s => s.Id, submissionId);
             var update = Builders<Submission>.Update
@@ -1099,9 +1162,13 @@ namespace EduGuard.Controllers
         }
 
         [HttpPost("{id}/verify")]
+        [Authorize(Roles = "mentor")]
         public async Task<IActionResult> VerifyStudentEnrollment(string id, [FromBody] ApproveStudentRequest request)
         {
             if (request == null) return BadRequest("Status is required");
+            var student = await _mongoService.Students.Find(s => s.Id == id).FirstOrDefaultAsync();
+            if (student == null) return NotFound("Student not found");
+            if (!await _studentAccess.CanManageAsync(User, student)) return Forbid();
             var status = request.Approve ? "approved" : "rejected";
 
             var filter = Builders<Student>.Filter.Eq(s => s.Id, id);
@@ -1140,7 +1207,7 @@ namespace EduGuard.Controllers
         {
             var student = await _mongoService.Students.Find(s => s.Id == id).FirstOrDefaultAsync();
             if (student == null) return NotFound(new { success = false, message = "Student not found" });
-            if (!await CanAccessBadgesAsync(student, false)) return Forbid();
+            if (!await _studentAccess.CanReadAsync(User, student)) return Forbid();
             return Ok(new { success = true, data = student.EarnedBadges ?? new List<StudentBadge>() });
         }
 
@@ -1150,27 +1217,17 @@ namespace EduGuard.Controllers
         {
             var student = await _mongoService.Students.Find(s => s.Id == id).FirstOrDefaultAsync();
             if (student == null) return NotFound(new { success = false, message = "Student not found" });
-            if (!await CanAccessBadgesAsync(student, true)) return Forbid();
+            if (!await _studentAccess.CanManageAsync(User, student)) return Forbid();
 
-            var allowedBadges = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-            {
-                "class-representative", "participation", "competition-winner", "runner-up", "nss-volunteer",
-                "community-service", "sports-achievement", "cultural-performer", "debate-champion", "coding-champion",
-                "academic-excellence", "event-coordinator", "attendance-excellence", "team-leader", "innovation-award"
-            };
-            var allowedCategories = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-                { "leadership", "academic", "sports", "cultural", "service", "technical", "participation" };
-            var allowedLevels = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-                { "college", "university", "state", "national" };
             var badgeId = request.BadgeId?.Trim() ?? "";
             var category = request.Category?.Trim().ToLowerInvariant() ?? "";
             var level = request.Level?.Trim().ToLowerInvariant();
-            if (!allowedBadges.Contains(badgeId) || string.IsNullOrWhiteSpace(request.Title) || request.Title.Length > 120 ||
-                string.IsNullOrWhiteSpace(request.Description) || request.Description.Length > 500 || !allowedCategories.Contains(category) ||
+            if (!_badgeCatalog.IsAllowedBadge(badgeId) || string.IsNullOrWhiteSpace(request.Title) || request.Title.Length > 120 ||
+                string.IsNullOrWhiteSpace(request.Description) || request.Description.Length > 500 || !_badgeCatalog.IsAllowedCategory(category) ||
                 string.IsNullOrWhiteSpace(request.EventName) || request.EventName.Length > 120 || string.IsNullOrWhiteSpace(request.AwardedBy) || request.AwardedBy.Length > 120 ||
                 !request.AwardedAt.HasValue)
                 return BadRequest(new { success = false, message = "Badge, title, description, event, awarded date, awarded by and a valid category are required" });
-            if (string.IsNullOrEmpty(level) || !allowedLevels.Contains(level))
+            if (string.IsNullOrEmpty(level) || !_badgeCatalog.IsAllowedLevel(level))
                 return BadRequest(new { success = false, message = "Invalid achievement level" });
             if (request.AwardedAt > DateTime.UtcNow.AddDays(1))
                 return BadRequest(new { success = false, message = "Awarded date cannot be in the future" });
@@ -1224,26 +1281,6 @@ namespace EduGuard.Controllers
             return Ok(new { success = true, data = badge });
         }
 
-        private async Task<bool> CanAccessBadgesAsync(Student student, bool awarding)
-        {
-            var userId = User.FindFirst("id")?.Value;
-            var role = User.FindFirst(ClaimTypes.Role)?.Value;
-            if (string.IsNullOrEmpty(userId)) return false;
-            if (role == "student") return !awarding && student.Id == userId;
-            if (role == "mentor")
-            {
-                var mentor = await _mongoService.Mentors.Find(m => m.Id == userId && m.Status == "approved").FirstOrDefaultAsync();
-                return mentor != null && student.MentorId == mentor.Id;
-            }
-            if (role == "college-admin")
-            {
-                var admin = await _mongoService.Admins.Find(a => a.Id == userId && a.Status == "active").FirstOrDefaultAsync();
-                return admin != null && !string.IsNullOrEmpty(admin.CollegeId) && admin.CollegeId == student.CollegeId;
-            }
-            if (role == "admin") return await _mongoService.Admins.Find(a => a.Id == userId && a.Status == "active").AnyAsync();
-            return false;
-        }
-
         [HttpGet("me/report-card/jobs")]
         [Authorize(Roles = "student")]
         [EnableRateLimiting("data-fetch")]
@@ -1258,6 +1295,7 @@ namespace EduGuard.Controllers
         }
 
         [HttpPost("{studentId}/report-card/generate")]
+        [Authorize(Roles = "mentor")]
         public async Task<IActionResult> GenerateReportCardJob(string studentId)
         {
             var requesterId = User.FindFirst("id")?.Value ?? "system";
@@ -1271,22 +1309,7 @@ namespace EduGuard.Controllers
             {
                 return NotFound(new { success = false, message = "Student not found" });
             }
-
-            // Delete all previous report card jobs for this student (replace old with new)
-            var oldJobs = await _mongoService.ReportCardJobs.Find(j => j.StudentId == studentId).ToListAsync();
-            foreach (var oldJob in oldJobs)
-            {
-                // Delete old output file if it exists
-                if (!string.IsNullOrEmpty(oldJob.OutputFile))
-                {
-                    var oldFilePath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", oldJob.OutputFile.TrimStart('/'));
-                    if (System.IO.File.Exists(oldFilePath))
-                    {
-                        System.IO.File.Delete(oldFilePath);
-                    }
-                }
-            }
-            await _mongoService.ReportCardJobs.DeleteManyAsync(j => j.StudentId == studentId);
+            if (!await _studentAccess.CanManageAsync(User, student)) return Forbid();
 
             var job = new ReportCardJob
             {
@@ -1305,11 +1328,11 @@ namespace EduGuard.Controllers
                 var duplicate = await _mongoService.ReportCardJobs.Find(j => j.IdempotencyKey == idempotencyKey).FirstOrDefaultAsync();
                 return Ok(new { success = true, message = "Report card generation already queued.", jobId = duplicate?.Id });
             }
-            return Ok(new { success = true, message = "Report card generation queued. Previous report replaced.", jobId = job.Id });
+            return Ok(new { success = true, message = "Report card generation queued.", jobId = job.Id });
         }
 
         [HttpGet("report-card/jobs/{jobId}")]
-        [EnableRateLimiting("data-fetch")]
+        [EnableRateLimiting("polling-fetch")]
         public async Task<IActionResult> GetReportCardJob(string jobId)
         {
             var job = await _mongoService.ReportCardJobs.Find(j => j.Id == jobId).FirstOrDefaultAsync();
@@ -1317,14 +1340,20 @@ namespace EduGuard.Controllers
             {
                 return NotFound(new { success = false, message = "Job not found" });
             }
+            var jobStudent = await _mongoService.Students.Find(s => s.Id == job.StudentId).FirstOrDefaultAsync();
+            if (jobStudent == null || !await _studentAccess.CanReadAsync(User, jobStudent)) return Forbid();
 
             return Ok(new { success = true, data = job });
         }
 
         [HttpGet("{studentId}/report-card/jobs")]
+        [Authorize(Roles = "mentor,admin,college-admin")]
         [EnableRateLimiting("data-fetch")]
         public async Task<IActionResult> ListStudentReportCardJobs(string studentId)
         {
+            var student = await _mongoService.Students.Find(s => s.Id == studentId).FirstOrDefaultAsync();
+            if (student == null) return NotFound();
+            if (!await _studentAccess.CanManageAsync(User, student)) return Forbid();
             var list = await _mongoService.ReportCardJobs.Find(j => j.StudentId == studentId).SortByDescending(j => j.CreatedAt).ToListAsync();
             return Ok(new { success = true, data = list });
         }
@@ -1338,6 +1367,8 @@ namespace EduGuard.Controllers
             {
                 return NotFound("Report card job not found.");
             }
+            var student = await _mongoService.Students.Find(s => s.Id == job.StudentId).FirstOrDefaultAsync();
+            if (student == null || !await _studentAccess.CanReadAsync(User, student)) return Forbid();
 
             // 1. Try serving from database
             if (!string.IsNullOrEmpty(job.HtmlContent))
@@ -1375,6 +1406,7 @@ namespace EduGuard.Controllers
             {
                 return NotFound("Student not found for this report card.");
             }
+            if (!await _studentAccess.CanReadAsync(User, student)) return Forbid();
 
             var collegeName = "EduGuard Affiliated Institution";
             if (!string.IsNullOrEmpty(student.CollegeId))

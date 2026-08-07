@@ -111,6 +111,11 @@
   overflow-x: auto;
 }
 
+.virtualized-item {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 88px;
+}
+
 /* Responsive table on mobile */
 @media (max-width: 768px) {
   .main-content {

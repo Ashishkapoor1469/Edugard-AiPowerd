@@ -6,6 +6,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
+using System.Collections.Generic;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -26,6 +27,7 @@ namespace EduGuard.Services
         private readonly ILogger<EmailQueueService> _logger;
         private readonly string _resendApiKey;
         private readonly string _frontendUrl;
+        private readonly IReadOnlyDictionary<string, string> _senders;
         private readonly bool _hasKey;
         private const int MaxRetries = 3;
         private const int DelayBetweenEmailsMs = 500;
@@ -38,6 +40,14 @@ namespace EduGuard.Services
             
             _resendApiKey = configuration.GetValue<string>("RESEND_API_KEY") ?? string.Empty;
             _frontendUrl = (configuration.GetValue<string>("FRONTEND_URL") ?? "http://localhost:5173").TrimEnd('/');
+            _senders = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["verification"] = configuration.GetValue<string>("EMAIL_FROM_VERIFICATION") ?? "EduGuard <verify@ashishzu.in>",
+                ["security"] = configuration.GetValue<string>("EMAIL_FROM_SECURITY") ?? "EduGuard Security <security@ashishzu.in>",
+                ["notifications"] = configuration.GetValue<string>("EMAIL_FROM_NOTIFICATIONS") ?? "EduGuard <notifications@ashishzu.in>",
+                ["system"] = configuration.GetValue<string>("EMAIL_FROM_SYSTEM") ?? "EduGuard <noreply@ashishzu.in>",
+                ["support"] = configuration.GetValue<string>("EMAIL_FROM_SUPPORT") ?? "EduGuard Support <support@ashishzu.in>"
+            };
             _hasKey = !string.IsNullOrEmpty(_resendApiKey) && _resendApiKey != "your_resend_api_key";
 
             if (!_hasKey)
@@ -106,7 +116,8 @@ namespace EduGuard.Services
 
                 var payload = new
                 {
-                    from = "EduGuard <onboarding@resend.dev>",
+                    from = _senders["verification"],
+                    reply_to = _senders["support"],
                     to = email,
                     subject = "Verify your EduGuard Account",
                     html = $@"

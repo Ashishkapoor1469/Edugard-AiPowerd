@@ -9,7 +9,7 @@ using EduGuard.Services;
 
 namespace EduGuard.Controllers
 {
-    [Authorize]
+    [Authorize(Roles = "mentor")]
     [ApiController]
     [Route("api/notifications")]
     public class NotificationController : ControllerBase

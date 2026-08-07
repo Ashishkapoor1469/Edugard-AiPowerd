@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import toast from "react-hot-toast";
 import { api } from "../api";
 import type { Book } from "../types";
-import { ErrorState, PageLoader, ButtonLoadingContent } from "../components/AsyncState";
+import { CardGridSkeleton, ErrorState } from "../components/AsyncState";
 import { Spinner } from "../components/ui/Spinner";
 
 export default function Catalog({ canManage = false }: { canManage?: boolean }) {
@@ -24,16 +24,16 @@ export default function Catalog({ canManage = false }: { canManage?: boolean }) 
   const [department, setDepartment] = useState(initialParams.department);
   const [language, setLanguage] = useState(initialParams.language);
   const [available, setAvailable] = useState(initialParams.available);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
 
   const [books, setBooks] = useState<Book[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [departments, setDepartments] = useState<string[]>([]);
-  const [wishlistIds, setWishlistIds] = useState<string[]>([]);
   const [selectedBook, setSelectedBook] = useState<Book | null>(null);
 
   const [initialLoading, setInitialLoading] = useState(true);
   const [isSearching, setIsSearching] = useState(false);
-  const [seeding, setSeeding] = useState(false);
   const [error, setError] = useState("");
 
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -62,15 +62,6 @@ export default function Catalog({ canManage = false }: { canManage?: boolean }) 
     };
   }, [searchInput]);
 
-  const fetchWishlist = async () => {
-    try {
-      const res = await api.get("/api/catalog/wishlist");
-      setWishlistIds(res.data.data.map((b: Book) => b._id));
-    } catch {
-      /* wishlist fetch optional */
-    }
-  };
-
   const fetchCatalog = useCallback(
     async (isInitial = false) => {
       if (abortControllerRef.current) {
@@ -94,13 +85,15 @@ export default function Catalog({ canManage = false }: { canManage?: boolean }) 
             department: department || undefined,
             language: language || undefined,
             available: available || undefined,
-            limit: 60,
+            page,
+            limit: 24,
           },
           signal: controller.signal,
         });
 
         const items: Book[] = response.data.data.items || [];
         setBooks(items);
+        setTotalPages(Math.max(1, response.data.data.pages || 1));
         updateUrl(debouncedSearch, category, department, language, available);
 
         if (items.length > 0) {
@@ -116,7 +109,7 @@ export default function Catalog({ canManage = false }: { canManage?: boolean }) 
         setIsSearching(false);
       }
     },
-    [debouncedSearch, category, department, language, available, updateUrl]
+    [debouncedSearch, category, department, language, available, page, updateUrl]
   );
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -128,40 +121,12 @@ export default function Catalog({ canManage = false }: { canManage?: boolean }) 
 
   useEffect(() => {
     fetchCatalog(books.length === 0 && initialLoading);
-    fetchWishlist();
-  }, [debouncedSearch, category, department, language, available]);
+  }, [debouncedSearch, category, department, language, available, page]);
 
-  const toggleWishlist = async (e: React.MouseEvent, bookId: string) => {
-    e.stopPropagation();
-    try {
-      const res = await api.post(`/api/catalog/wishlist/${bookId}`);
-      if (res.data.wishlisted) {
-        setWishlistIds((prev) => [...prev, bookId]);
-        toast.success("Added to Wishlist");
-      } else {
-        setWishlistIds((prev) => prev.filter((id) => id !== bookId));
-        toast.success("Removed from Wishlist");
-      }
-    } catch {
-      toast.error("Could not update wishlist");
-    }
-  };
-
-  const addStarterBooks = async () => {
-    setSeeding(true);
-    try {
-      await api.post("/api/catalog/starter");
-      toast.success("Starter books added to the database");
-      await fetchCatalog(false);
-    } catch (error: any) {
-      toast.error(error.response?.data?.message || "Starter books could not be added");
-    } finally {
-      setSeeding(false);
-    }
-  };
+  useEffect(() => { setPage(1); }, [debouncedSearch, category, department, language, available]);
 
   if (initialLoading) {
-    return <PageLoader label="Loading library catalog..." />;
+    return <CardGridSkeleton count={8} label="Loading library catalog" />;
   }
 
   if (!initialLoading && error && books.length === 0) {
@@ -243,12 +208,7 @@ export default function Catalog({ canManage = false }: { canManage?: boolean }) 
           {searchInput || category || department || language || available ? (
             "No matching books found."
           ) : canManage ? (
-            <>
-              <p>Your college catalog is empty.</p>
-              <button disabled={seeding} onClick={addStarterBooks}>
-                {seeding ? <ButtonLoadingContent label="Adding books..." /> : "Add starter books to database"}
-              </button>
-            </>
+            "Your college catalog is empty. Add a book or import the catalog from the Library Desk."
           ) : (
             "The college catalog is empty. Ask a librarian to add books."
           )}
@@ -256,36 +216,14 @@ export default function Catalog({ canManage = false }: { canManage?: boolean }) 
       ) : (
         <div className="book-grid" style={{ opacity: isSearching ? 0.75 : 1, transition: "opacity 0.2s" }}>
           {books.map((book) => {
-            const isWishlisted = wishlistIds.includes(book._id);
             return (
-              <article className="book-card" key={book._id} onClick={() => setSelectedBook(book)} style={{ cursor: "pointer" }}>
+              <article className="book-card" key={book._id} onClick={() => setSelectedBook(book)} style={{ cursor: "pointer", contentVisibility: "auto", containIntrinsicSize: "auto 250px" }}>
                 <div style={{ position: "relative" }}>
                   {book.coverImage ? (
-                    <img src={book.coverImage} alt={book.title} />
+                    <img src={book.coverImage} alt={book.title} loading="lazy" decoding="async" width="92" height="250" />
                   ) : (
                     <div className="book-cover">{book.title.slice(0, 1).toUpperCase()}</div>
                   )}
-                  <button
-                    aria-label="Wishlist toggle"
-                    onClick={(e) => toggleWishlist(e, book._id)}
-                    style={{
-                      position: "absolute",
-                      top: 8,
-                      right: 8,
-                      background: "rgba(0,0,0,0.6)",
-                      border: "none",
-                      color: isWishlisted ? "#ef4444" : "#ffffff",
-                      borderRadius: "50%",
-                      width: 32,
-                      height: 32,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      fontSize: "1.1rem",
-                    }}
-                  >
-                    {isWishlisted ? "♥" : "♡"}
-                  </button>
                 </div>
 
                 <div className="book-content">
@@ -313,6 +251,8 @@ export default function Catalog({ canManage = false }: { canManage?: boolean }) 
           })}
         </div>
       )}
+
+      {totalPages > 1 && <div className="panel-heading" style={{ marginTop: 18 }}><span className="hint">Page {page} of {totalPages}</span><div><button className="secondary" disabled={page <= 1 || isSearching} onClick={() => setPage((current) => current - 1)}>Previous</button><button disabled={page >= totalPages || isSearching} onClick={() => setPage((current) => current + 1)}>Next</button></div></div>}
 
       {/* Book Detail Modal */}
       {selectedBook && (
@@ -365,5 +305,3 @@ export default function Catalog({ canManage = false }: { canManage?: boolean }) 
     </section>
   );
 }
-
-

@@ -2,7 +2,8 @@ import React, { useState, useEffect } from "react";
 import axios from "axios";
 import toast from "react-hot-toast";
 import ReactMarkdown from "react-markdown";
-import { ErrorState, LoadingState } from "../components/AsyncState.js";
+import { CardGridSkeleton, ErrorState, ProfileSkeleton } from "../components/AsyncState.js";
+import { useAuth } from "../context/AuthContext.js";
 
 interface Assignment {
   _id: string;
@@ -10,6 +11,7 @@ interface Assignment {
   description: string;
   instructions?: string;
   deadline: string;
+  submission?: Submission | null;
 }
 
 interface Submission {
@@ -76,6 +78,7 @@ const splitStudyPlanMarkdown = (content: string): StudyPlanSegment[] => {
 };
 
 const StudentAssignmentsPage: React.FC = () => {
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<"assignments" | "studyplan">("assignments");
   
   // Student Profile Data (contains AI study plans)
@@ -86,7 +89,7 @@ const StudentAssignmentsPage: React.FC = () => {
   // Assignments State
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [submissions, setSubmissions] = useState<{ [assignmentId: string]: Submission }>({});
-  const [loadingAssignments, setLoadingAssignments] = useState(false);
+  const [loadingAssignments, setLoadingAssignments] = useState(true);
   const [initialLoading, setInitialLoading] = useState(true);
   const [assignmentsError, setAssignmentsError] = useState("");
 
@@ -98,9 +101,8 @@ const StudentAssignmentsPage: React.FC = () => {
   const fetchProfile = async () => {
     setLoadingProfile(true); setProfileError("");
     try {
-      const res = await axios.get("/api/auth/me");
-      if (res.data.success) {
-        const cacheKey = `student_profile_${res.data.data.id}`;
+      if (user?.role === "student") {
+        const cacheKey = `student_profile_${user.id}`;
         const cachedDataStr = sessionStorage.getItem(cacheKey);
         if (cachedDataStr) {
           try {
@@ -112,7 +114,7 @@ const StudentAssignmentsPage: React.FC = () => {
         }
 
         // Resolve student profile
-        const studentRes = await axios.get(`/api/students/${res.data.data.id}`);
+        const studentRes = await axios.get(`/api/students/${user.id}`);
         if (studentRes.data.success) {
           setStudentProfile(studentRes.data.data);
           sessionStorage.setItem(cacheKey, JSON.stringify(studentRes.data.data));
@@ -138,24 +140,9 @@ const StudentAssignmentsPage: React.FC = () => {
         },
       });
       if (res.data.success) {
-        const asgns = res.data.data;
+        const asgns: Assignment[] = res.data.data;
         setAssignments(asgns);
-        
-        // Fetch submission status for each assignment
-        const subsMap: { [key: string]: Submission } = {};
-        for (const asgn of asgns) {
-          try {
-            const subRes = await axios.get(`/api/students/assignments/${asgn._id}/submissions`);
-            if (subRes.data.success) {
-              const mySub = subRes.data.data.find((s: any) => s.studentId === studentProfile._id);
-              if (mySub) {
-                subsMap[asgn._id] = mySub;
-              }
-            }
-          } catch (e) {
-            console.error("Failed to fetch submission for assignment", asgn._id, e);
-          }
-        }
+        const subsMap = Object.fromEntries(asgns.filter((assignment) => assignment.submission).map((assignment) => [assignment._id, assignment.submission as Submission]));
         setSubmissions(subsMap);
       }
     } catch (err) {
@@ -183,7 +170,6 @@ const StudentAssignmentsPage: React.FC = () => {
     setSubmitting(true);
     try {
       const res = await axios.post(`/api/students/assignments/${selectedAsgn._id}/submit`, {
-        studentId: studentProfile._id,
         submittedPdfUrl: submissionUrl,
       });
 
@@ -234,7 +220,7 @@ const StudentAssignmentsPage: React.FC = () => {
       </div>
 
       {/* BLOCKER IF STUDENT PENDING APPROVED */}
-      {initialLoading && <LoadingState label="Loading your academic hub…" />}
+      {initialLoading && <ProfileSkeleton label="Loading your academic hub" />}
 
       {!initialLoading && profileError && <ErrorState message={profileError} onRetry={fetchProfile} />}
 
@@ -255,7 +241,7 @@ const StudentAssignmentsPage: React.FC = () => {
           {activeTab === "assignments" && (
             <div className="space-y-4">
               {loadingAssignments ? (
-                <LoadingState label="Loading assignments…" />
+                <CardGridSkeleton count={6} label="Loading assignments" />
               ) : assignmentsError ? (
                 <ErrorState message={assignmentsError} onRetry={fetchAssignments} />
               ) : assignments.length === 0 ? (
@@ -335,7 +321,7 @@ const StudentAssignmentsPage: React.FC = () => {
           {activeTab === "studyplan" && (
             <div className="space-y-6">
               {loadingProfile ? (
-                <LoadingState label="Loading AI study plan…" />
+                <CardGridSkeleton count={2} label="Loading AI study plan" />
               ) : profileError ? (
                 <ErrorState message={profileError} onRetry={fetchProfile} />
               ) : (

@@ -11,14 +11,9 @@ export default function Layout({ user, children }: { user: User; children: React
           ["/reports", "Reports & Analytics"],
           ["/catalog", "Catalog"],
         ]
-      : user.role === "college-admin"
-      ? [
+      : [
           ["/admin", "Administration"],
           ["/reports", "Reports & Analytics"],
-          ["/catalog", "Catalog"],
-        ]
-      : [
-          ["/portal", "Student Portal"],
           ["/catalog", "Catalog"],
         ];
 
@@ -44,7 +39,7 @@ export default function Layout({ user, children }: { user: User; children: React
         <button className="user-button" onClick={signOut} title="Click to Sign Out">
           <span className="user-name">{user.name}</span>
           <span className="user-role-badge">
-            {user.role === "college-admin" ? "College Admin" : user.role === "librarian" ? "Librarian" : "Student"}
+            {user.role === "college-admin" ? "College Admin" : "Librarian"}
           </span>
         </button>
       </header>
@@ -52,4 +47,3 @@ export default function Layout({ user, children }: { user: User; children: React
     </div>
   );
 }
-

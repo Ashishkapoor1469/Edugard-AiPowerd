@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import toast from "react-hot-toast";
-import { ErrorState, LoadingState } from "./AsyncState.js";
+import { ErrorState, TableSkeleton } from "./AsyncState.js";
 
 interface Student { _id: string; name: string; rollNo: string; classId: string; }
 interface RecordRow { record: { _id: string; studentId: string; date: string; session: string; status: string; classId: string; auditHistory: unknown[] }; student: { name: string; rollNo: string } | null; }
@@ -105,7 +105,7 @@ export default function AdminAttendancePanel({ view }: { view: "attendance" | "l
 
   if (view === "leaders") return (
     <div className="space-y-6">
-      {rosterLoading ? <LoadingState label="Loading student roster…" /> : rosterError ? <ErrorState message={rosterError} onRetry={loadRoster} /> : null}
+      {rosterLoading ? <TableSkeleton rows={7} columns={4} label="Loading student roster" /> : rosterError ? <ErrorState message={rosterError} onRetry={loadRoster} /> : null}
       {!loadingLeaders && leadersError && <ErrorState message={leadersError} onRetry={loadLeaders} />}
       <form onSubmit={assign} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs">
         <h2 className="text-sm font-bold text-slate-800">Assign student leader</h2>
@@ -128,7 +128,7 @@ export default function AdminAttendancePanel({ view }: { view: "attendance" | "l
 
   return (
     <div className="space-y-6">
-      {rosterLoading ? <LoadingState label="Loading student roster…" /> : rosterError ? <ErrorState message={rosterError} onRetry={loadRoster} /> : null}
+      {rosterLoading ? <TableSkeleton rows={7} columns={4} label="Loading student roster" /> : rosterError ? <ErrorState message={rosterError} onRetry={loadRoster} /> : null}
       {!loadingSummary && summaryError && <ErrorState message={summaryError} onRetry={loadSummary} />}
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs">
         <div className="grid gap-3 md:grid-cols-4">

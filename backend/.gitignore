@@ -55,10 +55,6 @@ publish/
 
 
 README_CSHARP.md
-
 # ASP.NET Core configuration secrets
 appsettings.json
 appsettings.Development.json
-
-
-SeedController.cs

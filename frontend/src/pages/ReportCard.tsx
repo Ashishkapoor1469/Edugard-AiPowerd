@@ -3,14 +3,8 @@ import { useNavigate, useParams } from "react-router-dom";
 import axios from "axios";
 import toast from "react-hot-toast";
 import { downloadFile } from "../utils/downloadFile.js";
-import { ErrorState, LoadingState } from "../components/AsyncState.js";
-
-const Spinner = () => (
-  <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24" aria-hidden="true">
-    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-  </svg>
-);
+import { ErrorState, ProfileSkeleton } from "../components/AsyncState.js";
+import { Spinner } from "../components/ui/Spinner.js";
 
 const ReportCard = () => {
   const { jobId } = useParams<{ jobId: string }>();
@@ -72,7 +66,7 @@ const ReportCard = () => {
         ) : html ? (
           <iframe title="Student report card" srcDoc={html} sandbox="" className="h-full min-h-[70dvh] w-full border-0" />
         ) : (
-          <LoadingState label="Loading report card…" />
+          <ProfileSkeleton label="Loading report card" />
         )}
       </div>
     </main>

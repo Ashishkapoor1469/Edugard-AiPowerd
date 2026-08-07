@@ -53,19 +53,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [token, setToken] = useState<string | null>(localStorage.getItem("token"));
   const [loading, setLoading] = useState(true);
 
-  // Set axios auth header
-  const setAuthHeader = (jwt: string | null) => {
-    if (jwt) {
-      axios.defaults.headers.common["Authorization"] = `Bearer ${jwt}`;
-    } else {
-      delete axios.defaults.headers.common["Authorization"];
-    }
-  };
-
   useEffect(() => {
     const fetchUser = async () => {
-      if (token) {
-        setAuthHeader(token);
+      const storedToken = localStorage.getItem("token");
+      if (storedToken) {
         try {
           const res = await axios.get("/api/auth/me");
           if (res.data.success) {
@@ -83,7 +74,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     fetchUser();
-  }, [token]);
+  }, []);
 
   const login = async (email: string, password: string) => {
     try {
@@ -93,7 +84,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         localStorage.setItem("token", jwtToken);
         setToken(jwtToken);
         setUser(mentorUser);
-        setAuthHeader(jwtToken);
         void initializeMobilePush();
       }
     } catch (err: any) {
@@ -118,7 +108,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         localStorage.setItem("token", jwtToken);
         setToken(jwtToken);
         setUser(mentorUser);
-        setAuthHeader(jwtToken);
         void initializeMobilePush();
       }
     } catch (err: any) {
@@ -128,12 +117,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const logout = () => {
     void unregisterMobilePush();
-    localStorage.clear();
+    localStorage.removeItem("token");
+    localStorage.removeItem("attendance_history_cache");
     sessionStorage.clear();
     socket.disconnect();
     setToken(null);
     setUser(null);
-    setAuthHeader(null);
   };
 
   return (

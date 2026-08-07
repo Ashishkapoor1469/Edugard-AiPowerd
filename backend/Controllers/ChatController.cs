@@ -11,7 +11,7 @@ using EduGuard.Hubs;
 
 namespace EduGuard.Controllers
 {
-    [Authorize]
+    [Authorize(Roles = "student,mentor")]
     [ApiController]
     [Route("api/chat")]
     public class ChatController : ControllerBase
@@ -20,13 +20,15 @@ namespace EduGuard.Controllers
         private readonly IHubContext<EduGuardHub> _hubContext;
         private readonly INvidiaNimService _nvidiaNimService;
         private readonly IPushNotificationQueue _pushQueue;
+        private readonly IStudentAccessService _studentAccess;
 
-        public ChatController(MongoService mongoService, IHubContext<EduGuardHub> hubContext, INvidiaNimService nvidiaNimService, IPushNotificationQueue pushQueue)
+        public ChatController(MongoService mongoService, IHubContext<EduGuardHub> hubContext, INvidiaNimService nvidiaNimService, IPushNotificationQueue pushQueue, IStudentAccessService studentAccess)
         {
             _mongoService = mongoService;
             _hubContext = hubContext;
             _nvidiaNimService = nvidiaNimService;
             _pushQueue = pushQueue;
+            _studentAccess = studentAccess;
         }
 
         private async Task StreamAiMessageAsync(string roomId, Message message)
@@ -88,8 +90,8 @@ namespace EduGuard.Controllers
                 return Unauthorized(new { success = false, message = "Not authenticated" });
             }
 
-            // Check if the requesting user is a student
-            var isStudent = await _mongoService.Students.Find(s => s.Id == userId).AnyAsync();
+            var role = User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value;
+            var isStudent = role == "student";
 
             FilterDefinition<Message> filter;
             if (isStudent)
@@ -99,7 +101,9 @@ namespace EduGuard.Controllers
             }
             else
             {
-                // If mentor, query messages for studentId and current mentor
+                var student = await _mongoService.Students.Find(s => s.Id == studentId).FirstOrDefaultAsync();
+                if (student == null) return NotFound(new { success = false, message = "Student not found" });
+                if (!await _studentAccess.CanManageAsync(User, student)) return Forbid();
                 filter = Builders<Message>.Filter.And(
                     Builders<Message>.Filter.Eq(m => m.StudentId, studentId),
                     Builders<Message>.Filter.Eq(m => m.MentorId, userId)
@@ -192,9 +196,13 @@ namespace EduGuard.Controllers
                         return BadRequest(new { success = false, message = "You can only chat with students assigned to you." });
                     }
                 }
+                else
+                {
+                    return Forbid();
+                }
 
-                // Determine sender role
-                var sender = request.Sender ?? "mentor";
+                // Sender identity is derived from the authenticated role, never the request body.
+                var sender = userRole!;
 
                 // Create and save message
                 var message = new Message

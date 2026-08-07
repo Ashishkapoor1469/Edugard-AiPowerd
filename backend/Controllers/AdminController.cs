@@ -68,10 +68,22 @@ namespace EduGuard.Controllers
                 .SortBy(m => m.Name)
                 .ToListAsync();
 
+            var mentorIds = mentors.Where(m => m.Id != null).Select(m => m.Id!).ToList();
+            var assignedMentorIds = mentorIds.Count == 0
+                ? new List<string?>()
+                : await _mongoService.Students
+                    .Find(Builders<Student>.Filter.In(s => s.MentorId, mentorIds))
+                    .Project(s => s.MentorId)
+                    .ToListAsync();
+            var assignedCounts = assignedMentorIds
+                .Where(id => !string.IsNullOrEmpty(id))
+                .GroupBy(id => id!)
+                .ToDictionary(group => group.Key, group => group.Count());
+
             var resultList = new List<object>();
             foreach (var mentor in mentors)
             {
-                var assignedCount = await _mongoService.Students.CountDocumentsAsync(s => s.MentorId == mentor.Id);
+                var assignedCount = mentor.Id != null && assignedCounts.TryGetValue(mentor.Id, out var count) ? count : 0;
 
                 resultList.Add(new
                 {
@@ -184,6 +196,7 @@ namespace EduGuard.Controllers
         }
 
         [HttpPost("colleges")]
+        [Authorize(Roles = "admin")]
         public async Task<IActionResult> CreateCollege([FromBody] College model)
         {
             if (model == null || string.IsNullOrEmpty(model.Name))
@@ -213,23 +226,6 @@ namespace EduGuard.Controllers
                 () => _mongoService.Degrees.Find(filter).ToListAsync()
             );
 
-            if (!string.IsNullOrEmpty(collegeId) && (degrees == null || degrees.Count == 0))
-            {
-                var defaultDegrees = new List<Degree>
-                {
-                    new Degree { CollegeId = collegeId, Name = "B.Tech CSE", DurationYears = 4, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
-                    new Degree { CollegeId = collegeId, Name = "BCA", DurationYears = 3, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
-                    new Degree { CollegeId = collegeId, Name = "BBA", DurationYears = 3, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
-                    new Degree { CollegeId = collegeId, Name = "B.Com", DurationYears = 3, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
-                    new Degree { CollegeId = collegeId, Name = "BA", DurationYears = 3, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
-                    new Degree { CollegeId = collegeId, Name = "M.Tech", DurationYears = 2, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow }
-                };
-
-                await _mongoService.Degrees.InsertManyAsync(defaultDegrees);
-                await _cacheService.RemoveAsync("admin:degrees:all", $"admin:degrees:{collegeId}");
-                degrees = defaultDegrees;
-            }
-
             return Ok(new { success = true, data = degrees });
         }
 
@@ -240,6 +236,12 @@ namespace EduGuard.Controllers
             if (model == null || string.IsNullOrEmpty(model.Name) || string.IsNullOrEmpty(model.CollegeId))
             {
                 return BadRequest(new { success = false, message = "Degree Name and CollegeId are required" });
+            }
+            if (!IsSuperAdmin())
+            {
+                var collegeId = GetCollegeId();
+                if (string.IsNullOrEmpty(collegeId)) return Unauthorized();
+                if (model.CollegeId != collegeId) return Forbid();
             }
 
             await _mongoService.Degrees.InsertOneAsync(model);
@@ -256,6 +258,7 @@ namespace EduGuard.Controllers
             {
                 return BadRequest(new { success = false, message = "Title and CollegeId are required" });
             }
+            if (!IsSuperAdmin() && model.CollegeId != GetCollegeId()) return Forbid();
 
             await _mongoService.Announcements.InsertOneAsync(model);
             await _push.NotifyCollegeAsync(model.CollegeId, model.TargetAudience, model.TargetAudience is "class" or "batch" ? model.TargetId : null,
@@ -273,6 +276,7 @@ namespace EduGuard.Controllers
             {
                 return BadRequest(new { success = false, message = "Event Name and CollegeId are required" });
             }
+            if (!IsSuperAdmin() && model.CollegeId != GetCollegeId()) return Forbid();
 
             await _mongoService.Events.InsertOneAsync(model);
             await _push.NotifyCollegeAsync(model.CollegeId, "all", null, $"event:{model.Id}",
@@ -318,7 +322,12 @@ namespace EduGuard.Controllers
                 if (!string.IsNullOrEmpty(model.MentorId))
                 {
                     // Validate mentor exists
-                    var mentor = await _mongoService.Mentors.Find(m => m.Id == model.MentorId).FirstOrDefaultAsync();
+                    var mentor = await _mongoService.Mentors.Find(m =>
+                        m.Id == model.MentorId &&
+                        m.CollegeId == collegeId &&
+                        m.Status == "approved" &&
+                        (string.IsNullOrEmpty(m.AssignedCourseId) || m.AssignedCourseId == model.CourseId)
+                    ).FirstOrDefaultAsync();
                     if (mentor == null)
                     {
                         return NotFound(new { success = false, message = "Mentor not found" });
@@ -380,7 +389,7 @@ namespace EduGuard.Controllers
 
         // --- UNIVERSITY / BOARD INTEGRATION ---
 
-        [AllowAnonymous]
+        [Authorize(Roles = "admin,college-admin")]
         [HttpGet("university/syllabus-auto")]
         public async Task<IActionResult> AutoFetchSyllabus([FromQuery] string university, [FromQuery] string course)
         {
@@ -428,6 +437,7 @@ namespace EduGuard.Controllers
             existing.Address = model.Address;
             existing.Website = model.Website;
             existing.ContactInfo = model.ContactInfo;
+            if (!string.IsNullOrWhiteSpace(model.TimeZone)) existing.TimeZone = model.TimeZone.Trim();
             existing.UpdatedAt = DateTime.UtcNow;
 
             await _mongoService.Colleges.ReplaceOneAsync(c => c.Id == id, existing);
@@ -474,12 +484,16 @@ namespace EduGuard.Controllers
         public async Task<IActionResult> GetCollegeStats()
         {
             var colleges = await _mongoService.Colleges.Find(_ => true).ToListAsync();
+            var mentorCollegeIds = await _mongoService.Mentors.Find(_ => true).Project(m => m.CollegeId).ToListAsync();
+            var studentCollegeIds = await _mongoService.Students.Find(_ => true).Project(s => s.CollegeId).ToListAsync();
+            var mentorCounts = mentorCollegeIds.Where(id => !string.IsNullOrEmpty(id)).GroupBy(id => id!).ToDictionary(group => group.Key, group => group.Count());
+            var studentCounts = studentCollegeIds.Where(id => !string.IsNullOrEmpty(id)).GroupBy(id => id!).ToDictionary(group => group.Key, group => group.Count());
             var statsList = new List<object>();
 
             foreach (var college in colleges)
             {
-                var mentorCount = await _mongoService.Mentors.CountDocumentsAsync(m => m.CollegeId == college.Id);
-                var studentCount = await _mongoService.Students.CountDocumentsAsync(s => s.CollegeId == college.Id);
+                var mentorCount = college.Id != null && mentorCounts.TryGetValue(college.Id, out var mentors) ? mentors : 0;
+                var studentCount = college.Id != null && studentCounts.TryGetValue(college.Id, out var students) ? students : 0;
 
                 statsList.Add(new
                 {

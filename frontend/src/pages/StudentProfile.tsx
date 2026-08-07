@@ -16,8 +16,10 @@ import {
 import ReactMarkdown from "react-markdown";
 import StudentAttendancePanel from "../components/StudentAttendancePanel.js";
 import StudentLeadershipBadges from "../components/achievements/StudentLeadershipBadges.js";
-import { ErrorState, LoadingState } from "../components/AsyncState.js";
+import { ErrorState, ListSkeleton, LoadingState, ProfileSkeleton } from "../components/AsyncState.js";
+import { Skeleton } from "../components/ui/Skeleton.js";
 import { downloadFile } from "../utils/downloadFile.js";
+import { listLoadError } from "../utils/apiErrors.js";
 
 interface ClassTest {
   testNumber: number;
@@ -122,7 +124,8 @@ const StudentProfile: React.FC = () => {
   const [profileError, setProfileError] = useState("");
   const [selectedMentor, setSelectedMentor] = useState("");
   const [mentorsList, setMentorsList] = useState<any[]>([]);
-  const [, setLoadingMentors] = useState(false);
+  const [loadingMentors, setLoadingMentors] = useState(false);
+  const [mentorsError, setMentorsError] = useState("");
 
   // Chat State
   const [messages, setMessages] = useState<any[]>([]);
@@ -140,6 +143,8 @@ const StudentProfile: React.FC = () => {
 
   // Notifications State
   const [alerts, setAlerts] = useState<any[]>([]);
+  const [alertsLoading, setAlertsLoading] = useState(false);
+  const [alertsError, setAlertsError] = useState("");
   const [issuedBooks, setIssuedBooks] = useState<IssuedBook[]>([]);
   const [booksLoading, setBooksLoading] = useState(false);
   const [booksError, setBooksError] = useState("");
@@ -448,6 +453,7 @@ const StudentProfile: React.FC = () => {
 
     // Fetch fresh data in background
     setLoadingMentors(true);
+    setMentorsError("");
     try {
       const params: Record<string, string> = {};
       if (cid) params.collegeId = cid;
@@ -460,7 +466,7 @@ const StudentProfile: React.FC = () => {
         );
       }
     } catch (err) {
-      if (!axios.isCancel(err)) console.error(err);
+      if (!axios.isCancel(err)) { console.error(err); setMentorsError(listLoadError(err, "Could not load mentors.")); }
     } finally {
       setLoadingMentors(false);
     }
@@ -470,6 +476,8 @@ const StudentProfile: React.FC = () => {
     const CACHE_KEY = "eduguard_student_alerts";
     const TTL = 5 * 60 * 1000; // 5 minutes
 
+    setAlertsLoading(true);
+    setAlertsError("");
     // Show cached data immediately
     try {
       const cached = sessionStorage.getItem(CACHE_KEY);
@@ -494,8 +502,8 @@ const StudentProfile: React.FC = () => {
         );
       }
     } catch (err) {
-      if (!axios.isCancel(err)) console.error(err);
-    }
+      if (!axios.isCancel(err)) { console.error(err); setAlertsError(listLoadError(err, "Could not load alerts.")); }
+    } finally { setAlertsLoading(false); }
   };
 
   useEffect(() => {
@@ -521,14 +529,16 @@ const StudentProfile: React.FC = () => {
   // Socket communication
   useEffect(() => {
     if (!student) return;
-    setAttendanceChartLoading(true); setAttendanceChartError("");
-    axios.get(`/api/attendance/student/${student._id}/history`)
-      .then((response) => {
-        setAttendanceHistory(response.data.data || []);
-        setAttendancePercentage(response.data.attendancePercentage ?? null);
-      })
-      .catch((error) => { console.error("Failed to load attendance chart", error); setAttendanceChartError("Failed to load attendance history."); })
-      .finally(() => setAttendanceChartLoading(false));
+    if (user?.role !== "student") {
+      setAttendanceChartLoading(true); setAttendanceChartError("");
+      axios.get(`/api/attendance/student/${student._id}/history`)
+        .then((response) => {
+          setAttendanceHistory(response.data.data || []);
+          setAttendancePercentage(response.data.attendancePercentage ?? null);
+        })
+        .catch((error) => { console.error("Failed to load attendance chart", error); setAttendanceChartError("Failed to load attendance history."); })
+        .finally(() => setAttendanceChartLoading(false));
+    }
 
     // Join room
     socket.connect();
@@ -850,7 +860,7 @@ ${student.aiImprovementPlan || "No plan generated."}
     }
   };
 
-  if (loading) return <LoadingState label="Loading student profile…" />;
+  if (loading) return <ProfileSkeleton label="Loading student profile" />;
   if (profileError || !student) return <ErrorState message={profileError || "Student profile not found."} onRetry={() => fetchStudent(true)} />;
 
   // Map marks data to Recharts format
@@ -1052,6 +1062,8 @@ ${student.aiImprovementPlan || "No plan generated."}
                         className="rounded-lg border border-[#dadce0] px-3 py-1.5 text-xs bg-white focus:outline-none"
                       >
                         <option value="">Choose Instructor...</option>
+                        {loadingMentors && <option disabled>Loading instructors…</option>}
+                        {mentorsError && <option disabled>{mentorsError}</option>}
                         {mentorsList.map((m) => (
                           <option key={m._id} value={m._id}>
                             {m.name}
@@ -1114,7 +1126,7 @@ ${student.aiImprovementPlan || "No plan generated."}
                 </div>
               </div>
 
-              {user?.role === "student" && reportCardsLoading && <LoadingState label="Loading report cards…" compact />}
+              {user?.role === "student" && reportCardsLoading && <ListSkeleton count={3} label="Loading report cards" />}
               {user?.role === "student" && reportCardsError && <ErrorState message={reportCardsError} compact />}
               {user?.role === "student" && !reportCardsLoading && !reportCardsError && reportCards.some((job) => job.status === "completed") && (
                 <section className="rounded-2xl border border-[#dadce0] bg-white p-5 shadow-sm">
@@ -1128,7 +1140,7 @@ ${student.aiImprovementPlan || "No plan generated."}
               <div className="bg-white border border-[#dadce0] rounded-2xl p-6 shadow-sm">
                 <div className="mb-4 flex flex-wrap items-center justify-between gap-3"><h3 className="text-sm font-semibold text-[#202124]">{chartMode === "marks" ? "Subject Performance Analysis" : "Attendance History"}</h3><button type="button" onClick={() => setChartMode((mode) => mode === "marks" ? "attendance" : "marks")} className="rounded-lg border border-primary/20 bg-primary/5 px-3 py-1.5 text-xs font-bold text-primary">Show {chartMode === "marks" ? "Attendance" : "Marks"}</button></div>
                 <div className="h-64">
-                  {chartMode === "attendance" && attendanceChartLoading ? <LoadingState label="Loading attendance history…" compact /> : chartMode === "attendance" && attendanceChartError ? <ErrorState message={attendanceChartError} compact /> : <ResponsiveContainer width="100%" height="100%">
+                  {chartMode === "attendance" && attendanceChartLoading ? <div role="status" aria-label="Loading attendance history"><Skeleton height={260} /></div> : chartMode === "attendance" && attendanceChartError ? <ErrorState message={attendanceChartError} compact /> : <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={chartMode === "marks" ? chartData : attendanceChartData}>
                       <XAxis
                         dataKey={chartMode === "marks" ? "name" : "date"}
@@ -1453,7 +1465,7 @@ ${student.aiImprovementPlan || "No plan generated."}
                 <span className="rounded-full bg-primary/10 px-2.5 py-1 text-xs font-bold text-primary">{issuedBooks.length}/2</span>
               </div>
               {booksLoading ? (
-                <LoadingState label="Loading issued books…" compact />
+                <ListSkeleton count={3} label="Loading issued books" />
               ) : booksError ? (
                 <ErrorState message={booksError} compact />
               ) : issuedBooks.length === 0 ? (
@@ -1517,7 +1529,7 @@ ${student.aiImprovementPlan || "No plan generated."}
                   return (
                     <div
                       key={msg._id || index}
-                      className={`flex flex-col ${isMe ? "items-end" : "items-start"}`}
+                      className={`virtualized-item flex flex-col ${isMe ? "items-end" : "items-start"}`}
                     >
                       {isAI && (
                         <span className="text-[9px] text-purple-700 font-semibold mb-0.5 ml-1">
@@ -1607,7 +1619,7 @@ ${student.aiImprovementPlan || "No plan generated."}
               <h3 className="text-sm font-semibold text-[#202124] mb-4">
                 Workspace Announcements & Event Notifications
               </h3>
-              {alerts.length === 0 ? (
+              {alertsLoading ? <ListSkeleton count={5} label="Loading alerts" /> : alertsError ? <ErrorState message={alertsError} onRetry={() => fetchNotifications()} /> : alerts.length === 0 ? (
                 <p className="text-xs text-[#5f6368] italic py-8 text-center">
                   No alerts broadcasted yet.
                 </p>

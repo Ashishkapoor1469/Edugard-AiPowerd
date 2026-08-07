@@ -14,6 +14,8 @@ namespace EduGuard.Services
 
     public static class RiskEngine
     {
+        private static readonly IReadOnlyList<IRiskScoringRule> ScoringRules = RiskRuleFactory.CreateDefault();
+
         public static double? CalculateSubjectAverage(SubjectMarks subject)
         {
             var percentages = new List<double>();
@@ -53,21 +55,7 @@ namespace EduGuard.Services
 
         public static RiskResult CalculateRisk(Student student)
         {
-            double score = 0;
-
-            // 1. Attendance Scoring
             var attendancePercentage = student.SessionAttendancePercentage ?? student.Attendance;
-            if (attendancePercentage.HasValue)
-            {
-                if (attendancePercentage.Value < 50)
-                {
-                    score += 40;
-                }
-                else if (attendancePercentage.Value < 75)
-                {
-                    score += 20;
-                }
-            }
 
             // Fetch subject configuration
             string course = (student.Course ?? "").ToUpper();
@@ -130,48 +118,18 @@ namespace EduGuard.Services
                 }
             }
 
-            // 2. Average Marks Scoring
             double? overallMarksAverage = subjectsWithDataCount > 0
                 ? totalSubjectPercentageSum / subjectsWithDataCount
                 : null;
 
-            if (overallMarksAverage.HasValue)
-            {
-                if (overallMarksAverage.Value < 35)
-                {
-                    score += 30;
-                }
-                else if (overallMarksAverage.Value < 50)
-                {
-                    score += 15;
-                }
-            }
-
-            // 3. Single Subject Failing Scoring (Capped at 30 points)
-            int singleSubjectFailingPenalty = failingSubjectsCount * 10;
-            score += Math.Min(singleSubjectFailingPenalty, 30);
-
-            // 4. Behavior Scoring
-            if (string.Equals(student.Behavior, "bad", StringComparison.OrdinalIgnoreCase))
-            {
-                score += 20;
-            }
-            else if (string.Equals(student.Behavior, "average", StringComparison.OrdinalIgnoreCase))
-            {
-                score += 8;
-            }
-
-            // 5. Contributions Scoring
-            if (student.Contribution == null || student.Contribution.Count == 0)
-            {
-                score += 5;
-            }
-
-            // 6. Record Completeness Scoring (missing > 3 subjects data)
-            if (missingSubjectsCount > 3)
-            {
-                score += 5;
-            }
+            var context = new RiskEvaluationContext(
+                attendancePercentage,
+                overallMarksAverage,
+                failingSubjectsCount,
+                student.Behavior,
+                student.Contribution is { Count: > 0 },
+                missingSubjectsCount);
+            var score = ScoringRules.Sum(rule => rule.Score(context));
 
             // Cap between 0 and 100
             double finalScore = Math.Max(0, Math.Min(score, 100));

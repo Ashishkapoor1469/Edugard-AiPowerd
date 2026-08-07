@@ -10,10 +10,11 @@ public sealed class BadgeAwardWorker : BackgroundService
 {
     private readonly MongoService _mongo;
     private readonly ILogger<BadgeAwardWorker> _logger;
+    private readonly IBadgeCatalog _catalog;
     private readonly Channel<string> _queue = Channel.CreateUnbounded<string>();
     private readonly ConcurrentDictionary<string, byte> _queued = new();
 
-    public BadgeAwardWorker(MongoService mongo, ILogger<BadgeAwardWorker> logger) => (_mongo, _logger) = (mongo, logger);
+    public BadgeAwardWorker(MongoService mongo, ILogger<BadgeAwardWorker> logger, IBadgeCatalog catalog) => (_mongo, _logger, _catalog) = (mongo, logger, catalog);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -63,32 +64,22 @@ public sealed class BadgeAwardWorker : BackgroundService
         {
             var sourceKey = Normalize(contribution);
             if (!sourceKeys.Add(sourceKey)) continue;
-            var (badgeId, type, color, category) = Classify(contribution);
+            var classification = _catalog.ClassifyContribution(contribution);
             badges.Add(new StudentBadge
             {
-                BadgeId = badgeId,
+                BadgeId = classification.BadgeId,
                 SourceKey = sourceKey,
-                Type = type,
-                Color = color,
+                Type = classification.Type,
+                Color = classification.Color,
                 Name = contribution.Trim(),
                 Description = $"Awarded for the co-curricular achievement: {contribution.Trim()}.",
-                Category = category,
+                Category = classification.Category,
                 AwardedAt = now
             });
         }
 
         await _mongo.Students.UpdateOneAsync(s => s.Id == student.Id,
             Builders<Student>.Update.Set(s => s.EarnedBadges, badges).Set(s => s.LastBadgeCheckAt, now), cancellationToken: token);
-    }
-
-    private static (string BadgeId, string Type, string Color, string Category) Classify(string value)
-    {
-        var text = value.ToLowerInvariant();
-        if (text.Contains("winner") || text.Contains("award") || text.Contains("rank")) return ("competition-winner", "achievement", "amber", "participation");
-        if (text.Contains("sport") || text.Contains("athletic") || text.Contains("game")) return ("sports-achievement", "sports", "emerald", "sports");
-        if (text.Contains("volunteer") || text.Contains("service") || text.Contains("social")) return ("community-service", "service", "sky", "service");
-        if (text.Contains("music") || text.Contains("dance") || Regex.IsMatch(text, @"\bart\b") || text.Contains("cultural")) return ("cultural-performer", "culture", "violet", "cultural");
-        return ("co-curricular", "co-curricular", "teal", "participation");
     }
 
 }

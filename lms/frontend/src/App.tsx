@@ -7,7 +7,6 @@ import LibrarianDashboard from "./pages/LibrarianDashboard";
 import Catalog from "./pages/Catalog";
 import CollegeAdminLibrary from "./pages/CollegeAdminLibrary";
 import ReportsView from "./pages/ReportsView";
-import StudentPortal from "./pages/StudentPortal";
 import type { User } from "./types";
 import eduGuardLogo from "./assets/e.png";
 import { LoadingState } from "./components/AsyncState";
@@ -61,7 +60,7 @@ export default function App() {
       <div className="center-card">
         <img className="login-logo" src={eduGuardLogo} alt="EduGuard" />
         <h1>EduGuard Library</h1>
-        <p>College administrators and students open Library from EduGuard. Librarians can sign in directly with the account created by their college administrator.</p>
+        <p>College administrators open Library from EduGuard. Librarians can sign in directly with the account created by their college administrator.</p>
         <form className="form-stack login-form" onSubmit={librarianLogin}>
           <label>
             Email
@@ -84,7 +83,7 @@ export default function App() {
       </div>
     );
 
-  const home = user.role === "librarian" ? "/dashboard" : user.role === "student" ? "/portal" : "/admin";
+  const home = user.role === "librarian" ? "/dashboard" : "/admin";
 
   return (
     <Layout user={user}>
@@ -94,11 +93,9 @@ export default function App() {
         <Route path="/dashboard" element={user.role === "librarian" ? <LibrarianDashboard user={user} /> : <Navigate to={home} />} />
         <Route path="/admin" element={user.role === "college-admin" ? <CollegeAdminLibrary user={user} /> : <Navigate to={home} />} />
         <Route path="/reports" element={<ReportsView />} />
-        <Route path="/portal" element={<StudentPortal />} />
         <Route path="*" element={<Navigate to={home} />} />
       </Routes>
       <Toaster position="top-right" />
     </Layout>
   );
 }
-

@@ -89,7 +89,11 @@ builder.Services.AddRateLimiter(options =>
     options.AddPolicy("data-fetch", context =>
         RateLimitPartition.GetFixedWindowLimiter(
             $"{context.User.FindFirst("id")?.Value ?? context.Connection.RemoteIpAddress?.ToString() ?? "anonymous"}:{context.Request.Path}",
-            _ => new FixedWindowRateLimiterOptions { PermitLimit = 5, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
+            _ => new FixedWindowRateLimiterOptions { PermitLimit = 30, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
+    options.AddPolicy("polling-fetch", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            $"{context.User.FindFirst("id")?.Value ?? context.Connection.RemoteIpAddress?.ToString() ?? "anonymous"}:{context.Request.Path}",
+            _ => new FixedWindowRateLimiterOptions { PermitLimit = 30, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
     options.AddPolicy("dashboard-fetch", context =>
         RateLimitPartition.GetFixedWindowLimiter(
             $"{context.User.FindFirst("id")?.Value ?? context.Connection.RemoteIpAddress?.ToString() ?? "anonymous"}:{context.Request.Path}",
@@ -120,6 +124,12 @@ builder.Services.AddTransient<ExcelParserService>();
 builder.Services.AddHttpClient("nvidia-nim", client => client.Timeout = TimeSpan.FromSeconds(45));
 builder.Services.AddSingleton<INvidiaNimService, NvidiaNimService>();
 builder.Services.AddTransient<NotificationService>();
+builder.Services.AddScoped<IStudentAccessService, StudentAccessService>();
+builder.Services.AddSingleton<IBadgeCatalog, BadgeCatalog>();
+builder.Services.AddSingleton<INotificationTriggerRule, AttendanceNotificationRule>();
+builder.Services.AddSingleton<INotificationTriggerRule, MarksNotificationRule>();
+builder.Services.AddSingleton<INotificationTriggerRule, BehaviorNotificationRule>();
+builder.Services.AddSingleton<INotificationTriggerRule, RiskLevelNotificationRule>();
 builder.Services.AddSingleton<ICacheService, CacheService>();
 builder.Services.AddHttpClient<ILibraryService, HttpLibraryService>(client => client.Timeout = TimeSpan.FromSeconds(10));
 builder.Services.AddScoped<IPushAudienceNotifier, PushAudienceNotifier>();
@@ -220,8 +230,8 @@ var controllers = app.MapControllers();
 controllers.Add(endpoint =>
 {
     var isGet = endpoint.Metadata.OfType<HttpMethodMetadata>().Any(metadata => metadata.HttpMethods.Contains("GET"));
-    if (isGet && !endpoint.Metadata.OfType<EnableRateLimitingAttribute>().Any())
-        endpoint.Metadata.Add(new EnableRateLimitingAttribute("data-fetch"));
+    if (!endpoint.Metadata.OfType<EnableRateLimitingAttribute>().Any())
+        endpoint.Metadata.Add(new EnableRateLimitingAttribute(isGet ? "data-fetch" : "api-limiter"));
 });
 app.MapGet("/health", () => Results.Ok(new { status = "ok", commit = Environment.GetEnvironmentVariable("RENDER_GIT_COMMIT") }));
 app.MapHub<EduGuardHub>("/eduguardHub");

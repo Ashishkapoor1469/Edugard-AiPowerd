@@ -24,7 +24,7 @@ namespace EduGuard.Controllers
         private async Task<(string? AdminId, string? CollegeId)> AdminScopeAsync()
         {
             if (Role != "college-admin" || string.IsNullOrEmpty(UserId)) return (null, null);
-            var admin = await _mongo.Admins.Find(a => a.Id == UserId).FirstOrDefaultAsync();
+            var admin = await _mongo.Admins.Find(a => a.Id == UserId && a.Role == "college-admin" && a.Status == "active").FirstOrDefaultAsync();
             return (admin?.Id, admin?.CollegeId);
         }
 
@@ -79,7 +79,7 @@ namespace EduGuard.Controllers
             var currentSession = AttendanceRules.CurrentSession(localNow);
             var isCr = assignment != null && assignment.CollegeId == student.CollegeId && assignment.ClassId == student.Class;
             var roster = isCr
-                ? await _mongo.Students.Find(s => s.CollegeId == student.CollegeId && s.Class == assignment!.ClassId && s.VerificationStatus == "approved").ToListAsync()
+                ? await _mongo.Students.Find(StudentRosterRules.Active(student.CollegeId!, assignment!.ClassId)).ToListAsync()
                 : new List<Student>();
             var date = localNow.ToString("yyyy-MM-dd");
             var recentRecords = isCr
@@ -136,7 +136,7 @@ namespace EduGuard.Controllers
             if (AttendanceRules.CurrentSession(localNow) != session)
                 return StatusCode(403, new { success = false, message = "Attendance can only be marked during the active college session window" });
 
-            var roster = await _mongo.Students.Find(s => s.CollegeId == marker.CollegeId && s.Class == assignment.ClassId && s.VerificationStatus == "approved").ToListAsync();
+            var roster = await _mongo.Students.Find(StudentRosterRules.Active(marker.CollegeId!, assignment.ClassId)).ToListAsync();
             var rosterIds = roster.Select(s => s.Id!).OrderBy(id => id).ToArray();
             var submittedIds = request.Records.Select(r => r.StudentId).OrderBy(id => id).ToArray();
             if (rosterIds.Length == 0 || rosterIds.Length != submittedIds.Distinct().Count() || !rosterIds.SequenceEqual(submittedIds))
@@ -182,7 +182,7 @@ namespace EduGuard.Controllers
 
             var session = request?.Session?.Trim().ToLowerInvariant();
             if (session is not ("morning" or "afternoon") || request!.Records == null) return BadRequest(new { success = false, message = "A valid session and full roster are required" });
-            var roster = await _mongo.Students.Find(s => s.CollegeId == marker.CollegeId && s.Class == assignment.ClassId && s.VerificationStatus == "approved").ToListAsync();
+            var roster = await _mongo.Students.Find(StudentRosterRules.Active(marker.CollegeId!, assignment.ClassId)).ToListAsync();
             var rosterIds = roster.Select(s => s.Id!).OrderBy(id => id).ToArray();
             var submittedIds = request.Records.Select(r => r.StudentId).OrderBy(id => id).ToArray();
             if (rosterIds.Length == 0 || rosterIds.Length != submittedIds.Distinct().Count() || !rosterIds.SequenceEqual(submittedIds) || request.Records.Any(r => r.Status.Trim().ToLowerInvariant() is not ("present" or "absent" or "leave")))
@@ -267,8 +267,7 @@ namespace EduGuard.Controllers
             if (session != null) filter &= Builders<AttendanceRecord>.Filter.Eq(a => a.Session, session);
             var records = await _mongo.AttendanceRecords.Find(filter).ToListAsync();
 
-            var rosterFilter = Builders<Student>.Filter.Eq(s => s.CollegeId, collegeId) & Builders<Student>.Filter.Eq(s => s.VerificationStatus, "approved");
-            if (!string.IsNullOrWhiteSpace(classId)) rosterFilter &= Builders<Student>.Filter.Eq(s => s.Class, classId);
+            var rosterFilter = StudentRosterRules.Active(collegeId, classId);
             var roster = await _mongo.Students.Find(rosterFilter).ToListAsync();
             var expected = roster.Count * (session == null ? 2 : 1);
             var names = roster.Where(s => s.Id != null).ToDictionary(s => s.Id!, s => new { s.Name, s.RollNo });
@@ -293,11 +292,7 @@ namespace EduGuard.Controllers
         {
             var (_, collegeId) = await AdminScopeAsync();
             if (string.IsNullOrEmpty(collegeId)) return Unauthorized();
-            var filter = Builders<Student>.Filter.Eq(s => s.CollegeId, collegeId) &
-                (Builders<Student>.Filter.Eq(s => s.VerificationStatus, "approved") |
-                 Builders<Student>.Filter.Eq(s => s.VerificationStatus, "verified") |
-                 Builders<Student>.Filter.Eq(s => s.IsVerified, true));
-            if (!string.IsNullOrWhiteSpace(classId)) filter &= Builders<Student>.Filter.Eq(s => s.Class, classId);
+            var filter = StudentRosterRules.Active(collegeId, classId);
             var students = await _mongo.Students.Find(filter).SortBy(s => s.Class).ThenBy(s => s.RollNo).ToListAsync();
             return Ok(new { success = true, data = students.Select(s => new { _id = s.Id, s.Name, s.RollNo, classId = s.Class }) });
         }
@@ -328,12 +323,7 @@ namespace EduGuard.Controllers
             var type = request.LeadershipType.Trim().ToUpperInvariant();
             if (string.IsNullOrWhiteSpace(request.StudentId) || string.IsNullOrWhiteSpace(request.ClassId) || string.IsNullOrWhiteSpace(type))
                 return BadRequest(new { success = false, message = "Student, class and leadership type are required" });
-            var studentFilter = Builders<Student>.Filter.Eq(s => s.Id, request.StudentId) &
-                Builders<Student>.Filter.Eq(s => s.CollegeId, collegeId) &
-                Builders<Student>.Filter.Eq(s => s.Class, request.ClassId) &
-                (Builders<Student>.Filter.Eq(s => s.VerificationStatus, "approved") |
-                 Builders<Student>.Filter.Eq(s => s.VerificationStatus, "verified") |
-                 Builders<Student>.Filter.Eq(s => s.IsVerified, true));
+            var studentFilter = StudentRosterRules.Active(collegeId, request.ClassId) & Builders<Student>.Filter.Eq(s => s.Id, request.StudentId);
             var student = await _mongo.Students.Find(studentFilter).FirstOrDefaultAsync();
             if (student == null) return BadRequest(new { success = false, message = "Student is not on the active roster for this class" });
             var duplicate = await _mongo.LeadershipAssignments.Find(a => a.StudentId == student.Id && a.LeadershipType == type && a.IsActive).AnyAsync();

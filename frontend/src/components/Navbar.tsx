@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useAuth } from "../context/AuthContext.js";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import axios from "axios";
 import socket from "../utils/socket.js";
 import toast from "react-hot-toast";
 import eduGuardBrand from "../assets/e-witheduguardtext.png";
 import { listLoadError } from "../utils/apiErrors.js";
 import { LoadingState } from "./AsyncState.js";
+import { canSearchStudents, canUseNotifications } from "../navigation.js";
 
 interface SearchStudent {
   _id: string;
@@ -19,6 +20,7 @@ interface SearchStudent {
 const Navbar: React.FC = () => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
 
   // Search & Filters state
@@ -48,6 +50,7 @@ const Navbar: React.FC = () => {
 
   // Debounced live search
   useEffect(() => {
+    if (!canSearchStudents(user?.role)) return;
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
 
     if (search.trim().length < 2) {
@@ -80,7 +83,7 @@ const Navbar: React.FC = () => {
     return () => {
       if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
     };
-  }, [search]);
+  }, [search, user?.role]);
 
   // Fetch notifications
   const fetchNotifications = async () => {
@@ -99,12 +102,17 @@ const Navbar: React.FC = () => {
   };
 
   useEffect(() => {
-    // Skip notifications for roles that don't have access to the notification API
-    if (user?.role === "admin" || user?.role === "college-admin") return;
+    if (!canUseNotifications(user?.role)) return;
 
-    fetchNotifications();
+    // NotificationsPage owns this request while it is mounted. Avoid issuing the
+    // same GET twice during direct navigation to the full alerts view.
+    if (!location.pathname.startsWith("/notifications")) fetchNotifications();
 
-    if (user) {
+  }, [user?.role, location.pathname]);
+
+  useEffect(() => {
+    if (!canUseNotifications(user?.role) || !user) return;
+
       socket.connect();
       socket.emit("mentor:online", user.id);
 
@@ -127,7 +135,6 @@ const Navbar: React.FC = () => {
           duration: 5000,
         });
       });
-    }
 
     return () => {
       socket.off("notification");
@@ -227,7 +234,7 @@ const Navbar: React.FC = () => {
       </div>
 
       {/* Global Search Bar - hidden on mobile and for students */}
-      {user?.role !== "student" && (
+      {canSearchStudents(user?.role) && (
         <div ref={searchRef} className="hidden md:flex flex-1 max-w-md mx-8 relative">
           <form onSubmit={handleSearchSubmit} className="w-full relative">
             <input
@@ -292,7 +299,7 @@ const Navbar: React.FC = () => {
       {/* Filters, Bell & Avatar */}
       <div className="flex items-center gap-2 md:gap-4">
         {/* Course Filter - hidden on mobile and for students */}
-        {user?.role !== "student" && (
+        {canSearchStudents(user?.role) && (
           <select
             value={selectedCourse}
             onChange={(e) => handleFilterChange("course", e.target.value)}
@@ -306,7 +313,7 @@ const Navbar: React.FC = () => {
         )}
 
         {/* Class Filter - hidden on mobile and for students */}
-        {user?.role !== "student" && (
+        {canSearchStudents(user?.role) && (
           <select
             value={selectedClass}
             onChange={(e) => handleFilterChange("class", e.target.value)}
@@ -320,7 +327,7 @@ const Navbar: React.FC = () => {
         )}
 
         {/* Notification Bell */}
-        <div className="relative" ref={bellRef}>
+        {canUseNotifications(user?.role) && <div className="relative" ref={bellRef}>
           <button
             onClick={() => setShowBellDropdown(!showBellDropdown)}
             className="relative rounded-full p-2 text-slate-500 hover:bg-slate-100 hover:text-text-primary focus:outline-hidden"
@@ -388,7 +395,7 @@ const Navbar: React.FC = () => {
               </div>
             </div>
           )}
-        </div>
+        </div>}
 
         {/* Mentor Avatar */}
         <div className="relative" ref={profileRef}>

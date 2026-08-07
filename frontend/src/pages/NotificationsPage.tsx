@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import toast from "react-hot-toast";
 import { listLoadError } from "../utils/apiErrors.js";
-import { ErrorState, LoadingState } from "../components/AsyncState.js";
+import { ErrorState, ListSkeleton } from "../components/AsyncState.js";
 
 interface Notification {
   _id: string;
@@ -227,7 +227,7 @@ const NotificationsPage: React.FC = () => {
       {activeTab === "broadcasts" ? (
         <div className="flex flex-col gap-4">
           {loadingBroadcasts ? (
-            <LoadingState label="Loading college broadcasts…" />
+            <ListSkeleton count={6} label="Loading college broadcasts" />
           ) : broadcastsError ? (
             <ErrorState message={broadcastsError} onRetry={() => fetchCollegeAlerts()} />
           ) : collegeAlerts.length === 0 ? (
@@ -236,7 +236,7 @@ const NotificationsPage: React.FC = () => {
             </div>
           ) : (
             collegeAlerts.map((n) => (
-              <div key={n._id} className={`rounded-xl border p-5 shadow-xs flex gap-4 ${n.type === "event" ? "bg-purple-50/50 border-purple-100" : "bg-primary/5 border-primary/15"}`}>
+              <div key={n._id} className={`virtualized-item rounded-xl border p-5 shadow-xs flex gap-4 ${n.type === "event" ? "bg-purple-50/50 border-purple-100" : "bg-primary/5 border-primary/15"}`}>
                 <div className={`h-10 w-10 rounded-xl flex items-center justify-center shrink-0 ${n.type === "event" ? "bg-purple-100" : "bg-primary/10"}`}>
                   {n.type === "event" ? (
                     <svg className="h-5 w-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
@@ -269,7 +269,7 @@ const NotificationsPage: React.FC = () => {
       ) : (
       <div className="flex flex-col gap-4">
         {loading ? (
-          <LoadingState label="Loading notifications…" />
+          <ListSkeleton count={8} label="Loading notifications" />
         ) : notificationsError ? (
           <ErrorState message={notificationsError} onRetry={() => fetchNotifications()} />
         ) : notifications.length === 0 ? (
@@ -280,7 +280,7 @@ const NotificationsPage: React.FC = () => {
           notifications.map((notif) => (
             <div
               key={notif._id}
-              className={`rounded-xl border border-slate-200 bg-white p-5 shadow-xs border-l-4 transition-all flex flex-col gap-3 justify-between sm:flex-row sm:items-center ${
+              className={`virtualized-item rounded-xl border border-slate-200 bg-white p-5 shadow-xs border-l-4 transition-all flex flex-col gap-3 justify-between sm:flex-row sm:items-center ${
                 getPriorityBorderColor(notif.priority)
               } ${!notif.isRead ? "bg-primary/5 ring-1 ring-primary/5" : ""}`}
             >

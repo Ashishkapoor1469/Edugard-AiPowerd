@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import axios from "axios";
 import toast from "react-hot-toast";
-import { ErrorState, LoadingState } from "../components/AsyncState.js";
+import { ErrorState, TableSkeleton } from "../components/AsyncState.js";
 
 interface College {
   _id: string;
@@ -190,7 +190,7 @@ const AdminDashboard: React.FC = () => {
 
       {/* Main Content Panels */}
       {loading ? (
-        <LoadingState label="Loading administration data…" />
+        <TableSkeleton rows={7} columns={5} label="Loading administration data" />
       ) : loadError ? (
         <ErrorState message={loadError} onRetry={fetchData} />
       ) : (

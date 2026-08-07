@@ -5,7 +5,7 @@ import toast from "react-hot-toast";
 import { useAuth } from "../context/AuthContext.js";
 import AdminAttendancePanel from "../components/AdminAttendancePanel.js";
 import LibrarianManagementPanel from "../components/LibrarianManagementPanel.js";
-import { ErrorState, LoadingState } from "../components/AsyncState.js";
+import { ErrorState, ListSkeleton, TableSkeleton } from "../components/AsyncState.js";
 
 interface Mentor {
   _id: string;
@@ -320,7 +320,7 @@ const CollegeAdminDashboard: React.FC = () => {
               </span>
             </div>
             {loading ? (
-              <LoadingState label="Loading mentors…" compact />
+              <TableSkeleton rows={6} columns={5} label="Loading mentors" />
             ) : mentorError ? (
               <ErrorState message={mentorError} onRetry={fetchMentors} compact />
             ) : mentors.length === 0 ? (
@@ -419,7 +419,7 @@ const CollegeAdminDashboard: React.FC = () => {
             </div>
 
             {riskLoading ? (
-              <LoadingState label="Loading risk students…" compact />
+              <TableSkeleton rows={8} columns={6} label="Loading risk students" />
             ) : riskError ? (
               <ErrorState message={riskError} onRetry={fetchRiskStudents} compact />
             ) : riskStudents.length === 0 ? (
@@ -719,7 +719,7 @@ const CollegeAdminDashboard: React.FC = () => {
             )}
 
             <form onSubmit={handleSyllabusSubmit} className="space-y-4">
-              {degreesLoading ? <LoadingState label="Loading degree programs…" compact /> : degreesError ? <ErrorState message={degreesError} compact /> : null}
+              {degreesLoading ? <ListSkeleton count={4} label="Loading degree programs" /> : degreesError ? <ErrorState message={degreesError} compact /> : null}
               <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Degree Course</label>
                 <select

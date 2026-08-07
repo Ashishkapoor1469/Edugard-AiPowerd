@@ -148,26 +148,9 @@ Server-to-server communication between EduGuard API and LMS API uses `X-EduGuard
 
 ---
 
-## Demo College Showcase & Sample Data Seeder
+## Test data
 
-The system includes a production-quality showcase seeder for **Dronacharya College of Engineering (`DCR-DEMO`)**:
-
-### Demo Accounts
-- **College Administrator**: Neha Sharma (`admin.demo@eduguard.local`)
-- **Head Librarian**: Rajesh Kumar (`librarian.demo@eduguard.local`)
-- **Assistant Librarian**: Priya Verma (`librarian2.demo@eduguard.local`)
-- **Students**: 20 students registered across BCA, BBA, B.Tech CS, B.Com, and BA.
-
-### Seeded Showcase Data
-- **50 Book Titles**: Across Programming, Databases, AI, Operating Systems, Networking, Mathematics, English, and Literature.
-- **80+ Physical Copies**: Pre-assigned accession numbers and barcodes.
-- **Active Loans & Overdue Fines**: Realistic active issuances, overdue loans with calculated fines, and library announcements.
-
-### How to Run Demo Seeder
-```powershell
-# API Endpoint (Requires Librarian or Admin Token)
-POST https://edugard-aipowerd-1.onrender.com/api/demo/seed
-```
+The deployed application intentionally exposes no HTTP seed endpoint. Test data must be rebuilt only in a confirmed development or staging environment through the authenticated application APIs, after taking a database backup.
 
 ---
 
@@ -180,7 +163,6 @@ LMS_JWT_SECRET=production_super_secret_jwt_key_at_least_32_bytes_long!
 LMS_SERVICE_KEY=eduguard_lms_shared_service_key_2026
 EDUGUARD_API_URL=https://edugard-aipowerd.onrender.com
 LMS_FRONTEND_URL=https://edugard-ai-powerd-swsb.vercel.app
-LMS_ENABLE_DEMO_SEED=true
 ```
 
 ### LMS Frontend (`lms/frontend/`)

@@ -42,6 +42,9 @@ EduGuard Project Analysis.md
 *.tmp
 *.temp
 *.cache
+.data-runtime/
+audit-evidence/
+*.archive.gz
 
 # Generated runtime files and exports
 backend/wwwroot/reports/*

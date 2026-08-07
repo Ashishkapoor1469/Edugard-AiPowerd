@@ -172,8 +172,32 @@ namespace EduGuard.Controllers
                 return BadRequest(new { success = false, message = "Select a valid section and semester" });
             }
 
-            // Check if student was pre-added by Mentor (Flow A)
+            // Resolve any pre-added record before applying the same college,
+            // degree, mentor, and capacity checks used by self-registration.
             var existing = await _mongoService.Students.Find(s => s.Email == model.Email).FirstOrDefaultAsync();
+
+            if (existing != null && (existing.CollegeId != model.CollegeId || !string.Equals(existing.RollNo, model.RollNo, StringComparison.OrdinalIgnoreCase)))
+            {
+                return BadRequest(new { success = false, message = "Pre-added student details do not match the selected college and roll number" });
+            }
+
+            var mentor = await _mongoService.Mentors.Find(m =>
+                m.Id == model.MentorId &&
+                m.Status == "approved" &&
+                m.CollegeId == model.CollegeId &&
+                m.AssignedCourseId == model.CourseId
+            ).FirstOrDefaultAsync();
+            if (mentor == null)
+            {
+                return BadRequest(new { success = false, message = "Selected approved mentor does not belong to the selected college and degree" });
+            }
+
+            var existingId = existing?.Id;
+            var currentStudentsCount = await _mongoService.Students.CountDocumentsAsync(s => s.MentorId == model.MentorId && s.Id != existingId);
+            if (currentStudentsCount >= mentor.MaxStudents)
+            {
+                return BadRequest(new { success = false, message = "The selected mentor has reached maximum student capacity. Please choose another mentor." });
+            }
             
             var otp = new Random().Next(100000, 999999).ToString();
 
@@ -188,11 +212,14 @@ namespace EduGuard.Controllers
                 existing.Name = model.Name;
                 existing.Password = BCrypt.Net.BCrypt.HashPassword(model.Password);
                 existing.IsRegistered = true;
-                existing.IsVerified = true; // Mark verified as true per instructions
+                existing.IsVerified = false; // OTP verification remains mandatory for pre-added students
                 existing.VerificationStatus = "approved"; // Pre-added means pre-approved
                 existing.Course = degree.Name;
+                existing.CourseId = degree.Id;
                 existing.Class = $"{degree.Name}-{model.Section}";
                 existing.Semester = model.Semester;
+                existing.MentorId = mentor.Id;
+                existing.MentorName = mentor.Name;
                 existing.Otp = otp;
                 existing.OtpExpiry = DateTime.UtcNow.AddMinutes(15);
 
@@ -213,29 +240,6 @@ namespace EduGuard.Controllers
             if (existingRoll != null)
             {
                 return BadRequest(new { success = false, message = "Roll Number is already registered in this college" });
-            }
-
-            // Check Mentor Capacity
-            var mentor = await _mongoService.Mentors.Find(m => m.Id == model.MentorId).FirstOrDefaultAsync();
-            if (mentor == null)
-            {
-                return NotFound(new { success = false, message = "Selected mentor not found" });
-            }
-
-            if (mentor.Status != "approved")
-            {
-                return BadRequest(new { success = false, message = "Selected mentor is not available for student signup" });
-            }
-
-            if (mentor.CollegeId != model.CollegeId || mentor.AssignedCourseId != model.CourseId)
-            {
-                return BadRequest(new { success = false, message = "Selected mentor does not belong to the selected college and degree" });
-            }
-
-            var currentStudentsCount = await _mongoService.Students.CountDocumentsAsync(s => s.MentorId == model.MentorId);
-            if (currentStudentsCount >= mentor.MaxStudents)
-            {
-                return BadRequest(new { success = false, message = "The selected mentor has reached maximum student capacity. Please choose another mentor." });
             }
 
             // Flow B (Self-Registered): Create new record
@@ -602,7 +606,7 @@ namespace EduGuard.Controllers
 
         }
 
-        [Authorize]
+        [Authorize(Roles = "college-admin,librarian")]
         [HttpPost("lms-sso")]
         public async Task<IActionResult> CreateLmsSsoToken()
         {
@@ -611,24 +615,9 @@ namespace EduGuard.Controllers
             if (string.IsNullOrEmpty(userId) || string.IsNullOrEmpty(role)) return Unauthorized();
 
             string? collegeId = null, name = null, email = null;
-            if (role is "college-admin" or "librarian")
-            {
-                var admin = await _mongoService.Admins.Find(x => x.Id == userId).FirstOrDefaultAsync();
-                if (admin is null || admin.Status != "active") return Unauthorized();
-                (collegeId, name, email) = (admin.CollegeId, admin.Name, admin.Email);
-            }
-            else if (role == "student")
-            {
-                var student = await _mongoService.Students.Find(x => x.Id == userId).FirstOrDefaultAsync();
-                if (student is null) return Unauthorized();
-                (collegeId, name, email) = (student.CollegeId, student.Name, student.Email);
-            }
-            else if (role == "mentor")
-            {
-                var mentor = await _mongoService.Mentors.Find(x => x.Id == userId).FirstOrDefaultAsync();
-                if (mentor is null || mentor.Status != "active") return Unauthorized();
-                (collegeId, name, email) = (mentor.CollegeId, mentor.Name, mentor.Email);
-            }
+            var admin = await _mongoService.Admins.Find(x => x.Id == userId && x.Role == role).FirstOrDefaultAsync();
+            if (admin is null || admin.Status != "active") return Unauthorized();
+            (collegeId, name, email) = (admin.CollegeId, admin.Name, admin.Email);
 
             if (string.IsNullOrEmpty(collegeId) || string.IsNullOrEmpty(name) || string.IsNullOrEmpty(email))
                 return BadRequest(new { success = false, message = "A college-scoped EduGuard account is required for LMS access." });
@@ -638,21 +627,6 @@ namespace EduGuard.Controllers
             return Ok(new { success = true, token = GenerateLmsToken(userId, role, collegeId, name, email), lmsUrl = lmsUrl });
         }
 
-
-        // --- TEMP DEVELOPER SEEDING ADAPTERS ---
-        [AllowAnonymous]
-        [HttpPost("seed/admin")]
-        public async Task<IActionResult> SeedAdmin([FromBody] Admin model)
-        {
-            if (model == null || string.IsNullOrEmpty(model.Email) || string.IsNullOrEmpty(model.Password))
-            {
-                return BadRequest("Invalid seed data");
-            }
-            model.Password = BCrypt.Net.BCrypt.HashPassword(model.Password);
-            model.Role = "admin";
-            await _mongoService.Admins.InsertOneAsync(model);
-            return Ok("Admin user seeded successfully");
-        }
     }
 
     public class LoginRequest

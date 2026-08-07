@@ -5,3 +5,5 @@
 .async-state.error { flex-direction: column; color: #b91c1c; }
 .async-spinner { width: 16px; height: 16px; border: 2px solid #d7dee8; border-top-color: #12274e; border-radius: 50%; animation: async-spin .7s linear infinite; }
 @keyframes async-spin { to { transform: rotate(360deg); } }
+@keyframes skeleton-pulse { 0%, 100% { opacity: .55; } 50% { opacity: 1; } }
+.list-row, .virtual-list-row { content-visibility: auto; contain-intrinsic-size: auto 52px; }

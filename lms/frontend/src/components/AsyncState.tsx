@@ -1,4 +1,17 @@
 import { Spinner } from "./ui/Spinner";
+import { Skeleton } from "./ui/Skeleton";
+
+export function CardGridSkeleton({ count = 6, label = "Loading cards" }: { count?: number; label?: string }) {
+  return <div role="status" aria-label={label} className="book-grid"><span className="sr-only">{label}</span>{Array.from({ length: count }, (_, index) => <div className="book-card" key={index} style={{ padding: 16, display: "block" }}><Skeleton height={120} /><div style={{ marginTop: 14, display: "grid", gap: 9 }}><Skeleton width="65%" /><Skeleton width="45%" height={9} /><Skeleton height={9} /></div></div>)}</div>;
+}
+
+export function ListSkeleton({ count = 6, label = "Loading list" }: { count?: number; label?: string }) {
+  return <div role="status" aria-label={label}><span className="sr-only">{label}</span>{Array.from({ length: count }, (_, index) => <div className="list-row" key={index}><span style={{ width: "70%", display: "grid", gap: 7 }}><Skeleton width="55%" /><Skeleton width="80%" height={9} /></span><Skeleton width={72} height={24} /></div>)}</div>;
+}
+
+export function TableSkeleton({ rows = 7, columns = 5, label = "Loading table" }: { rows?: number; columns?: number; label?: string }) {
+  return <div role="status" aria-label={label} style={{ display: "grid", gap: 1, background: "#eef2f7" }}><span className="sr-only">{label}</span>{Array.from({ length: rows }, (_, row) => <div key={row} style={{ display: "grid", gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`, gap: 12, padding: 12, background: "white" }}>{Array.from({ length: columns }, (_, column) => <Skeleton key={column} height={10} />)}</div>)}</div>;
+}
 
 export function LoadingState({ label = "Loading…", compact = false }: { label?: string; compact?: boolean }) {
   return (
@@ -57,4 +70,3 @@ export function ErrorState({ message, onRetry, compact = false }: { message: str
     </div>
   );
 }
-

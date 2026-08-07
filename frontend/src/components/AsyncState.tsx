@@ -1,4 +1,24 @@
 import { Spinner } from "./ui/Spinner";
+import { Skeleton } from "./ui/Skeleton";
+import type { ReactNode } from "react";
+
+const SkeletonStatus = ({ label, children }: { label: string; children: ReactNode }) => <div role="status" aria-label={label} className="w-full"><span className="sr-only">{label}</span>{children}</div>;
+
+export function CardGridSkeleton({ count = 6, label = "Loading cards" }: { count?: number; label?: string }) {
+  return <SkeletonStatus label={label}><div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">{Array.from({ length: count }, (_, index) => <div key={index} className="rounded-2xl border border-slate-200 bg-white p-5"><div className="flex items-center gap-3"><Skeleton width={40} height={40} shape="circle" /><div className="flex-1 space-y-2"><Skeleton height={14} className="w-2/3" /><Skeleton height={10} className="w-1/2" /></div></div><div className="mt-4 space-y-2"><Skeleton height={10} /><Skeleton height={10} className="w-5/6" /></div></div>)}</div></SkeletonStatus>;
+}
+
+export function ListSkeleton({ count = 6, label = "Loading list" }: { count?: number; label?: string }) {
+  return <SkeletonStatus label={label}><div className="divide-y divide-slate-100 rounded-2xl border border-slate-200 bg-white">{Array.from({ length: count }, (_, index) => <div key={index} className="flex items-center gap-3 p-4"><Skeleton width={36} height={36} shape="circle" /><div className="flex-1 space-y-2"><Skeleton height={12} className="w-1/2" /><Skeleton height={9} className="w-3/4" /></div><Skeleton width={64} height={22} /></div>)}</div></SkeletonStatus>;
+}
+
+export function TableSkeleton({ rows = 7, columns = 5, label = "Loading table" }: { rows?: number; columns?: number; label?: string }) {
+  return <SkeletonStatus label={label}><div className="overflow-hidden rounded-2xl border border-slate-200 bg-white"><div className="grid gap-4 bg-slate-50 p-4" style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}>{Array.from({ length: columns }, (_, index) => <Skeleton key={index} height={10} />)}</div>{Array.from({ length: rows }, (_, row) => <div key={row} className="grid gap-4 border-t border-slate-100 p-4" style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}>{Array.from({ length: columns }, (_, column) => <Skeleton key={column} height={10} className={column === 0 ? "w-4/5" : "w-full"} />)}</div>)}</div></SkeletonStatus>;
+}
+
+export function ProfileSkeleton({ label = "Loading profile" }: { label?: string }) {
+  return <SkeletonStatus label={label}><div className="space-y-5 p-4 md:p-6"><div className="flex items-center gap-4 rounded-2xl border border-slate-200 bg-white p-6"><Skeleton width={72} height={72} shape="circle" /><div className="flex-1 space-y-3"><Skeleton height={18} className="w-1/3" /><Skeleton height={11} className="w-1/2" /></div></div><div className="grid gap-4 md:grid-cols-3">{Array.from({ length: 3 }, (_, index) => <Skeleton key={index} height={112} />)}</div><Skeleton height={260} /></div></SkeletonStatus>;
+}
 
 export function LoadingState({ label = "Loading…", compact = false }: { label?: string; compact?: boolean }) {
   return (
@@ -57,4 +77,3 @@ export function ErrorState({ message, onRetry, compact = false }: { message: str
     </div>
   );
 }
-

@@ -14,12 +14,14 @@ namespace EduGuard.Services
         private readonly MongoService _mongoService;
         private readonly IHubContext<EduGuardHub> _hubContext;
         private readonly IPushNotificationQueue _pushQueue;
+        private readonly IReadOnlyList<INotificationTriggerRule> _triggerRules;
 
-        public NotificationService(MongoService mongoService, IHubContext<EduGuardHub> hubContext, IPushNotificationQueue pushQueue)
+        public NotificationService(MongoService mongoService, IHubContext<EduGuardHub> hubContext, IPushNotificationQueue pushQueue, IEnumerable<INotificationTriggerRule> triggerRules)
         {
             _mongoService = mongoService;
             _hubContext = hubContext;
             _pushQueue = pushQueue;
+            _triggerRules = triggerRules.ToList();
         }
 
         public async Task CreateNotificationAsync(string mentorId, string studentId, string type, string messageStr, string priority = "low")
@@ -85,156 +87,10 @@ namespace EduGuard.Services
         public async Task CheckAndGenerateNotificationsAsync(Student student, Student? oldValues)
         {
             if (string.IsNullOrEmpty(student.MentorId)) return;
-
-            // 1. Attendance Drop check
-            if (student.Attendance.HasValue)
+            foreach (var trigger in _triggerRules.SelectMany(rule => rule.Evaluate(student, oldValues)))
             {
-                bool attendanceDropped = false;
-                if (oldValues == null || !oldValues.Attendance.HasValue)
-                {
-                    attendanceDropped = student.Attendance.Value < 75;
-                }
-                else
-                {
-                    attendanceDropped = student.Attendance.Value < 75 && oldValues.Attendance.Value >= 75;
-                }
-
-                if (attendanceDropped)
-                {
-                    await CreateNotificationAsync(
-                        student.MentorId,
-                        student.Id!,
-                        "attendance_drop",
-                        $"Student {student.Name}'s attendance has dropped to {student.Attendance.Value:F1}% (below 75%).",
-                        "high"
-                    );
-                }
-            }
-
-            // 2. Performance Marks Drop check
-            var currentAvg = RiskEngine.CalculateSubjectAverage(new SubjectMarks { ClassTests = new(), SubjectName = "dummy" }); // not used this way, let's calculate overall
-            double totalPercentage = 0;
-            int subjectWithDataCount = 0;
-            if (student.Marks != null)
-            {
-                foreach (var m in student.Marks)
-                {
-                    var avg = RiskEngine.CalculateSubjectAverage(m);
-                    if (avg.HasValue)
-                    {
-                        totalPercentage += avg.Value;
-                        subjectWithDataCount++;
-
-                        // Check single subject failing drop
-                        bool subjectFailed = avg.Value < 35;
-                        bool wasSubjectFailedBefore = false;
-                        if (oldValues != null && oldValues.Marks != null)
-                        {
-                            var oldM = oldValues.Marks.FirstOrDefault(x => string.Equals(x.SubjectName, m.SubjectName, StringComparison.OrdinalIgnoreCase));
-                            if (oldM != null)
-                            {
-                                var oldAvg = RiskEngine.CalculateSubjectAverage(oldM);
-                                wasSubjectFailedBefore = oldAvg.HasValue && oldAvg.Value < 35;
-                            }
-                        }
-
-                        if (subjectFailed && !wasSubjectFailedBefore)
-                        {
-                            await CreateNotificationAsync(
-                                student.MentorId,
-                                student.Id!,
-                                "marks_drop",
-                                $"Student {student.Name} is failing in subject: {m.SubjectName} (score: {avg.Value:F1}%).",
-                                "medium"
-                            );
-                        }
-                    }
-                }
-            }
-
-            double? currentOverallAvg = subjectWithDataCount > 0 ? totalPercentage / subjectWithDataCount : null;
-            if (currentOverallAvg.HasValue)
-            {
-                double? oldOverallAvg = null;
-                if (oldValues != null && oldValues.Marks != null)
-                {
-                    double oldTotal = 0;
-                    int oldCount = 0;
-                    foreach (var m in oldValues.Marks)
-                    {
-                        var avg = RiskEngine.CalculateSubjectAverage(m);
-                        if (avg.HasValue)
-                        {
-                            oldTotal += avg.Value;
-                            oldCount++;
-                        }
-                    }
-                    if (oldCount > 0) oldOverallAvg = oldTotal / oldCount;
-                }
-
-                bool avgDropped = currentOverallAvg.Value < 50 && (!oldOverallAvg.HasValue || oldOverallAvg.Value >= 50);
-                if (avgDropped)
-                {
-                    await CreateNotificationAsync(
-                        student.MentorId,
-                        student.Id!,
-                        "marks_drop",
-                        $"Student {student.Name}'s overall academic average has dropped below 50% (currently {currentOverallAvg.Value:F1}%).",
-                        "high"
-                    );
-                }
-            }
-
-            // 3. Behavior change
-            if (!string.IsNullOrEmpty(student.Behavior))
-            {
-                bool behaviorGotBad = string.Equals(student.Behavior, "bad", StringComparison.OrdinalIgnoreCase) && 
-                    (oldValues == null || !string.Equals(oldValues.Behavior, "bad", StringComparison.OrdinalIgnoreCase));
-
-                if (behaviorGotBad)
-                {
-                    await CreateNotificationAsync(
-                        student.MentorId,
-                        student.Id!,
-                        "behavior_change",
-                        $"Student {student.Name}'s conduct/behavior has been flagged as bad.",
-                        "medium"
-                    );
-                }
-            }
-
-            // 4. Critical Alert / High Risk level change
-            if (!string.IsNullOrEmpty(student.RiskLevel))
-            {
-                bool wentCritical = string.Equals(student.RiskLevel, "critical", StringComparison.OrdinalIgnoreCase) &&
-                    (oldValues == null || !string.Equals(oldValues.RiskLevel, "critical", StringComparison.OrdinalIgnoreCase));
-                
-                bool wentHigh = string.Equals(student.RiskLevel, "high", StringComparison.OrdinalIgnoreCase) &&
-                    (oldValues == null || (!string.Equals(oldValues.RiskLevel, "high", StringComparison.OrdinalIgnoreCase) && 
-                                           !string.Equals(oldValues.RiskLevel, "critical", StringComparison.OrdinalIgnoreCase)));
-
-                if (wentCritical)
-                {
-                    await CreateNotificationAsync(
-                        student.MentorId,
-                        student.Id!,
-                        "critical_alert",
-                        $"CRITICAL ALERT: Student {student.Name} is at CRITICAL RISK level (score: {student.RiskScore}/100). Immediate action required.",
-                        "urgent"
-                    );
-                    await EnqueueRiskPushAsync(student, "Critical risk alert", student.MentorId);
-                }
-                else if (wentHigh)
-                {
-                    await CreateNotificationAsync(
-                        student.MentorId,
-                        student.Id!,
-                        "high_risk",
-                        $"Student {student.Name} has risen to HIGH RISK level (score: {student.RiskScore}/100).",
-                        "high"
-                    );
-                    await EnqueueRiskPushAsync(student, "High risk alert", student.MentorId);
-                }
+                await CreateNotificationAsync(student.MentorId, student.Id!, trigger.Type, trigger.Message, trigger.Priority);
+                if (trigger.PushTitle != null) await EnqueueRiskPushAsync(student, trigger.PushTitle, student.MentorId);
             }
         }
 

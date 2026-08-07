@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import axios from "axios";
-import { ErrorState, LoadingState } from "../AsyncState.js";
+import { CardGridSkeleton, ErrorState } from "../AsyncState.js";
 import { mergeAchievementBadges, readAchievementBadgeCache, writeAchievementBadgeCache, type AchievementBadge as BadgeData, type EarnedBadgeRecord } from "../../data/achievementBadges.js";
 import AchievementBadgeGrid from "./AchievementBadgeGrid.js";
 import BadgeDetailsDialog from "./BadgeDetailsDialog.js";
@@ -32,7 +32,7 @@ export default function StudentAchievementsSection({ student, isCr = false, canA
 
   return <section aria-labelledby="achievements-title" className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-6">
     <div className="mb-5 flex flex-wrap items-start justify-between gap-3"><div><h2 id="achievements-title" className="text-lg font-black text-[#132238]">Achievements &amp; Badges</h2><p className="mt-1 text-xs text-slate-500">{earnedCount} of {badges.length} collectible badges earned</p></div>{canAward && <button type="button" onClick={() => setShowAward(true)} className="rounded-xl bg-[#3155C6] px-4 py-2 text-sm font-black text-white shadow transition hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#3155C6]/30">Award Badge</button>}</div>
-    {loading ? <LoadingState label="Loading achievement badges…" /> : error ? <ErrorState message={error} onRetry={load} /> : <AchievementBadgeGrid badges={badges} onSelect={setSelected} />}
+    {loading ? <CardGridSkeleton count={8} label="Loading achievement badges" /> : error ? <ErrorState message={error} onRetry={load} /> : <AchievementBadgeGrid badges={badges} onSelect={setSelected} />}
     <BadgeDetailsDialog badge={selected} onClose={() => setSelected(null)} />
     {showAward && <AwardBadgeForm initialStudent={student} awardedBy={awardedBy} onClose={() => setShowAward(false)} onAwarded={(studentId, badge) => { if (studentId === student._id) setEarned((current) => { const next = [...current, badge as EarnedBadgeRecord]; writeAchievementBadgeCache(studentId, next); return next; }); }} />}
   </section>;

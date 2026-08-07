@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import { api, idempotency } from "../api";
 import type { Book, EduGuardStudent, Fine, Issuance, LibraryStudent, Reservation, User } from "../types";
-import { ErrorState, ButtonLoadingContent, SectionLoader } from "../components/AsyncState";
+import { ErrorState, ButtonLoadingContent, ListSkeleton, TableSkeleton } from "../components/AsyncState";
 
 type Tab = "students" | "catalog" | "circulation" | "reservations" | "overdue" | "settings";
 
@@ -106,7 +106,7 @@ function Students() {
     }
   };
 
-  if (loading) return <SectionLoader label="Loading registered students…" />;
+  if (loading) return <ListSkeleton count={7} label="Loading registered students" />;
   if (error) return <ErrorState message={error} onRetry={load} />;
 
   return (
@@ -206,7 +206,7 @@ function Students() {
         <div className="panel">
           <h2>Registered LMS students</h2>
           {loading ? (
-            <SectionLoader label="Loading students…" />
+            <ListSkeleton count={7} label="Loading students" />
           ) : students.length === 0 ? (
             <p className="empty small">No students registered.</p>
           ) : (
@@ -236,7 +236,6 @@ function CatalogManager() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [seeding, setSeeding] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState("");
 
@@ -290,19 +289,6 @@ function CatalogManager() {
     }
   };
 
-  const addSamples = async () => {
-    setSeeding(true);
-    try {
-      await api.post("/api/catalog/starter");
-      toast.success("Starter books added to the catalog");
-      await load();
-    } catch (e: any) {
-      toast.error(e.response?.data?.message || "Starter books could not be added");
-    } finally {
-      setSeeding(false);
-    }
-  };
-
   const remove = async (book: Book) => {
     if (!confirm(`Delete ${book.title}?`)) return;
     setDeletingId(book._id);
@@ -318,7 +304,7 @@ function CatalogManager() {
     }
   };
 
-  if (loading) return <SectionLoader label="Loading catalog…" />;
+  if (loading) return <TableSkeleton rows={8} columns={6} label="Loading catalog" />;
   if (error) return <ErrorState message={error} onRetry={load} />;
 
   return (
@@ -327,19 +313,14 @@ function CatalogManager() {
         <div className="panel-heading">
           <h2>Catalog</h2>
           <div>
-            {!loading && books.length === 0 && (
-              <button className="secondary" onClick={addSamples} disabled={seeding || saving || uploading}>
-                {seeding ? <ButtonLoadingContent label="Adding books…" /> : "Add starter books"}
-              </button>
-            )}
-            <input disabled={uploading || seeding} type="file" accept=".xlsx,.xls" onChange={(e) => setFile(e.target.files?.[0] || null)} />
-            <button onClick={upload} disabled={!file || uploading || seeding}>
+            <input disabled={uploading} type="file" accept=".xlsx,.xls" onChange={(e) => setFile(e.target.files?.[0] || null)} />
+            <button onClick={upload} disabled={!file || uploading}>
               {uploading ? <ButtonLoadingContent label="Importing…" /> : "Import Excel"}
             </button>
           </div>
         </div>
         {loading ? (
-          <SectionLoader label="Loading catalog…" />
+          <TableSkeleton rows={8} columns={6} label="Loading catalog" />
         ) : (
           <table>
             <thead>
@@ -364,10 +345,10 @@ function CatalogManager() {
                     {x.availableCopies}/{x.totalCopies}
                   </td>
                   <td>
-                    <button disabled={saving || uploading || seeding || deletingId !== null} className="secondary" onClick={() => setForm(x)}>
+                    <button disabled={saving || uploading || deletingId !== null} className="secondary" onClick={() => setForm(x)}>
                       Edit
                     </button>
-                    <button disabled={saving || uploading || seeding || deletingId !== null} className="secondary" onClick={() => remove(x)}>
+                    <button disabled={saving || uploading || deletingId !== null} className="secondary" onClick={() => remove(x)}>
                       {deletingId === x._id ? <ButtonLoadingContent label="Deleting…" /> : "Delete"}
                     </button>
                   </td>
@@ -492,7 +473,7 @@ function Circulation() {
     }
   };
 
-  if (loading) return <SectionLoader label="Loading circulation…" />;
+  if (loading) return <TableSkeleton rows={8} columns={6} label="Loading circulation" />;
   if (error) return <ErrorState message={error} onRetry={load} />;
 
   return (
@@ -537,7 +518,7 @@ function Circulation() {
       <div className="panel">
         <h2>Active issuances</h2>
         {loading ? (
-          <SectionLoader label="Loading issuances…" />
+          <TableSkeleton rows={8} columns={6} label="Loading issuances" />
         ) : issues.length === 0 ? (
           <p className="empty small">No active issuances.</p>
         ) : (
@@ -634,7 +615,7 @@ function Reservations() {
     }
   };
 
-  if (loading) return <SectionLoader label="Loading reservations…" />;
+  if (loading) return <TableSkeleton rows={8} columns={5} label="Loading reservations" />;
   if (error) return <ErrorState message={error} onRetry={load} />;
 
   return (
@@ -679,7 +660,7 @@ function Reservations() {
       <div className="panel">
         <h2>Reservations</h2>
         {loading ? (
-          <SectionLoader label="Loading reservations…" />
+          <TableSkeleton rows={8} columns={5} label="Loading reservations" />
         ) : items.length === 0 ? (
           <p className="empty small">No reservations.</p>
         ) : (
@@ -747,7 +728,7 @@ function OverdueFines() {
     }
   };
 
-  if (loading) return <SectionLoader label="Loading overdue loans and fines…" />;
+  if (loading) return <TableSkeleton rows={8} columns={6} label="Loading overdue loans and fines" />;
   if (error) return <ErrorState message={error} onRetry={load} />;
 
   return (
@@ -814,7 +795,7 @@ function Preferences({ user }: { user: User }) {
   useEffect(load, [user.id]);
 
   if (error) return <ErrorState message={error} onRetry={load} />;
-  if (!prefs) return <SectionLoader label="Loading settings…" />;
+  if (!prefs) return <ListSkeleton count={5} label="Loading settings" />;
 
   const save = async () => {
     setSaving(true);

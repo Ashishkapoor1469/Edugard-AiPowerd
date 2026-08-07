@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Navigate, useNavigate, useSearchParams } from "react-router-dom";
 import axios from "axios";
 import { useAuth } from "../context/AuthContext.js";
-import { ErrorState, LoadingState } from "../components/AsyncState.js";
+import { CardGridSkeleton, ErrorState } from "../components/AsyncState.js";
 import StudentAchievementsSection from "../components/achievements/StudentAchievementsSection.js";
 
 type Student = { _id: string; name: string; rollNo: string; class: string; isCr?: boolean };
@@ -24,7 +24,7 @@ export default function StudentBadgesPage() {
   return <main className="main-content flex-1 overflow-y-auto bg-[#f8f9fa] p-4 md:p-6">
     <div className="mx-auto max-w-7xl">
       <button type="button" onClick={() => navigate(-1)} className="mb-4 text-xs font-bold text-slate-600 hover:text-[#3155C6] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#3155C6]/25">← Back</button>
-      {error ? <ErrorState message={error} /> : !student ? <LoadingState label="Loading achievements and badges…" /> : <StudentAchievementsSection student={student} isCr={student.isCr} canAward={user?.role === "mentor" || user?.role === "admin" || user?.role === "college-admin"} awardedBy={user?.name} />}
+      {error ? <ErrorState message={error} /> : !student ? <CardGridSkeleton count={8} label="Loading achievements and badges" /> : <StudentAchievementsSection student={student} isCr={student.isCr} canAward={user?.role === "mentor" || user?.role === "admin" || user?.role === "college-admin"} awardedBy={user?.name} />}
     </div>
   </main>;
 }

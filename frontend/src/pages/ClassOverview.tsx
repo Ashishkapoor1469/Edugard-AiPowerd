@@ -5,7 +5,7 @@ import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
 import toast from "react-hot-toast";
 import { useAuth } from "../context/AuthContext.js";
 import { listLoadError } from "../utils/apiErrors.js";
-import { ErrorState, LoadingState } from "../components/AsyncState.js";
+import { ErrorState, TableSkeleton } from "../components/AsyncState.js";
 
 interface Student {
   _id: string;
@@ -280,7 +280,7 @@ const ClassOverview: React.FC = () => {
 
 
   if (loading && !classStats) {
-    return <LoadingState label={`Loading ${activeClass} class analytics…`} />;
+    return <TableSkeleton rows={8} columns={6} label={`Loading ${activeClass} class analytics`} />;
   }
   if (rosterError && !classStats) return <ErrorState message={rosterError} onRetry={fetchClassDetails} />;
 

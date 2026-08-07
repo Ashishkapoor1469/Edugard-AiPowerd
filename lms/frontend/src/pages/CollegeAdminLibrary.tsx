@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import { api } from "../api";
 import type { Fine, Issuance, LibraryStudent, Reservation, User } from "../types";
-import { ErrorState, LoadingState } from "../components/AsyncState";
+import { ErrorState, TableSkeleton } from "../components/AsyncState";
 
 const empty = { name: "", email: "", password: "", status: "active" };
 
@@ -14,7 +14,7 @@ export default function CollegeAdminLibrary({ user }: { user: User }) {
   const edit = (item: any) => { setEditing(item._id); setForm({ name: item.name, email: item.email, password: "", status: item.status }); };
   const status = async (item: any) => { setBusy(`status:${item._id}`); try { await api.patch(`/api/library-admin/librarians/${item._id}`, { status: item.status === "active" ? "disabled" : "active", name: item.name, email: item.email }); await load(); } catch { toast.error("Could not update librarian status"); } finally { setBusy(null); } };
   const remove = async (item: any) => { if (!confirm(`Delete librarian ${item.name}?`)) return; setBusy(`delete:${item._id}`); try { await api.delete(`/api/library-admin/librarians/${item._id}`); toast.success("Librarian deleted"); await load(); } catch { toast.error("Could not delete librarian"); } finally { setBusy(null); } };
-  if (loading) return <LoadingState label="Loading library management…" />;
+  if (loading) return <TableSkeleton rows={8} columns={5} label="Loading library management" />;
   if (error) return <ErrorState message={error} onRetry={load} />;
   return <section><div className="page-heading"><div><h1>Library administration</h1><p>Manage librarians and view your college library data and reports.</p></div><span className="role-pill">College admin</span></div>
     {report && <div className="metric-row"><div><strong>{report.totals.issuances}</strong><span>Total issues</span></div><div><strong>{report.totals.active}</strong><span>Active loans</span></div><div><strong>{report.totals.overdue}</strong><span>Overdue</span></div></div>}

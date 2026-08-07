@@ -31,6 +31,7 @@ builder.Services.AddRateLimiter(x =>
 {
     x.RejectionStatusCode = 429;
     x.AddPolicy("catalog", context => RateLimitPartition.GetFixedWindowLimiter(context.User.FindFirst("id")?.Value ?? context.Connection.RemoteIpAddress?.ToString() ?? "anonymous", _ => new() { PermitLimit = 60, Window = TimeSpan.FromMinutes(1) }));
+    x.AddPolicy("lms-api", context => RateLimitPartition.GetFixedWindowLimiter(context.User.FindFirst("id")?.Value ?? context.Connection.RemoteIpAddress?.ToString() ?? "anonymous", _ => new() { PermitLimit = 120, Window = TimeSpan.FromMinutes(1) }));
 });
 
 builder.Services.AddSingleton<LmsMongoContext>();
@@ -64,22 +65,15 @@ app.UseExceptionHandler(handler => handler.Run(async context =>
     });
 }));
 
-app.UseCors(); app.UseAuthentication(); app.UseRateLimiter(); app.UseAuthorization(); app.MapControllers();
+app.UseCors(); app.UseAuthentication(); app.UseRateLimiter(); app.UseAuthorization();
+var controllers = app.MapControllers();
+controllers.Add(endpoint =>
+{
+    if (!endpoint.Metadata.OfType<EnableRateLimitingAttribute>().Any())
+        endpoint.Metadata.Add(new EnableRateLimitingAttribute("lms-api"));
+});
 app.MapGet("/health", () => Results.Ok(new { status = "ok", service = "eduguard-lms", commit = Environment.GetEnvironmentVariable("RENDER_GIT_COMMIT") }));
 await app.Services.GetRequiredService<LmsMongoContext>().EnsureIndexesAsync();
-if (app.Configuration.GetValue<bool>("LMS_ENABLE_DEMO_SEED", true))
-{
-    try
-    {
-        using var scope = app.Services.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<LmsMongoContext>();
-        await Lms.Api.Seed.DemoDataSeeder.SeedAsync(db);
-    }
-    catch (Exception ex)
-    {
-        Console.WriteLine($"[Warning] SeedAsync skipped due to startup error: {ex.Message}");
-    }
-}
 app.Run();
 
 

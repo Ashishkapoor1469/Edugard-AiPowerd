@@ -53,8 +53,7 @@ public sealed class LmsIntegrationController : ControllerBase
     public async Task<IActionResult> SearchStudents(string collegeId, [FromQuery] string? search, [FromQuery] string? course, [FromQuery] string? className, CancellationToken token)
     {
         if (!Authorized()) return Unauthorized();
-        var filter = Builders<Student>.Filter.Eq(x => x.CollegeId, collegeId)
-            & Builders<Student>.Filter.Eq(x => x.VerificationStatus, "approved");
+        var filter = StudentRosterRules.Active(collegeId);
         if (string.IsNullOrWhiteSpace(search) && string.IsNullOrWhiteSpace(course) && string.IsNullOrWhiteSpace(className)) return BadRequest(new { success = false, message = "Enter a search, course, or class." });
         if (!string.IsNullOrWhiteSpace(search))
         {

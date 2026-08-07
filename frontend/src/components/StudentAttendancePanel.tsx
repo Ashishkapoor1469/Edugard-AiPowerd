@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import toast from "react-hot-toast";
 import CRBadge from "./CRBadge.js";
-import { ErrorState, LoadingState } from "./AsyncState.js";
+import { ErrorState, CardGridSkeleton } from "./AsyncState.js";
 
 type Status = "present" | "absent" | "leave";
 interface RosterStudent { _id: string; name: string; rollNo: string; classId: string; }
@@ -29,7 +29,6 @@ export default function StudentAttendancePanel() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [refreshing, setRefreshing] = useState(false);
-  const [syncing, setSyncing] = useState(false);
   const [month, setMonth] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
 
   const applyContext = (data: Context) => {
@@ -92,9 +91,6 @@ export default function StudentAttendancePanel() {
   const save = async (change: boolean) => {
     if (!context || !complete || (!change && (!context.canMark || !context.currentSession)) || (change && (!context.canUpdate || !context.submittedSession))) return;
     setSubmitting(true);
-    setSyncing(true);
-    const startedAt = Date.now();
-    const syncTimeout = window.setTimeout(() => setSyncing(false), 5 * 60 * 1000);
     try {
       await axios[change ? "patch" : "post"](change ? "/api/attendance/change" : "/api/attendance/mark", {
         session: change ? context.submittedSession : context.currentSession,
@@ -103,13 +99,10 @@ export default function StudentAttendancePanel() {
       toast.success(change ? "Attendance updated" : "Attendance finalized");
       await load(true);
     } catch (error: unknown) { toast.error(axios.isAxiosError(error) ? error.response?.data?.message || "Attendance submission failed" : "Attendance submission failed"); }
-    finally {
-      window.setTimeout(() => { window.clearTimeout(syncTimeout); setSyncing(false); }, Math.max(0, 600 - (Date.now() - startedAt)));
-      setSubmitting(false);
-    }
+    finally { setSubmitting(false); }
   };
 
-  if (loading && !context) return <LoadingState label="Loading attendance…" />;
+  if (loading && !context) return <CardGridSkeleton count={2} label="Loading attendance" />;
   if (error && !context) return <ErrorState message={error} onRetry={() => load(true)} />;
 
   return (
@@ -144,7 +137,7 @@ export default function StudentAttendancePanel() {
           {context.canMark ? <p className="mb-4 mt-1 text-xs text-slate-500">{context.currentSession} session · {new Date(context.collegeTime).toLocaleString()} ({context.timeZone})</p> : !context.canUpdate && <div role="alert" className="mb-4 mt-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800"><strong className="block font-bold">Attendance marking is currently closed</strong>Present and Absent can only be selected during the college session window.</div>}
           {context.canUpdate && <p className="mb-4 mt-1 text-xs text-amber-700">The {context.submittedSession} submission can be corrected until 15 minutes after submission.</p>}
           <div className="overflow-x-auto rounded-xl border border-slate-100"><table className="w-full text-left text-xs"><thead className="bg-slate-50 text-[10px] uppercase tracking-wider text-slate-500"><tr><th className="px-4 py-3">Student</th><th className="px-4 py-3">Roll no.</th><th className="px-4 py-3">Status</th></tr></thead><tbody className="divide-y divide-slate-100">
-            {context.roster.map((student) => <tr key={student._id}><td className="px-4 py-3 font-semibold text-slate-800">{student.name}</td><td className="px-4 py-3 text-slate-500">{student.rollNo}</td><td className="px-4 py-3"><div className="flex items-center gap-2"><select aria-label={`Attendance status for ${student.name}`} disabled={!(context.canMark || context.canUpdate) || submitting} required value={statuses[student._id] || ""} onChange={(event) => setStatuses((current) => ({ ...current, [student._id]: event.target.value as Status }))} className="rounded-lg border border-slate-200 bg-white px-3 py-1.5"><option value="">Select</option><option value="present">Present</option><option value="absent">Absent</option><option value="leave">Leave</option></select>{syncing && <span className="text-[10px] font-semibold text-amber-600">Syncing…</span>}</div></td></tr>)}
+            {context.roster.map((student) => <tr key={student._id}><td className="px-4 py-3 font-semibold text-slate-800">{student.name}</td><td className="px-4 py-3 text-slate-500">{student.rollNo}</td><td className="px-4 py-3"><select aria-label={`Attendance status for ${student.name}`} disabled={!(context.canMark || context.canUpdate) || submitting} required value={statuses[student._id] || ""} onChange={(event) => setStatuses((current) => ({ ...current, [student._id]: event.target.value as Status }))} className="rounded-lg border border-slate-200 bg-white px-3 py-1.5"><option value="">Select</option><option value="present">Present</option><option value="absent">Absent</option><option value="leave">Leave</option></select></td></tr>)}
           </tbody></table></div>
           <div className="mt-4 flex flex-wrap gap-2">{context.canMark && <button type="button" onClick={() => save(false)} disabled={!complete || submitting} className="rounded-lg bg-primary px-4 py-2 text-xs font-bold text-white disabled:bg-slate-300">Finalize full roster</button>}{context.canUpdate && <button type="button" onClick={() => save(true)} disabled={!complete || submitting} className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-xs font-bold text-amber-800 disabled:opacity-50">{submitting ? "Updating…" : "Update / Change"}</button>}</div>
         </form>
