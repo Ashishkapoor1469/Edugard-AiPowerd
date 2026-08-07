@@ -456,6 +456,10 @@ namespace EduGuard.Controllers
             if (model == null || string.IsNullOrWhiteSpace(model.Credential))
                 return BadRequest(new { success = false, message = "Google credential is required." });
 
+            var role = model.Role?.Trim().ToLowerInvariant();
+            if (role is not ("mentor" or "student"))
+                return BadRequest(new { success = false, message = "Google login is available only for mentors and students." });
+
             var clientId = _configuration.GetValue<string>("GOOGLE_CLIENT_ID")?.Trim();
             if (string.IsNullOrEmpty(clientId) || clientId == "your_google_web_client_id.apps.googleusercontent.com")
                 return StatusCode(503, new { success = false, message = "Google login is not configured." });
@@ -476,6 +480,49 @@ namespace EduGuard.Controllers
             var email = googlePayload.Email?.Trim().ToLowerInvariant();
             if (string.IsNullOrEmpty(email) || !googlePayload.EmailVerified || string.IsNullOrEmpty(googlePayload.Subject))
                 return Unauthorized(new { success = false, message = "Google login validation failed." });
+
+            if (role == "mentor")
+            {
+                var mentor = await _mongoService.Mentors.Find(m => m.Email == email).FirstOrDefaultAsync(cancellationToken);
+                if (mentor == null)
+                    return StatusCode(403, new { success = false, message = "Your college administrator must create your mentor account before Google login." });
+                if (!string.Equals(mentor.Status, "approved", StringComparison.OrdinalIgnoreCase))
+                    return StatusCode(403, new { success = false, message = "Your college administrator must approve your mentor account before Google login." });
+                if (!string.IsNullOrEmpty(mentor.GoogleSubject) && !string.Equals(mentor.GoogleSubject, googlePayload.Subject, StringComparison.Ordinal))
+                    return StatusCode(403, new { success = false, message = "This mentor account is already linked to another Google identity." });
+
+                if (!string.IsNullOrEmpty(mentor.CollegeId))
+                {
+                    var college = await _mongoService.Colleges.Find(c => c.Id == mentor.CollegeId).FirstOrDefaultAsync(cancellationToken);
+                    if (college?.IsBlocked == true)
+                        return Unauthorized(new { success = false, message = "Your college has been blocked by the system administrator." });
+                }
+
+                var mentorToken = GenerateJwtToken(mentor.Id!, "mentor");
+                var mentorRefreshToken = GenerateRefreshToken();
+                SetTokenCookies(mentorToken, mentorRefreshToken);
+                mentor.GoogleSubject ??= googlePayload.Subject;
+                mentor.RefreshToken = mentorRefreshToken;
+                mentor.RefreshTokenExpiry = DateTime.UtcNow.AddDays(30);
+                mentor.UpdatedAt = DateTime.UtcNow;
+                await _mongoService.Mentors.ReplaceOneAsync(m => m.Id == mentor.Id, mentor, cancellationToken: cancellationToken);
+
+                return Ok(new
+                {
+                    success = true,
+                    token = mentorToken,
+                    data = new
+                    {
+                        id = mentor.Id,
+                        name = mentor.Name,
+                        email = mentor.Email,
+                        role = "mentor",
+                        status = mentor.Status,
+                        collegeId = mentor.CollegeId,
+                        assignedClasses = mentor.AssignedClasses
+                    }
+                });
+            }
 
             var student = await _mongoService.Students.Find(s => s.Email == email).FirstOrDefaultAsync(cancellationToken);
             if (student == null)
@@ -710,6 +757,7 @@ namespace EduGuard.Controllers
     public class GoogleLoginRequest
     {
         public string Credential { get; set; } = string.Empty;
+        public string Role { get; set; } = string.Empty;
     }
 
     public class StudentSignupRequest

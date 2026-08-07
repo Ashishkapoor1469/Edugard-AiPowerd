@@ -242,7 +242,8 @@ const Login: React.FC = () => {
   const handleGoogleCredential = async (credential: string) => {
     setIsSubmitting(true);
     try {
-      await loginWithGoogle(credential);
+      const googleRole = roleMode === "mentor" ? "mentor" : "student";
+      await loginWithGoogle(credential, googleRole);
       toast.success("Welcome back!");
       navigate("/");
     } catch (err: any) {
@@ -543,7 +544,7 @@ const Login: React.FC = () => {
                 </button>
               </form>
 
-              {!isRegisterMode && roleMode === "student" && import.meta.env.VITE_GOOGLE_CLIENT_ID && (
+              {!isRegisterMode && (roleMode === "mentor" || roleMode === "student") && import.meta.env.VITE_GOOGLE_CLIENT_ID && (
                 <div className="pb-2">
                   <div className="mb-4 flex items-center gap-3 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
                     <span className="h-px flex-1 bg-slate-200" />or<span className="h-px flex-1 bg-slate-200" />
@@ -552,7 +553,9 @@ const Login: React.FC = () => {
                     <GoogleSignInButton onCredential={handleGoogleCredential} disabled={isSubmitting} />
                   </div>
                   <p className="mt-2 text-center text-[11px] text-slate-500">
-                    Available only after your college roster or mentor approval.
+                    {roleMode === "mentor"
+                      ? "Available after your college administrator approves your mentor account."
+                      : "Available only after your college roster or mentor approval."}
                   </p>
                 </div>
               )}

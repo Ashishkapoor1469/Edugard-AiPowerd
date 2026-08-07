@@ -48,6 +48,10 @@ namespace EduGuard.Models
         [BsonElement("email")]
         public string Email { get; set; } = string.Empty;
 
+        [BsonElement("googleSubject")]
+        [BsonIgnoreIfNull]
+        public string? GoogleSubject { get; set; }
+
 
         [BsonElement("password")]
         public string Password { get; set; } = string.Empty;

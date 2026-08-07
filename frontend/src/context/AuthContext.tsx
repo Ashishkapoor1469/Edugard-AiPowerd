@@ -24,7 +24,7 @@ interface AuthContextType {
   token: string | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
-  loginWithGoogle: (credential: string) => Promise<void>;
+  loginWithGoogle: (credential: string, role: "mentor" | "student") => Promise<void>;
   register: (data: {
     name: string;
     email: string;
@@ -92,14 +92,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const loginWithGoogle = async (credential: string) => {
+  const loginWithGoogle = async (credential: string, role: "mentor" | "student") => {
     try {
-      const res = await axios.post("/api/auth/google", { credential });
+      const res = await axios.post("/api/auth/google", { credential, role });
       if (res.data.success) {
-        const { token: jwtToken, data: studentUser } = res.data;
+        const { token: jwtToken, data: googleUser } = res.data;
         localStorage.setItem("token", jwtToken);
         setToken(jwtToken);
-        setUser(studentUser);
+        setUser(googleUser);
         void initializeMobilePush();
       }
     } catch (err: any) {
