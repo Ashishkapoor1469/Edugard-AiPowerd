@@ -88,6 +88,10 @@ namespace EduGuard.Models
         [BsonElement("password")]
         public string? Password { get; set; }
 
+        [BsonElement("googleSubject")]
+        [BsonIgnoreIfNull]
+        public string? GoogleSubject { get; set; }
+
         [BsonElement("phoneNo")]
         public string? PhoneNo { get; set; }
 

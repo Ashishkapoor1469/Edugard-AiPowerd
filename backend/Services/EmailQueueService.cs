@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
 using System.Collections.Generic;
+using System.Net;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -17,6 +18,7 @@ namespace EduGuard.Services
     {
         public string Email { get; set; } = string.Empty;
         public string Token { get; set; } = string.Empty;
+        public string Purpose { get; set; } = "verification";
         public int Retries { get; set; } = 0;
     }
 
@@ -56,11 +58,12 @@ namespace EduGuard.Services
             }
         }
 
-        public void QueueEmail(string email, string token)
+        public void QueueEmail(string email, string token, string purpose = "verification")
         {
             if (string.IsNullOrEmpty(email) || string.IsNullOrEmpty(token)) return;
 
-            var job = new EmailJob { Email = email, Token = token };
+            var normalizedPurpose = _senders.ContainsKey(purpose) ? purpose : "verification";
+            var job = new EmailJob { Email = email, Token = token, Purpose = normalizedPurpose };
             _queue.Writer.TryWrite(job);
             _logger.LogInformation($"[EMAIL QUEUE] Job added to queue for: {email}");
         }
@@ -77,7 +80,7 @@ namespace EduGuard.Services
 
                     try
                     {
-                        await SendEmailInternalAsync(job.Email, job.Token);
+                        await SendEmailInternalAsync(job);
                         _logger.LogInformation($"[EMAIL QUEUE] Successfully processed email for: {job.Email}");
                     }
                     catch (Exception ex)
@@ -105,22 +108,19 @@ namespace EduGuard.Services
             _logger.LogInformation("[EMAIL QUEUE] Background worker stopped.");
         }
 
-        private async Task SendEmailInternalAsync(string email, string token)
+        private async Task SendEmailInternalAsync(EmailJob job)
         {
-            var verificationLink = $"{_frontendUrl}/verify?token={token}&email={Uri.EscapeDataString(email)}";
-
-            if (_hasKey)
-            {
-                var requestMessage = new HttpRequestMessage(HttpMethod.Post, "https://api.resend.com/emails");
-                requestMessage.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _resendApiKey);
-
-                var payload = new
-                {
-                    from = _senders["verification"],
-                    reply_to = _senders["support"],
-                    to = email,
-                    subject = "Verify your EduGuard Account",
-                    html = $@"
+            var verificationLink = $"{_frontendUrl}/verify?token={job.Token}&email={Uri.EscapeDataString(job.Email)}";
+            var isSecurityMessage = string.Equals(job.Purpose, "security", StringComparison.OrdinalIgnoreCase);
+            var subject = isSecurityMessage ? "Your EduGuard security code" : "Verify your EduGuard Account";
+            var html = isSecurityMessage
+                ? $@"
+                        <div style=""font-family: Arial, sans-serif; padding: 20px; max-width: 600px; border: 1px solid #f0f0f0; border-radius: 8px;"">
+                            <h2 style=""color: #4f46e5; margin-bottom: 20px;"">EduGuard Security</h2>
+                            <p>{WebUtility.HtmlEncode(job.Token)}</p>
+                            <p style=""color: #64748b; font-size: 12px; margin-top: 30px;"">If you did not request this code, you can safely ignore this email.</p>
+                        </div>"
+                : $@"
                         <div style=""font-family: Arial, sans-serif; padding: 20px; max-width: 600px; border: 1px solid #f0f0f0; border-radius: 8px;"">
                             <h2 style=""color: #4f46e5; margin-bottom: 20px;"">Welcome to EduGuard</h2>
                             <p>Your college mentor has added you to the EduGuard Student Risk & Performance Management Portal.</p>
@@ -134,7 +134,20 @@ namespace EduGuard.Services
                                 If the button doesn't work, copy and paste the link below into your browser: <br/>
                                 <a href=""{verificationLink}"">{verificationLink}</a>
                             </p>
-                        </div>"
+                        </div>";
+
+            if (_hasKey)
+            {
+                var requestMessage = new HttpRequestMessage(HttpMethod.Post, "https://api.resend.com/emails");
+                requestMessage.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _resendApiKey);
+
+                var payload = new
+                {
+                    from = _senders[job.Purpose],
+                    reply_to = _senders["support"],
+                    to = job.Email,
+                    subject,
+                    html
                 };
 
                 requestMessage.Content = new StringContent(
@@ -149,23 +162,23 @@ namespace EduGuard.Services
                     var responseBody = await response.Content.ReadAsStringAsync();
                     throw new HttpRequestException($"Resend API returned non-success code: {response.StatusCode}. Details: {responseBody}");
                 }
-                _logger.LogInformation($"[EMAIL SENT] Verification email successfully sent to {email} via Resend.");
+                _logger.LogInformation($"[EMAIL SENT] {job.Purpose} email successfully sent to {job.Email} via Resend.");
             }
             else
             {
-                LogMockEmail(email, verificationLink);
+                LogMockEmail(job.Email, subject, isSecurityMessage ? job.Token : verificationLink);
             }
         }
 
-        private void LogMockEmail(string email, string link)
+        private void LogMockEmail(string email, string subject, string content)
         {
             var sb = new StringBuilder();
             sb.AppendLine("\n==================================================");
             sb.AppendLine($"[MOCK EMAIL SERVICE] To: {email}");
-            sb.AppendLine("Subject: Verify your EduGuard Account");
+            sb.AppendLine($"Subject: {subject}");
             sb.AppendLine("--------------------------------------------------");
             sb.AppendLine("Please click the link below to verify your account:");
-            sb.AppendLine(link);
+            sb.AppendLine(content);
             sb.AppendLine("==================================================\n");
             
             Console.WriteLine(sb.ToString());

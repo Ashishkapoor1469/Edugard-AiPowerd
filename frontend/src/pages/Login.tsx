@@ -5,6 +5,7 @@ import axios from "axios";
 import toast from "react-hot-toast";
 import eduGuardLogo from "../assets/e.png";
 import eduGuardBrand from "../assets/e-witheduguardtext.png";
+import GoogleSignInButton from "../components/GoogleSignInButton.js";
 
 interface College {
   _id: string;
@@ -26,7 +27,7 @@ interface Mentor {
 }
 
 const Login: React.FC = () => {
-  const { login, register } = useAuth();
+  const { login, loginWithGoogle, register } = useAuth();
   const navigate = useNavigate();
 
   // Role selections: mentor, student, admin
@@ -235,6 +236,19 @@ const Login: React.FC = () => {
       }
     } catch (err: any) {
       toast.error(err.response?.data?.message || "OTP verification failed");
+    }
+  };
+
+  const handleGoogleCredential = async (credential: string) => {
+    setIsSubmitting(true);
+    try {
+      await loginWithGoogle(credential);
+      toast.success("Welcome back!");
+      navigate("/");
+    } catch (err: any) {
+      toast.error(err.message || "Google login failed");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -528,6 +542,20 @@ const Login: React.FC = () => {
                   {isSubmitting ? "Processing..." : isRegisterMode ? "Sign Up" : "Sign In"}
                 </button>
               </form>
+
+              {!isRegisterMode && roleMode === "student" && import.meta.env.VITE_GOOGLE_CLIENT_ID && (
+                <div className="pb-2">
+                  <div className="mb-4 flex items-center gap-3 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                    <span className="h-px flex-1 bg-slate-200" />or<span className="h-px flex-1 bg-slate-200" />
+                  </div>
+                  <div className="flex justify-center">
+                    <GoogleSignInButton onCredential={handleGoogleCredential} disabled={isSubmitting} />
+                  </div>
+                  <p className="mt-2 text-center text-[11px] text-slate-500">
+                    Available only after your college roster or mentor approval.
+                  </p>
+                </div>
+              )}
 
               {roleMode !== "admin" && (
                 <div className="mt-4 text-center text-xs font-semibold">

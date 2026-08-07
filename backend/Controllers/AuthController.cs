@@ -13,6 +13,7 @@ using MongoDB.Driver;
 using BCrypt.Net;
 using EduGuard.Models;
 using EduGuard.Services;
+using Google.Apis.Auth;
 
 namespace EduGuard.Controllers
 {
@@ -226,7 +227,7 @@ namespace EduGuard.Controllers
                 await _mongoService.Students.ReplaceOneAsync(s => s.Id == existing.Id, existing);
 
                 // Queue verification OTP email
-                _emailQueueService.QueueEmail(existing.Email, $"Your verification code is: {otp}");
+                _emailQueueService.QueueEmail(existing.Email, $"Your verification code is: {otp}", "security");
 
                 return StatusCode(200, new
                 {
@@ -266,7 +267,7 @@ namespace EduGuard.Controllers
             await _mongoService.Students.InsertOneAsync(student);
 
             // Queue verification OTP email
-            _emailQueueService.QueueEmail(student.Email, $"Your verification code is: {otp}");
+            _emailQueueService.QueueEmail(student.Email, $"Your verification code is: {otp}", "security");
 
             return StatusCode(201, new
             {
@@ -447,6 +448,77 @@ namespace EduGuard.Controllers
             }
 
             return Unauthorized(new { success = false, message = "Invalid email or password" });
+        }
+
+        [HttpPost("google")]
+        public async Task<IActionResult> GoogleLogin([FromBody] GoogleLoginRequest model, CancellationToken cancellationToken)
+        {
+            if (model == null || string.IsNullOrWhiteSpace(model.Credential))
+                return BadRequest(new { success = false, message = "Google credential is required." });
+
+            var clientId = _configuration.GetValue<string>("GOOGLE_CLIENT_ID")?.Trim();
+            if (string.IsNullOrEmpty(clientId) || clientId == "your_google_web_client_id.apps.googleusercontent.com")
+                return StatusCode(503, new { success = false, message = "Google login is not configured." });
+
+            GoogleJsonWebSignature.Payload googlePayload;
+            try
+            {
+                googlePayload = await GoogleJsonWebSignature.ValidateAsync(model.Credential, new GoogleJsonWebSignature.ValidationSettings
+                {
+                    Audience = new[] { clientId }
+                });
+            }
+            catch (InvalidJwtException)
+            {
+                return Unauthorized(new { success = false, message = "Google could not verify this login." });
+            }
+
+            var email = googlePayload.Email?.Trim().ToLowerInvariant();
+            if (string.IsNullOrEmpty(email) || !googlePayload.EmailVerified || string.IsNullOrEmpty(googlePayload.Subject))
+                return Unauthorized(new { success = false, message = "Google login validation failed." });
+
+            var student = await _mongoService.Students.Find(s => s.Email == email).FirstOrDefaultAsync(cancellationToken);
+            if (student == null)
+                return StatusCode(403, new { success = false, message = "Your college must add you through its approved roster before Google login." });
+            if (!student.IsVerified || !string.Equals(student.VerificationStatus, "approved", StringComparison.OrdinalIgnoreCase))
+                return StatusCode(403, new { success = false, message = "Your mentor must approve your student account before Google login." });
+            if (!string.IsNullOrEmpty(student.GoogleSubject) && !string.Equals(student.GoogleSubject, googlePayload.Subject, StringComparison.Ordinal))
+                return StatusCode(403, new { success = false, message = "This student account is already linked to another Google identity." });
+
+            if (!string.IsNullOrEmpty(student.CollegeId))
+            {
+                var college = await _mongoService.Colleges.Find(c => c.Id == student.CollegeId).FirstOrDefaultAsync(cancellationToken);
+                if (college?.IsBlocked == true)
+                    return Unauthorized(new { success = false, message = "Your college has been blocked by the system administrator." });
+            }
+
+            var token = GenerateJwtToken(student.Id!, "student");
+            var refreshToken = GenerateRefreshToken();
+            SetTokenCookies(token, refreshToken);
+            student.IsRegistered = true;
+            student.GoogleSubject ??= googlePayload.Subject;
+            student.RefreshToken = refreshToken;
+            student.RefreshTokenExpiry = DateTime.UtcNow.AddDays(30);
+            student.UpdatedAt = DateTime.UtcNow;
+            await _mongoService.Students.ReplaceOneAsync(s => s.Id == student.Id, student, cancellationToken: cancellationToken);
+
+            return Ok(new
+            {
+                success = true,
+                token,
+                data = new
+                {
+                    id = student.Id,
+                    name = student.Name,
+                    email = student.Email,
+                    role = "student",
+                    rollNo = student.RollNo,
+                    course = student.Course,
+                    collegeId = student.CollegeId,
+                    mentorId = student.MentorId,
+                    verificationStatus = student.VerificationStatus
+                }
+            });
         }
 
         // --- SESSION REFRESH TOKEN ---
@@ -633,6 +705,11 @@ namespace EduGuard.Controllers
     {
         public string Email { get; set; } = string.Empty;
         public string Password { get; set; } = string.Empty;
+    }
+
+    public class GoogleLoginRequest
+    {
+        public string Credential { get; set; } = string.Empty;
     }
 
     public class StudentSignupRequest
