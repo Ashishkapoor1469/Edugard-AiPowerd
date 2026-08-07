@@ -486,14 +486,22 @@ namespace EduGuard.Controllers
             var colleges = await _mongoService.Colleges.Find(_ => true).ToListAsync();
             var mentorCollegeIds = await _mongoService.Mentors.Find(_ => true).Project(m => m.CollegeId).ToListAsync();
             var studentCollegeIds = await _mongoService.Students.Find(_ => true).Project(s => s.CollegeId).ToListAsync();
+            var collegeAccounts = await _mongoService.Admins
+                .Find(a => (a.Role == "college-admin" || a.Role == "librarian") && a.Status != "deleted")
+                .Project(a => new { a.CollegeId, a.Role })
+                .ToListAsync();
             var mentorCounts = mentorCollegeIds.Where(id => !string.IsNullOrEmpty(id)).GroupBy(id => id!).ToDictionary(group => group.Key, group => group.Count());
             var studentCounts = studentCollegeIds.Where(id => !string.IsNullOrEmpty(id)).GroupBy(id => id!).ToDictionary(group => group.Key, group => group.Count());
+            var collegeAdminCounts = collegeAccounts.Where(a => a.Role == "college-admin" && !string.IsNullOrEmpty(a.CollegeId)).GroupBy(a => a.CollegeId!).ToDictionary(group => group.Key, group => group.Count());
+            var librarianCounts = collegeAccounts.Where(a => a.Role == "librarian" && !string.IsNullOrEmpty(a.CollegeId)).GroupBy(a => a.CollegeId!).ToDictionary(group => group.Key, group => group.Count());
             var statsList = new List<object>();
 
             foreach (var college in colleges)
             {
                 var mentorCount = college.Id != null && mentorCounts.TryGetValue(college.Id, out var mentors) ? mentors : 0;
                 var studentCount = college.Id != null && studentCounts.TryGetValue(college.Id, out var students) ? students : 0;
+                var collegeAdminCount = college.Id != null && collegeAdminCounts.TryGetValue(college.Id, out var collegeAdmins) ? collegeAdmins : 0;
+                var librarianCount = college.Id != null && librarianCounts.TryGetValue(college.Id, out var librarians) ? librarians : 0;
 
                 statsList.Add(new
                 {
@@ -502,7 +510,9 @@ namespace EduGuard.Controllers
                     location = college.Location,
                     isBlocked = college.IsBlocked,
                     mentorsCount = mentorCount,
-                    studentsCount = studentCount
+                    studentsCount = studentCount,
+                    collegeAdminsCount = collegeAdminCount,
+                    librariansCount = librarianCount
                 });
             }
 

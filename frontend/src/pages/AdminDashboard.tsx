@@ -20,6 +20,8 @@ interface CollegeStats {
   isBlocked: boolean;
   mentorsCount: number;
   studentsCount: number;
+  collegeAdminsCount?: number;
+  librariansCount?: number;
 }
 
 const AdminDashboard: React.FC = () => {
@@ -454,7 +456,7 @@ const AdminDashboard: React.FC = () => {
           {activeTab === "stats" && (
             <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs">
               <h2 className="text-sm font-bold text-slate-800 mb-2">College Network Enrollment & Strength</h2>
-              <p className="text-[11px] text-slate-500 mb-6">Real-time counts of verified academic mentors and enrolled student profiles per college node.</p>
+              <p className="text-[11px] text-slate-500 mb-6">Real-time counts of college administrators, librarians, academic mentors, and enrolled student profiles per college node.</p>
 
               {stats.length === 0 ? (
                 <p className="text-xs text-slate-500 py-8 text-center italic">No stats available.</p>
@@ -468,6 +470,8 @@ const AdminDashboard: React.FC = () => {
                         <th className="px-4 py-3">Status</th>
                         <th className="px-4 py-3 text-center">Mentors</th>
                         <th className="px-4 py-3 text-center">Students</th>
+                        <th className="px-4 py-3 text-center">College Admins</th>
+                        <th className="px-4 py-3 text-center">Librarians</th>
                         <th className="px-4 py-3 text-center">Total Strength</th>
                       </tr>
                     </thead>
@@ -485,9 +489,11 @@ const AdminDashboard: React.FC = () => {
                           </td>
                           <td className="px-4 py-3 text-center font-medium text-slate-700">{s.mentorsCount}</td>
                           <td className="px-4 py-3 text-center font-medium text-slate-700">{s.studentsCount}</td>
+                          <td className="px-4 py-3 text-center font-medium text-slate-700">{s.collegeAdminsCount ?? 0}</td>
+                          <td className="px-4 py-3 text-center font-medium text-slate-700">{s.librariansCount ?? 0}</td>
                           <td className="px-4 py-3 text-center">
                             <span className="inline-flex items-center justify-center h-6 min-w-6 rounded-md bg-primary/5 text-primary text-[10px] font-bold px-1.5">
-                              {s.mentorsCount + s.studentsCount}
+                              {s.mentorsCount + s.studentsCount + (s.collegeAdminsCount ?? 0) + (s.librariansCount ?? 0)}
                             </span>
                           </td>
                         </tr>
