@@ -349,25 +349,31 @@ const Dashboard: React.FC = () => {
 
       {/* Excel Help Modal */}
       {showExcelHelp && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4" onClick={() => setShowExcelHelp(false)}>
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
+        <div
+          className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/40 p-3 backdrop-blur-sm sm:p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="excel-help-title"
+          onClick={() => setShowExcelHelp(false)}
+        >
+          <div className="flex max-h-[calc(100dvh-1.5rem)] w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl sm:max-h-[85vh]" onClick={(e) => e.stopPropagation()}>
+            <div className="flex shrink-0 items-center justify-between border-b border-slate-100 px-4 py-3 sm:px-6 sm:py-4">
               <div>
-                <h3 className="text-sm font-bold text-slate-800">📋 Excel File Format Guide</h3>
+                <h3 id="excel-help-title" className="text-sm font-bold text-slate-800">📋 Excel File Format Guide</h3>
                 <p className="text-[10px] text-slate-500 mt-0.5">Required columns and example data for the student roster</p>
               </div>
-              <button onClick={() => setShowExcelHelp(false)} className="h-8 w-8 rounded-full hover:bg-slate-100 flex items-center justify-center text-slate-400 hover:text-slate-600 transition-colors">
+              <button type="button" aria-label="Close Excel format guide" onClick={() => setShowExcelHelp(false)} className="ml-3 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600">
                 <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
               </button>
             </div>
-            <div className="px-6 py-5 space-y-5">
+            <div className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain px-4 py-4 sm:px-6 sm:py-5">
               {/* Required Fields */}
               <div>
                 <h4 className="text-xs font-bold text-slate-700 mb-2 flex items-center gap-1.5">
                   <span className="h-5 w-5 rounded bg-red-100 text-red-600 flex items-center justify-center text-[9px] font-black">!</span>
                   Required Columns
                 </h4>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                   {[{col: "RollNo", desc: "Unique student roll number", alt: "roll, studentroll, id"}, {col: "Name", desc: "Full name of student", alt: "studentname, fullname"}].map(f => (
                     <div key={f.col} className="rounded-lg border border-red-100 bg-red-50/50 px-3 py-2">
                       <span className="text-[11px] font-bold text-red-700 block">{f.col}</span>
@@ -383,7 +389,7 @@ const Dashboard: React.FC = () => {
                   <span className="h-5 w-5 rounded bg-primary/10 text-primary flex items-center justify-center text-[9px] font-black">~</span>
                   Optional Columns
                 </h4>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                   {[
                     {col: "Email", desc: "Student email", alt: "emailaddress"},
                     {col: "PhoneNo", desc: "Contact number", alt: "phone, mobile, contact"},
@@ -394,7 +400,7 @@ const Dashboard: React.FC = () => {
                     <div key={f.col} className="rounded-lg border border-primary/15 bg-primary/5 px-3 py-2">
                       <span className="text-[11px] font-bold text-primary block">{f.col}</span>
                       <span className="text-[9px] text-primary/70">{f.desc}</span>
-                      <span className="text-[9px] text-slate-400 block mt-0.5">Aliases: {f.alt}</span>
+                      <span className="mt-0.5 block break-words text-[9px] text-slate-400">Aliases: {f.alt}</span>
                     </div>
                   ))}
                 </div>
@@ -406,7 +412,7 @@ const Dashboard: React.FC = () => {
                   Subject Marks Columns (Dynamic)
                 </h4>
                 <p className="text-[10px] text-slate-500 mb-2">Use this pattern: <code className="bg-slate-100 px-1.5 py-0.5 rounded text-[10px] font-mono text-purple-700">SubjectName_ExamType</code> and <code className="bg-slate-100 px-1.5 py-0.5 rounded text-[10px] font-mono text-purple-700">SubjectName_ExamType_Max</code></p>
-                <div className="grid grid-cols-3 gap-1.5 text-[9px]">
+                <div className="grid grid-cols-2 gap-1.5 text-[9px] sm:grid-cols-3">
                   {["Math_Test1","Math_Test1_Max","Math_Test2","Math_MidTerm","Math_MidTerm_Max","Math_HouseExam"].map(c => (
                     <span key={c} className="bg-purple-50 border border-purple-100 text-purple-700 rounded-md px-2 py-1 font-mono text-center">{c}</span>
                   ))}
@@ -450,8 +456,8 @@ const Dashboard: React.FC = () => {
                 </div>
               </div>
             </div>
-            <div className="border-t border-slate-100 px-6 py-3 flex justify-end">
-              <button onClick={() => setShowExcelHelp(false)} className="px-4 py-2 rounded-lg bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors">Got it</button>
+            <div className="flex shrink-0 justify-end border-t border-slate-100 bg-white px-4 py-3 sm:px-6">
+              <button type="button" onClick={() => setShowExcelHelp(false)} className="w-full rounded-lg bg-primary px-4 py-2 text-xs font-bold text-white transition-colors hover:bg-primary-hover sm:w-auto">Got it</button>
             </div>
           </div>
         </div>
