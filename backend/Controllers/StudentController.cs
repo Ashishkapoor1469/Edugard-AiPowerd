@@ -146,7 +146,8 @@ namespace EduGuard.Controllers
             [FromQuery] string? riskLevel = null,
             [FromQuery] string? collegeId = null,
             [FromQuery] string? courseId = null,
-            [FromQuery] string? classId = null)
+            [FromQuery] string? classId = null,
+            [FromQuery] string? verificationStatus = null)
         {
             page = Math.Max(1, page);
             limit = Math.Clamp(limit, 1, 100);
@@ -191,6 +192,10 @@ namespace EduGuard.Controllers
             {
                 filters.Add(Builders<Student>.Filter.Eq(s => s.CourseId, courseId));
             }
+            if (!string.IsNullOrWhiteSpace(verificationStatus))
+            {
+                filters.Add(Builders<Student>.Filter.Eq(s => s.VerificationStatus, verificationStatus));
+            }
             if (!string.IsNullOrWhiteSpace(search))
             {
                 var regex = new MongoDB.Bson.BsonRegularExpression(search.Trim(), "i");
@@ -217,7 +222,7 @@ namespace EduGuard.Controllers
                     }).ToList()
             };
             var cacheSignature = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes($"{page}|{limit}|{course}|{@class}|{search}|{riskLevel}|{collegeId}|{courseId}")));
-            var result = userRole == "mentor" && !string.IsNullOrEmpty(userId)
+            var result = userRole == "mentor" && !string.IsNullOrEmpty(userId) && string.IsNullOrWhiteSpace(verificationStatus)
                 ? await _cacheService.GetOrCreateAsync(
                     $"mentor-students:{userId}:{cacheSignature}",
                     TimeSpan.FromMinutes(5), LoadPageAsync)

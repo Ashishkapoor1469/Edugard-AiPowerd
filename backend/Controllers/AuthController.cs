@@ -91,6 +91,18 @@ namespace EduGuard.Controllers
             return Convert.ToBase64String(randomNumber);
         }
 
+        private async Task<GoogleJsonWebSignature.Payload?> ValidateGoogleCredentialAsync(string credential)
+        {
+            var clientId = _configuration.GetValue<string>("GOOGLE_CLIENT_ID")?.Trim();
+            if (string.IsNullOrEmpty(clientId) || clientId == "your_google_web_client_id.apps.googleusercontent.com")
+                return null;
+
+            return await GoogleJsonWebSignature.ValidateAsync(credential, new GoogleJsonWebSignature.ValidationSettings
+            {
+                Audience = new[] { clientId }
+            });
+        }
+
         // --- MENTOR REGISTER (Pending Verification) ---
         [HttpPost("register")]
         public async Task<IActionResult> Register([FromBody] Mentor model)
@@ -460,22 +472,18 @@ namespace EduGuard.Controllers
             if (role is not ("mentor" or "student"))
                 return BadRequest(new { success = false, message = "Google login is available only for mentors and students." });
 
-            var clientId = _configuration.GetValue<string>("GOOGLE_CLIENT_ID")?.Trim();
-            if (string.IsNullOrEmpty(clientId) || clientId == "your_google_web_client_id.apps.googleusercontent.com")
-                return StatusCode(503, new { success = false, message = "Google login is not configured." });
-
-            GoogleJsonWebSignature.Payload googlePayload;
+            GoogleJsonWebSignature.Payload? googlePayload;
             try
             {
-                googlePayload = await GoogleJsonWebSignature.ValidateAsync(model.Credential, new GoogleJsonWebSignature.ValidationSettings
-                {
-                    Audience = new[] { clientId }
-                });
+                googlePayload = await ValidateGoogleCredentialAsync(model.Credential);
             }
             catch (InvalidJwtException)
             {
                 return Unauthorized(new { success = false, message = "Google could not verify this login." });
             }
+
+            if (googlePayload == null)
+                return StatusCode(503, new { success = false, message = "Google login is not configured." });
 
             var email = googlePayload.Email?.Trim().ToLowerInvariant();
             if (string.IsNullOrEmpty(email) || !googlePayload.EmailVerified || string.IsNullOrEmpty(googlePayload.Subject))
@@ -485,11 +493,22 @@ namespace EduGuard.Controllers
             {
                 var mentor = await _mongoService.Mentors.Find(m => m.Email == email).FirstOrDefaultAsync(cancellationToken);
                 if (mentor == null)
-                    return StatusCode(403, new { success = false, message = "Your college administrator must create your mentor account before Google login." });
+                    return Ok(new { success = true, state = "needs_approval_request", message = "Select your college to request mentor approval.", data = new { name = googlePayload.Name ?? email, email, role } });
                 if (!string.Equals(mentor.Status, "approved", StringComparison.OrdinalIgnoreCase))
-                    return StatusCode(403, new { success = false, message = "Your college administrator must approve your mentor account before Google login." });
+                    return Ok(new
+                    {
+                        success = true,
+                        state = mentor.Status == "pending_verification" ? "waiting_approval" : "account_inactive",
+                        message = mentor.Status == "pending_verification"
+                            ? "Your mentor request is waiting for college administrator approval."
+                            : $"Your mentor request is {mentor.Status}. Please contact your college administrator.",
+                        data = new { name = mentor.Name, email = mentor.Email, role, collegeId = mentor.CollegeId }
+                    });
                 if (!string.IsNullOrEmpty(mentor.GoogleSubject) && !string.Equals(mentor.GoogleSubject, googlePayload.Subject, StringComparison.Ordinal))
                     return StatusCode(403, new { success = false, message = "This mentor account is already linked to another Google identity." });
+
+                if (!mentor.IsProfileComplete)
+                    return Ok(new { success = true, state = "profile_incomplete", message = "Approval complete. Finish your mentor profile to continue.", data = new { name = mentor.Name, email = mentor.Email, role, collegeId = mentor.CollegeId } });
 
                 if (!string.IsNullOrEmpty(mentor.CollegeId))
                 {
@@ -510,6 +529,7 @@ namespace EduGuard.Controllers
                 return Ok(new
                 {
                     success = true,
+                    state = "authenticated",
                     token = mentorToken,
                     data = new
                     {
@@ -526,11 +546,25 @@ namespace EduGuard.Controllers
 
             var student = await _mongoService.Students.Find(s => s.Email == email).FirstOrDefaultAsync(cancellationToken);
             if (student == null)
-                return StatusCode(403, new { success = false, message = "Your college must add you through its approved roster before Google login." });
-            if (!student.IsVerified || !string.Equals(student.VerificationStatus, "approved", StringComparison.OrdinalIgnoreCase))
-                return StatusCode(403, new { success = false, message = "Your mentor must approve your student account before Google login." });
+                return Ok(new { success = true, state = "needs_approval_request", message = "Choose your college and mentor to request approval.", data = new { name = googlePayload.Name ?? email, email, role } });
+            if (!string.Equals(student.VerificationStatus, "approved", StringComparison.OrdinalIgnoreCase))
+                return Ok(new
+                {
+                    success = true,
+                    state = student.VerificationStatus == "pending_mentor_approval" ? "waiting_approval" : "account_inactive",
+                    message = student.VerificationStatus == "pending_mentor_approval"
+                        ? "Your student request is waiting for mentor approval."
+                        : $"Your student request is {student.VerificationStatus}. Please contact your mentor.",
+                    data = new { name = student.Name, email = student.Email, role, collegeId = student.CollegeId, mentorId = student.MentorId }
+                });
             if (!string.IsNullOrEmpty(student.GoogleSubject) && !string.Equals(student.GoogleSubject, googlePayload.Subject, StringComparison.Ordinal))
                 return StatusCode(403, new { success = false, message = "This student account is already linked to another Google identity." });
+
+            if (!student.IsProfileComplete)
+                return Ok(new { success = true, state = "profile_incomplete", message = "Approval complete. Finish your student profile to continue.", data = new { name = student.Name, email = student.Email, role, collegeId = student.CollegeId, mentorId = student.MentorId } });
+
+            if (!student.IsVerified)
+                return StatusCode(403, new { success = false, message = "Please verify your student account before signing in." });
 
             if (!string.IsNullOrEmpty(student.CollegeId))
             {
@@ -552,6 +586,7 @@ namespace EduGuard.Controllers
             return Ok(new
             {
                 success = true,
+                state = "authenticated",
                 token,
                 data = new
                 {
@@ -566,6 +601,160 @@ namespace EduGuard.Controllers
                     verificationStatus = student.VerificationStatus
                 }
             });
+        }
+
+        [HttpPost("google/request-approval")]
+        public async Task<IActionResult> RequestGoogleApproval([FromBody] GoogleApprovalRequest model, CancellationToken cancellationToken)
+        {
+            if (model == null || string.IsNullOrWhiteSpace(model.Credential) || string.IsNullOrWhiteSpace(model.CollegeId))
+                return BadRequest(new { success = false, message = "Google credential and college are required." });
+
+            var role = model.Role?.Trim().ToLowerInvariant();
+            if (role is not ("mentor" or "student"))
+                return BadRequest(new { success = false, message = "Select mentor or student." });
+
+            GoogleJsonWebSignature.Payload? payload;
+            try { payload = await ValidateGoogleCredentialAsync(model.Credential); }
+            catch (InvalidJwtException) { return Unauthorized(new { success = false, message = "Google could not verify this request." }); }
+            if (payload == null) return StatusCode(503, new { success = false, message = "Google login is not configured." });
+
+            var email = payload.Email?.Trim().ToLowerInvariant();
+            if (string.IsNullOrEmpty(email) || !payload.EmailVerified || string.IsNullOrEmpty(payload.Subject))
+                return Unauthorized(new { success = false, message = "Google login validation failed." });
+
+            var college = await _mongoService.Colleges.Find(c => c.Id == model.CollegeId).FirstOrDefaultAsync(cancellationToken);
+            if (college == null || college.IsBlocked)
+                return BadRequest(new { success = false, message = "Select an active college." });
+
+            if (role == "mentor")
+            {
+                if (await _mongoService.Mentors.Find(m => m.Email == email).AnyAsync(cancellationToken))
+                    return Conflict(new { success = false, message = "A mentor account already exists. Sign in again to check its approval status." });
+
+                await _mongoService.Mentors.InsertOneAsync(new Mentor
+                {
+                    Name = payload.Name?.Trim() ?? email,
+                    Email = email,
+                    CollegeId = model.CollegeId,
+                    GoogleSubject = payload.Subject,
+                    Password = BCrypt.Net.BCrypt.HashPassword(Guid.NewGuid().ToString("N")),
+                    Role = "mentor",
+                    Status = "pending_verification",
+                    IsProfileComplete = false,
+                    IsOnline = false,
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow
+                }, cancellationToken: cancellationToken);
+
+                return StatusCode(201, new { success = true, state = "waiting_approval", message = "Your mentor request is waiting for college administrator approval." });
+            }
+
+            if (string.IsNullOrWhiteSpace(model.MentorId))
+                return BadRequest(new { success = false, message = "Select the mentor who should approve your request." });
+
+            if (await _mongoService.Students.Find(s => s.Email == email).AnyAsync(cancellationToken))
+                return Conflict(new { success = false, message = "A student account already exists. Sign in again to check its approval status." });
+
+            var mentor = await _mongoService.Mentors.Find(m => m.Id == model.MentorId && m.CollegeId == model.CollegeId && m.Status == "approved").FirstOrDefaultAsync(cancellationToken);
+            if (mentor == null)
+                return BadRequest(new { success = false, message = "Select an approved mentor from your college." });
+
+            var assignedCount = await _mongoService.Students.CountDocumentsAsync(s => s.MentorId == mentor.Id, cancellationToken: cancellationToken);
+            if (assignedCount >= mentor.MaxStudents)
+                return BadRequest(new { success = false, message = "This mentor has reached maximum capacity. Select another mentor." });
+
+            await _mongoService.Students.InsertOneAsync(new Student
+            {
+                Name = payload.Name?.Trim() ?? email,
+                Email = email,
+                CollegeId = model.CollegeId,
+                MentorId = mentor.Id,
+                MentorName = mentor.Name,
+                GoogleSubject = payload.Subject,
+                Password = null,
+                IsRegistered = true,
+                IsVerified = true,
+                VerificationStatus = "pending_mentor_approval",
+                IsProfileComplete = false,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            }, cancellationToken: cancellationToken);
+
+            return StatusCode(201, new { success = true, state = "waiting_approval", message = "Your student request is waiting for mentor approval." });
+        }
+
+        [HttpPost("google/complete-profile")]
+        public async Task<IActionResult> CompleteGoogleProfile([FromBody] GoogleProfileCompletionRequest model, CancellationToken cancellationToken)
+        {
+            if (model == null || string.IsNullOrWhiteSpace(model.Credential) || string.IsNullOrWhiteSpace(model.CourseId))
+                return BadRequest(new { success = false, message = "Google credential and degree are required." });
+
+            var role = model.Role?.Trim().ToLowerInvariant();
+            GoogleJsonWebSignature.Payload? payload;
+            try { payload = await ValidateGoogleCredentialAsync(model.Credential); }
+            catch (InvalidJwtException) { return Unauthorized(new { success = false, message = "Google could not verify this request." }); }
+            if (payload == null) return StatusCode(503, new { success = false, message = "Google login is not configured." });
+
+            var email = payload.Email?.Trim().ToLowerInvariant();
+            if (string.IsNullOrEmpty(email) || !payload.EmailVerified || string.IsNullOrEmpty(payload.Subject))
+                return Unauthorized(new { success = false, message = "Google login validation failed." });
+
+            if (role == "mentor")
+            {
+                var mentor = await _mongoService.Mentors.Find(m => m.Email == email).FirstOrDefaultAsync(cancellationToken);
+                if (mentor == null || mentor.Status != "approved") return StatusCode(403, new { success = false, message = "College administrator approval is required first." });
+                if (!string.IsNullOrEmpty(mentor.GoogleSubject) && mentor.GoogleSubject != payload.Subject) return Forbid();
+                var degree = await _mongoService.Degrees.Find(d => d.Id == model.CourseId && d.CollegeId == mentor.CollegeId).FirstOrDefaultAsync(cancellationToken);
+                if (degree == null) return BadRequest(new { success = false, message = "Select a degree from your college." });
+
+                mentor.Name = string.IsNullOrWhiteSpace(model.Name) ? mentor.Name : model.Name.Trim();
+                mentor.AssignedCourseId = degree.Id;
+                mentor.Department = model.Department?.Trim() ?? string.Empty;
+                mentor.AssignedClasses = model.AssignedClasses?.Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x.Trim()).Distinct().ToList() ?? new();
+                mentor.GoogleSubject = payload.Subject;
+                mentor.IsProfileComplete = true;
+                mentor.UpdatedAt = DateTime.UtcNow;
+                var refreshToken = GenerateRefreshToken();
+                mentor.RefreshToken = refreshToken;
+                mentor.RefreshTokenExpiry = DateTime.UtcNow.AddDays(30);
+                await _mongoService.Mentors.ReplaceOneAsync(m => m.Id == mentor.Id, mentor, cancellationToken: cancellationToken);
+                var token = GenerateJwtToken(mentor.Id!, "mentor");
+                SetTokenCookies(token, refreshToken);
+                return Ok(new { success = true, state = "authenticated", token, data = new { id = mentor.Id, mentor.Name, mentor.Email, role = "mentor", status = mentor.Status, collegeId = mentor.CollegeId, assignedClasses = mentor.AssignedClasses } });
+            }
+
+            if (role != "student") return BadRequest(new { success = false, message = "Select mentor or student." });
+            var student = await _mongoService.Students.Find(s => s.Email == email).FirstOrDefaultAsync(cancellationToken);
+            if (student == null || student.VerificationStatus != "approved") return StatusCode(403, new { success = false, message = "Mentor approval is required first." });
+            if (!string.IsNullOrEmpty(student.GoogleSubject) && student.GoogleSubject != payload.Subject) return Forbid();
+            if (string.IsNullOrWhiteSpace(model.RollNo) || string.IsNullOrWhiteSpace(model.Section)) return BadRequest(new { success = false, message = "Roll number, section, and semester are required." });
+
+            var studentDegree = await _mongoService.Degrees.Find(d => d.Id == model.CourseId && d.CollegeId == student.CollegeId).FirstOrDefaultAsync(cancellationToken);
+            if (studentDegree == null) return BadRequest(new { success = false, message = "Select a degree from your college." });
+            var section = model.Section.Trim().ToUpperInvariant();
+            if (section is not ("A" or "B") || model.Semester < 1 || model.Semester > studentDegree.DurationYears * 2) return BadRequest(new { success = false, message = "Select a valid section and semester." });
+            var assignedMentor = await _mongoService.Mentors.Find(m => m.Id == student.MentorId && m.Status == "approved" && m.CollegeId == student.CollegeId && (m.AssignedCourseId == studentDegree.Id || m.AssignedCourseId == null || m.AssignedCourseId == "")).FirstOrDefaultAsync(cancellationToken);
+            if (assignedMentor == null) return BadRequest(new { success = false, message = "Your approved mentor is not assigned to this degree. Contact your mentor." });
+            if (await _mongoService.Students.Find(s => s.Id != student.Id && s.CollegeId == student.CollegeId && s.RollNo == model.RollNo.Trim()).AnyAsync(cancellationToken)) return Conflict(new { success = false, message = "This roll number is already registered in your college." });
+
+            student.Name = string.IsNullOrWhiteSpace(model.Name) ? student.Name : model.Name.Trim();
+            student.RollNo = model.RollNo.Trim();
+            student.CourseId = studentDegree.Id;
+            student.Course = studentDegree.Name;
+            student.Class = $"{studentDegree.Name}-{section}";
+            student.Semester = model.Semester;
+            student.GoogleSubject = payload.Subject;
+            student.IsVerified = true;
+            student.IsRegistered = true;
+            student.IsProfileComplete = true;
+            student.UpdatedAt = DateTime.UtcNow;
+            var studentRefreshToken = GenerateRefreshToken();
+            student.RefreshToken = studentRefreshToken;
+            student.RefreshTokenExpiry = DateTime.UtcNow.AddDays(30);
+            await _mongoService.Students.ReplaceOneAsync(s => s.Id == student.Id, student, cancellationToken: cancellationToken);
+            var studentToken = GenerateJwtToken(student.Id!, "student");
+            SetTokenCookies(studentToken, studentRefreshToken);
+            return Ok(new { success = true, state = "authenticated", token = studentToken, data = new { id = student.Id, student.Name, student.Email, role = "student", student.RollNo, student.Course, student.CollegeId, student.MentorId, verificationStatus = student.VerificationStatus } });
         }
 
         // --- SESSION REFRESH TOKEN ---
@@ -758,6 +947,23 @@ namespace EduGuard.Controllers
     {
         public string Credential { get; set; } = string.Empty;
         public string Role { get; set; } = string.Empty;
+    }
+
+    public class GoogleApprovalRequest : GoogleLoginRequest
+    {
+        public string CollegeId { get; set; } = string.Empty;
+        public string? MentorId { get; set; }
+    }
+
+    public class GoogleProfileCompletionRequest : GoogleLoginRequest
+    {
+        public string? Name { get; set; }
+        public string CourseId { get; set; } = string.Empty;
+        public string? Department { get; set; }
+        public List<string>? AssignedClasses { get; set; }
+        public string? RollNo { get; set; }
+        public string? Section { get; set; }
+        public int Semester { get; set; }
     }
 
     public class StudentSignupRequest

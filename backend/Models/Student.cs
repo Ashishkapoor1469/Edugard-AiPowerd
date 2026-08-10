@@ -92,6 +92,9 @@ namespace EduGuard.Models
         [BsonIgnoreIfNull]
         public string? GoogleSubject { get; set; }
 
+        [BsonElement("isProfileComplete")]
+        public bool IsProfileComplete { get; set; } = true;
+
         [BsonElement("phoneNo")]
         public string? PhoneNo { get; set; }
 

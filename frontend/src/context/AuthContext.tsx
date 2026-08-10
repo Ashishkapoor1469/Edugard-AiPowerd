@@ -19,12 +19,20 @@ export interface User {
   collegeName?: string;
 }
 
+export interface GoogleAuthResult {
+  success: boolean;
+  state: "authenticated" | "needs_approval_request" | "waiting_approval" | "account_inactive" | "profile_incomplete";
+  message?: string;
+  data?: Partial<User> & { mentorId?: string };
+}
+
 interface AuthContextType {
   user: User | null;
   token: string | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
-  loginWithGoogle: (credential: string, role: "mentor" | "student") => Promise<void>;
+  loginWithGoogle: (credential: string, role: "mentor" | "student") => Promise<GoogleAuthResult>;
+  completeGoogleProfile: (credential: string, role: "mentor" | "student", details: Record<string, unknown>) => Promise<GoogleAuthResult>;
   register: (data: {
     name: string;
     email: string;
@@ -95,15 +103,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const loginWithGoogle = async (credential: string, role: "mentor" | "student") => {
     try {
       const res = await axios.post("/api/auth/google", { credential, role });
-      if (res.data.success) {
+      if (res.data.success && res.data.state === "authenticated") {
         const { token: jwtToken, data: googleUser } = res.data;
         localStorage.setItem("token", jwtToken);
         setToken(jwtToken);
         setUser(googleUser);
         void initializeMobilePush();
       }
+      return res.data as GoogleAuthResult;
     } catch (err: any) {
       throw new Error(err.response?.data?.message || "Google login failed");
+    }
+  };
+
+  const completeGoogleProfile = async (credential: string, role: "mentor" | "student", details: Record<string, unknown>) => {
+    try {
+      const res = await axios.post("/api/auth/google/complete-profile", { credential, role, ...details });
+      if (res.data.success && res.data.state === "authenticated") {
+        const { token: jwtToken, data: googleUser } = res.data;
+        localStorage.setItem("token", jwtToken);
+        setToken(jwtToken);
+        setUser(googleUser);
+        void initializeMobilePush();
+      }
+      return res.data as GoogleAuthResult;
+    } catch (err: any) {
+      throw new Error(err.response?.data?.message || "Could not complete Google profile");
     }
   };
 
@@ -142,7 +167,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <AuthContext.Provider value={{ user, token, loading, login, loginWithGoogle, register, logout }}>
+    <AuthContext.Provider value={{ user, token, loading, login, loginWithGoogle, completeGoogleProfile, register, logout }}>
       {children}
     </AuthContext.Provider>
   );

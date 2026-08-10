@@ -53,6 +53,37 @@ namespace EduGuard.Controllers
 
         // --- MENTOR VERIFICATION SYSTEM ---
 
+        [HttpPost("mentors")]
+        public async Task<IActionResult> CreateMentorAccount([FromBody] CreateMentorAccountRequest request)
+        {
+            if (IsSuperAdmin()) return Forbid();
+            var collegeId = GetCollegeId();
+            if (string.IsNullOrEmpty(collegeId))
+                return BadRequest(new { success = false, message = "College admin is not linked to a college" });
+            if (request == null || string.IsNullOrWhiteSpace(request.Name) || string.IsNullOrWhiteSpace(request.Email))
+                return BadRequest(new { success = false, message = "Mentor name and Google email are required" });
+
+            var email = request.Email.Trim().ToLowerInvariant();
+            if (await _mongoService.Mentors.Find(m => m.Email == email).AnyAsync())
+                return Conflict(new { success = false, message = "A mentor account already exists for this email" });
+
+            var mentor = new Mentor
+            {
+                Name = request.Name.Trim(),
+                Email = email,
+                CollegeId = collegeId,
+                Password = BCrypt.Net.BCrypt.HashPassword(Guid.NewGuid().ToString("N")),
+                Role = "mentor",
+                Status = "approved",
+                IsProfileComplete = false,
+                IsOnline = false,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
+            await _mongoService.Mentors.InsertOneAsync(mentor);
+            return StatusCode(201, new { success = true, message = "Mentor Google account created. They can now sign in and complete their profile.", data = new { id = mentor.Id, mentor.Name, mentor.Email, mentor.Status } });
+        }
+
         [HttpGet("mentors")]
         public async Task<IActionResult> GetCollegeMentors()
         {
@@ -523,5 +554,11 @@ namespace EduGuard.Controllers
     public class UpdateStatusRequest
     {
         public string Status { get; set; } = string.Empty;
+    }
+
+    public class CreateMentorAccountRequest
+    {
+        public string Name { get; set; } = string.Empty;
+        public string Email { get; set; } = string.Empty;
     }
 }

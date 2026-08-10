@@ -144,12 +144,10 @@ const Dashboard: React.FC = () => {
     try {
       // Fetch students pending mentor verification
       const res = await axios.get("/api/students", {
-        params: { limit: 50 },
+        params: { limit: 50, verificationStatus: "pending_mentor_approval" },
       });
       if (res.data.success) {
-        setPendingStudents(
-          res.data.data.filter((s: Student) => s.verificationStatus === "pending_mentor_approval")
-        );
+        setPendingStudents(res.data.data);
       }
     } catch (err: unknown) {
       console.error(err);

@@ -51,6 +51,10 @@ const CollegeAdminDashboard: React.FC = () => {
   const [mentorError, setMentorError] = useState("");
   const [riskError, setRiskError] = useState("");
   const [mentorActionId, setMentorActionId] = useState("");
+  const [showCreateMentor, setShowCreateMentor] = useState(false);
+  const [newMentorName, setNewMentorName] = useState("");
+  const [newMentorEmail, setNewMentorEmail] = useState("");
+  const [creatingMentor, setCreatingMentor] = useState(false);
 
   // Announcement Form State
   const [annTitle, setAnnTitle] = useState("");
@@ -150,6 +154,23 @@ const CollegeAdminDashboard: React.FC = () => {
     } catch (err) {
       toast.error("Action failed");
     } finally { setMentorActionId(""); }
+  };
+
+  const handleCreateMentor = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setCreatingMentor(true);
+    try {
+      const res = await axios.post("/api/admin/mentors", { name: newMentorName, email: newMentorEmail });
+      if (res.data.success) {
+        toast.success("Mentor Google account created");
+        setNewMentorName("");
+        setNewMentorEmail("");
+        setShowCreateMentor(false);
+        await fetchMentors();
+      }
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || "Could not create mentor account");
+    } finally { setCreatingMentor(false); }
   };
 
   const getStatusBadge = (status: string) => {
@@ -310,15 +331,26 @@ const CollegeAdminDashboard: React.FC = () => {
         {/* TAB 1: MENTOR MANAGEMENT */}
         {activeTab === "mentors" && (
           <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs">
-            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 mb-4">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
               <div>
                 <h2 className="text-sm font-bold text-slate-800">Mentor Management</h2>
-                <p className="text-[10px] text-slate-500 mt-1">Review registrations and control mentor access for your college.</p>
+                <p className="text-[10px] text-slate-500 mt-1">Create Google mentor accounts, review requests, and control access for your college.</p>
               </div>
-              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider bg-slate-50 border border-slate-100 rounded-lg px-3 py-1">
-                {mentors.length} Mentors
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider bg-slate-50 border border-slate-100 rounded-lg px-3 py-1">{mentors.length} Mentors</span>
+                <button type="button" onClick={() => setShowCreateMentor((current) => !current)} className="rounded-lg bg-primary px-3 py-2 text-[10px] font-bold text-white hover:bg-primary-hover">
+                  {showCreateMentor ? "Cancel" : "+ Create Mentor Account"}
+                </button>
+              </div>
             </div>
+            {showCreateMentor && (
+              <form onSubmit={handleCreateMentor} className="mb-5 grid gap-3 rounded-xl border border-blue-100 bg-blue-50/50 p-4 md:grid-cols-[1fr_1fr_auto] md:items-end">
+                <div><label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-slate-600">Mentor Name</label><input required value={newMentorName} onChange={(e) => setNewMentorName(e.target.value)} placeholder="Dr. Mentor Name" className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs focus:border-primary focus:outline-none" /></div>
+                <div><label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-slate-600">Google Email</label><input required type="email" value={newMentorEmail} onChange={(e) => setNewMentorEmail(e.target.value)} placeholder="mentor@college.edu" className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs focus:border-primary focus:outline-none" /></div>
+                <button type="submit" disabled={creatingMentor} className="rounded-lg bg-[#12274E] px-4 py-2 text-xs font-bold text-white disabled:opacity-50">{creatingMentor ? "Creating..." : "Create & Approve"}</button>
+                <p className="text-[10px] text-slate-500 md:col-span-3">The mentor can sign in with this exact Google email, complete degree and department details, and open the dashboard.</p>
+              </form>
+            )}
             {loading ? (
               <TableSkeleton rows={6} columns={5} label="Loading mentors" />
             ) : mentorError ? (

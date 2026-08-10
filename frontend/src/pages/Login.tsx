@@ -27,13 +27,23 @@ interface Mentor {
 }
 
 const Login: React.FC = () => {
-  const { login, loginWithGoogle, register } = useAuth();
+  const { login, loginWithGoogle, completeGoogleProfile, register } = useAuth();
   const navigate = useNavigate();
 
   // Role selections: mentor, student, admin
   const [roleMode, setRoleMode] = useState<"mentor" | "student" | "admin">("mentor");
   const [isRegisterMode, setIsRegisterMode] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [googleFlow, setGoogleFlow] = useState<null | {
+    credential: string;
+    role: "mentor" | "student";
+    state: "needs_approval_request" | "waiting_approval" | "account_inactive" | "profile_incomplete";
+    message: string;
+    name: string;
+    email: string;
+    collegeId?: string;
+    mentorId?: string;
+  }>(null);
 
   // Verification Step for Student Signup
   const [showOtpScreen, setShowOtpScreen] = useState(false);
@@ -68,14 +78,14 @@ const Login: React.FC = () => {
 
   // Fetch signup lists
   useEffect(() => {
-    if (isRegisterMode && (roleMode === "student" || roleMode === "mentor")) {
+    if ((isRegisterMode || googleFlow?.state === "needs_approval_request") && (roleMode === "student" || roleMode === "mentor")) {
       setCollegesLoading(true); setSignupListsError("");
       axios.get("/api/admin/colleges").then((res) => {
         if (res.data.success) setColleges(res.data.data);
       }).catch(() => setSignupListsError("Failed to load colleges. Please try again."))
         .finally(() => setCollegesLoading(false));
     }
-  }, [isRegisterMode, roleMode]);
+  }, [isRegisterMode, roleMode, googleFlow?.state]);
 
   // Fetch degrees when college changes
   useEffect(() => {
@@ -104,27 +114,31 @@ const Login: React.FC = () => {
   }, [selectedCollege]);
 
   useEffect(() => {
-    if (!isRegisterMode || roleMode !== "student") return;
+    const isStudentSignup = isRegisterMode && roleMode === "student";
+    const isStudentGoogleRequest = googleFlow?.state === "needs_approval_request" && googleFlow.role === "student";
+    if (!isStudentSignup && !isStudentGoogleRequest) return;
 
     setSelectedMentor("");
     setMentors([]);
     setMentorLookupMessage("");
 
-    if (!selectedCollege || !selectedDegree) return;
+    if (!selectedCollege || (isStudentSignup && !selectedDegree)) return;
 
     const controller = new AbortController();
     setMentorsLoading(true);
 
     axios
       .get("/api/mentors/list", {
-        params: { collegeId: selectedCollege, courseId: selectedDegree },
+        params: { collegeId: selectedCollege, ...(isStudentSignup ? { courseId: selectedDegree } : {}) },
         signal: controller.signal,
       })
       .then((res) => {
         const availableMentors = res.data.success ? res.data.data || [] : [];
         setMentors(availableMentors);
         if (availableMentors.length === 0) {
-          const message = "No mentor is available for the selected college and degree. Please contact your college admin.";
+          const message = isStudentSignup
+            ? "No mentor is available for the selected college and degree. Please contact your college admin."
+            : "No approved mentor is available for this college. Please contact your college admin.";
           setMentorLookupMessage(message);
           toast.error(message);
         }
@@ -139,7 +153,7 @@ const Login: React.FC = () => {
       });
 
     return () => controller.abort();
-  }, [isRegisterMode, roleMode, selectedCollege, selectedDegree]);
+  }, [isRegisterMode, roleMode, selectedCollege, selectedDegree, googleFlow?.state, googleFlow?.role]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -243,14 +257,74 @@ const Login: React.FC = () => {
     setIsSubmitting(true);
     try {
       const googleRole = roleMode === "mentor" ? "mentor" : "student";
-      await loginWithGoogle(credential, googleRole);
-      toast.success("Welcome back!");
-      navigate("/");
+      const result = await loginWithGoogle(credential, googleRole);
+      if (result.state === "authenticated") {
+        toast.success("Welcome back!");
+        navigate("/");
+        return;
+      }
+      setName(result.data?.name || "");
+      setSelectedCollege(result.data?.collegeId || "");
+      setGoogleFlow({
+        credential,
+        role: googleRole,
+        state: result.state,
+        message: result.message || "Continue your Google account setup.",
+        name: result.data?.name || "",
+        email: result.data?.email || "",
+        collegeId: result.data?.collegeId,
+        mentorId: result.data?.mentorId,
+      });
     } catch (err: any) {
       toast.error(err.message || "Google login failed");
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const handleGoogleApprovalRequest = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!googleFlow || !selectedCollege || (googleFlow.role === "student" && !selectedMentor)) {
+      toast.error(googleFlow?.role === "student" ? "Select your college and approving mentor" : "Select your college");
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      const { data } = await axios.post("/api/auth/google/request-approval", {
+        credential: googleFlow.credential,
+        role: googleFlow.role,
+        collegeId: selectedCollege,
+        mentorId: googleFlow.role === "student" ? selectedMentor : undefined,
+      });
+      setGoogleFlow({ ...googleFlow, state: "waiting_approval", message: data.message, collegeId: selectedCollege, mentorId: selectedMentor || undefined });
+      toast.success("Approval request submitted");
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || "Could not submit approval request");
+    } finally { setIsSubmitting(false); }
+  };
+
+  const handleGoogleProfileCompletion = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!googleFlow || !selectedDegree) { toast.error("Select your degree"); return; }
+    if (googleFlow.role === "student" && (!rollNo || !section || !semester)) { toast.error("Complete all student fields"); return; }
+    setIsSubmitting(true);
+    try {
+      const result = await completeGoogleProfile(googleFlow.credential, googleFlow.role, {
+        name,
+        courseId: selectedDegree,
+        department,
+        assignedClasses: assignedClassesInput.split(",").map((item) => item.trim()).filter(Boolean),
+        rollNo,
+        section,
+        semester: Number(semester || 0),
+      });
+      if (result.state === "authenticated") {
+        toast.success("Profile completed. Welcome to EduGuard!");
+        navigate("/");
+      }
+    } catch (err: any) {
+      toast.error(err.message || "Could not complete profile");
+    } finally { setIsSubmitting(false); }
   };
 
   return (
@@ -285,8 +359,81 @@ const Login: React.FC = () => {
             <img src={eduGuardBrand} alt="EduGuard" className="h-full w-full object-cover" />
           </div>
 
-          {/* OTP Screen */}
-          {showOtpScreen ? (
+          {/* Google approval and profile-completion flow */}
+          {googleFlow ? (
+            <div className="space-y-5">
+              <div>
+                <span className="inline-flex rounded-full bg-blue-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-primary">Google {googleFlow.role}</span>
+                <h2 className="mt-3 text-xl font-semibold text-[#202124]">
+                  {googleFlow.state === "needs_approval_request" ? "Request account approval" : googleFlow.state === "profile_incomplete" ? "Complete your profile" : googleFlow.state === "waiting_approval" ? "Waiting for approval" : "Account not active"}
+                </h2>
+                <p className="mt-1 text-xs leading-5 text-[#5f6368]">{googleFlow.message}</p>
+                <p className="mt-2 text-xs font-semibold text-slate-700">{googleFlow.name || googleFlow.email}<br /><span className="font-normal text-slate-500">{googleFlow.email}</span></p>
+              </div>
+
+              {googleFlow.state === "needs_approval_request" && (
+                <form onSubmit={handleGoogleApprovalRequest} className="space-y-4">
+                  <div>
+                    <label className="mb-1 block text-xs font-bold uppercase tracking-wider text-[#5f6368]">Select College</label>
+                    <select required value={selectedCollege} onChange={(e) => setSelectedCollege(e.target.value)} className="w-full rounded-lg border border-[#dadce0] bg-white px-3.5 py-2.5 text-sm focus:border-primary focus:outline-none">
+                      <option value="">{collegesLoading ? "Loading colleges..." : "Choose College..."}</option>
+                      {colleges.map((college) => <option key={college._id} value={college._id}>{college.name}</option>)}
+                    </select>
+                  </div>
+                  {googleFlow.role === "student" && (
+                    <div>
+                      <label className="mb-1 block text-xs font-bold uppercase tracking-wider text-[#5f6368]">Approving Mentor</label>
+                      <select required value={selectedMentor} onChange={(e) => setSelectedMentor(e.target.value)} disabled={!selectedCollege || mentorsLoading || mentors.length === 0} className="w-full rounded-lg border border-[#dadce0] bg-white px-3.5 py-2.5 text-sm disabled:bg-slate-50">
+                        <option value="">{!selectedCollege ? "Choose college first..." : mentorsLoading ? "Loading mentors..." : mentors.length ? "Choose Mentor..." : "No mentor available"}</option>
+                        {mentors.map((mentor) => <option key={mentor._id} value={mentor._id}>{mentor.name} ({mentor.assignedCount ?? 0}/{mentor.capacity || mentor.maxStudents || 50})</option>)}
+                      </select>
+                      {mentorLookupMessage && <p className="mt-1 text-[11px] font-medium text-red-600">{mentorLookupMessage}</p>}
+                    </div>
+                  )}
+                  {signupListsError && <p role="alert" className="text-xs font-medium text-red-600">{signupListsError}</p>}
+                  <button type="submit" disabled={isSubmitting} className="w-full rounded-lg bg-primary py-2.5 text-sm font-semibold text-white disabled:opacity-50">{isSubmitting ? "Submitting..." : "Send Approval Request"}</button>
+                </form>
+              )}
+
+              {googleFlow.state === "profile_incomplete" && (
+                <form onSubmit={handleGoogleProfileCompletion} className="space-y-4">
+                  <div>
+                    <label className="mb-1 block text-xs font-bold uppercase tracking-wider text-[#5f6368]">Full Name</label>
+                    <input required value={name} onChange={(e) => setName(e.target.value)} className="w-full rounded-lg border border-[#dadce0] px-3.5 py-2.5 text-sm" />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-bold uppercase tracking-wider text-[#5f6368]">Degree Program</label>
+                    <select required value={selectedDegree} onChange={(e) => { setSelectedDegree(e.target.value); setSemester(""); }} className="w-full rounded-lg border border-[#dadce0] bg-white px-3.5 py-2.5 text-sm">
+                      <option value="">{degreesLoading ? "Loading degrees..." : "Choose Degree..."}</option>
+                      {degrees.map((degree) => <option key={degree._id} value={degree._id}>{degree.name}</option>)}
+                    </select>
+                  </div>
+                  {googleFlow.role === "mentor" ? (
+                    <>
+                      <div><label className="mb-1 block text-xs font-bold uppercase tracking-wider text-[#5f6368]">Department</label><input required value={department} onChange={(e) => setDepartment(e.target.value)} placeholder="e.g. Computer Applications" className="w-full rounded-lg border border-[#dadce0] px-3.5 py-2.5 text-sm" /></div>
+                      <div><label className="mb-1 block text-xs font-bold uppercase tracking-wider text-[#5f6368]">Assigned Classes</label><input value={assignedClassesInput} onChange={(e) => setAssignedClassesInput(e.target.value)} placeholder="e.g. BCA-A, BCA-B" className="w-full rounded-lg border border-[#dadce0] px-3.5 py-2.5 text-sm" /></div>
+                    </>
+                  ) : (
+                    <>
+                      <div><label className="mb-1 block text-xs font-bold uppercase tracking-wider text-[#5f6368]">Roll Number</label><input required value={rollNo} onChange={(e) => setRollNo(e.target.value)} className="w-full rounded-lg border border-[#dadce0] px-3.5 py-2.5 text-sm" /></div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div><label className="mb-1 block text-xs font-bold uppercase tracking-wider text-[#5f6368]">Section</label><select required value={section} onChange={(e) => setSection(e.target.value)} className="w-full rounded-lg border border-[#dadce0] bg-white px-3.5 py-2.5 text-sm"><option value="">Choose...</option><option value="A">A</option><option value="B">B</option></select></div>
+                        <div><label className="mb-1 block text-xs font-bold uppercase tracking-wider text-[#5f6368]">Semester</label><select required value={semester} onChange={(e) => setSemester(e.target.value)} disabled={!selectedDegree} className="w-full rounded-lg border border-[#dadce0] bg-white px-3.5 py-2.5 text-sm disabled:bg-slate-50"><option value="">Choose...</option>{Array.from({ length: (degrees.find((degree) => degree._id === selectedDegree)?.durationYears || 0) * 2 }, (_, index) => index + 1).map((value) => <option key={value} value={value}>{value}</option>)}</select></div>
+                      </div>
+                    </>
+                  )}
+                  <button type="submit" disabled={isSubmitting} className="w-full rounded-lg bg-primary py-2.5 text-sm font-semibold text-white disabled:opacity-50">{isSubmitting ? "Saving..." : "Complete Profile & Continue"}</button>
+                </form>
+              )}
+
+              {(googleFlow.state === "waiting_approval" || googleFlow.state === "account_inactive") && (
+                <div className={`rounded-xl border p-4 text-xs leading-5 ${googleFlow.state === "waiting_approval" ? "border-amber-200 bg-amber-50 text-amber-800" : "border-red-200 bg-red-50 text-red-700"}`}>
+                  {googleFlow.state === "waiting_approval" ? `Sign in with Google again after your ${googleFlow.role === "mentor" ? "college administrator" : "mentor"} approves the request.` : "Contact the approving authority if you believe this status is incorrect."}
+                </div>
+              )}
+              <button type="button" onClick={() => { setGoogleFlow(null); setSelectedCollege(""); setSelectedDegree(""); setSelectedMentor(""); }} className="w-full rounded-lg border border-slate-200 py-2.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">Back to Sign In</button>
+            </div>
+          ) : showOtpScreen ? (
             <form onSubmit={handleVerifyOtp} className="space-y-4">
               <div>
                 <h2 className="text-xl font-semibold text-[#202124]">Verify OTP Code</h2>
